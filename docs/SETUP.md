@@ -29,7 +29,7 @@ Eles bloqueiam a Fase 1 do [`ROADMAP.md`](./ROADMAP.md).
 | Variável | Escopo | Observação |
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | cliente e servidor | Pública; a RLS é que protege os dados |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | cliente e servidor | Pública; idem |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | cliente e servidor | Pública; idem. Antes chamada "anon key" |
 | `SUPABASE_SERVICE_ROLE_KEY` | **somente servidor** | Ignora RLS. Só em `lib/supabase/admin.ts`, módulo com `import 'server-only'`. Nunca commitar, nunca prefixar com `NEXT_PUBLIC_` |
 | `NEXT_PUBLIC_SITE_URL` | cliente e servidor | URL canônica, para montar os links de callback do e-mail de convite |
 
@@ -44,7 +44,11 @@ funcione nos previews de PR — os previews deste projeto seguem o padrão
 ## Comandos
 
 ```bash
-npx supabase start          # sobe Postgres, Auth e Studio locais via Docker
+npm run db:verify           # aplica as migrations num Postgres descartável e
+                            # prova o isolamento por RLS — não precisa de Docker
+
+npx supabase start          # stack completo local (Postgres, Auth, Studio).
+                            # EXIGE Docker; não funciona em container sem daemon
 npx supabase db reset       # recria o banco local aplicando migrations + seed
 npx supabase db push        # aplica as migrations no projeto remoto
 

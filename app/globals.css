@@ -1,0 +1,93 @@
+@import "tailwindcss";
+
+/*
+ * Tokens do tema. Regra de docs/DESIGN.md: a cor de marca vale para superfícies
+ * e ações; verde e vermelho são reservados a entrada e saída de dinheiro, e
+ * nunca usados como decoração — se aparecerem, significam dinheiro.
+ */
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  --color-brand-50: #f5f3ff;
+  --color-brand-100: #ede9fe;
+  --color-brand-200: #ddd6fe;
+  --color-brand-500: #8b5cf6;
+  --color-brand-600: #7c3aed;
+  --color-brand-700: #6d28d9;
+  --color-brand-900: #4c1d95;
+
+  /* Semânticas — só dinheiro */
+  --color-income: #059669;
+  --color-income-soft: #d1fae5;
+  --color-expense: #dc2626;
+  --color-expense-soft: #fee2e2;
+}
+
+@layer base {
+  :root {
+    --background: #ffffff;
+    --surface: #f8fafc;
+    --surface-raised: #ffffff;
+    --border: #e2e8f0;
+    --foreground: #0f172a;
+    --foreground-muted: #64748b;
+    --brand: var(--color-brand-600);
+    --brand-foreground: #ffffff;
+    --income: var(--color-income);
+    --expense: var(--color-expense);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --background: #0b1020;
+      --surface: #131a2e;
+      --surface-raised: #1a2238;
+      --border: #2a3350;
+      --foreground: #e8ecf7;
+      --foreground-muted: #94a3b8;
+      --brand: var(--color-brand-500);
+      --brand-foreground: #0b1020;
+      --income: #34d399;
+      --expense: #f87171;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --background: #0b1020;
+    --surface: #131a2e;
+    --surface-raised: #1a2238;
+    --border: #2a3350;
+    --foreground: #e8ecf7;
+    --foreground-muted: #94a3b8;
+    --brand: var(--color-brand-500);
+    --brand-foreground: #0b1020;
+    --income: #34d399;
+    --expense: #f87171;
+  }
+
+  html {
+    color-scheme: light dark;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Valores em coluna precisam de dígitos de largura fixa. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}

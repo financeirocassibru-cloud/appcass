@@ -36,6 +36,15 @@ Cada uma existe porque o app antigo errou exatamente ali. O catálogo dos bugs e
 10. **Identificadores em inglês, interface em português.** `entries`, `amount_cents`,
     `occurred_on` no código e no banco; "Lançamentos", "Valor", "Data" na tela. Sem acento em
     nome de tabela, coluna, variável ou arquivo.
+11. **Sessão em servidor é validada com `getClaims()`.** Nunca `getSession()`, que aceita o
+    que vier no cookie sem conferir a assinatura do JWT — é falsificável. E não coloque código
+    entre `createServerClient` e `getClaims()` em `lib/supabase/proxy.ts`: isso causa logout
+    aleatório, difícil de diagnosticar depois.
+12. **Next 16, não 15.** O guarda de rota vive em `proxy.ts` (não `middleware.ts`) e a função
+    exportada se chama `proxy`. `cookies()`, `headers()`, `params` e `searchParams` são
+    assíncronos — sempre `await`. `next lint` não existe mais; o lint é o ESLint direto.
+13. **Redirecionamento vindo da URL passa por `safeRedirectPath`** (`lib/safe-redirect.ts`).
+    `startsWith('/')` sozinho deixa passar `//site-externo.com`.
 
 ## Convenções
 
@@ -48,7 +57,11 @@ Cada uma existe porque o app antigo errou exatamente ali. O catálogo dos bugs e
 
 ```bash
 npm run typecheck && npm run lint && npm run test && npm run build
+npm run db:verify   # se tocou em supabase/migrations/
 ```
+
+`db:verify` aplica as migrations num Postgres descartável e prova que a RLS isola usuários.
+Roda sem Docker e sem credencial — use sempre que mexer no schema.
 
 Os oito cenários manuais que precisam passar estão no fim de
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#verificação) — cada um reproduz um bug real do

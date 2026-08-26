@@ -54,10 +54,10 @@ Os passos manuais de criação do projeto estão em [`SETUP.md`](./SETUP.md).
 
 | Camada | Escolha | Por quê |
 |---|---|---|
-| Framework | Next.js 15, App Router, TypeScript strict | Server Components leem o Postgres sem expor chave; Server Actions substituem `google.script.run` |
+| Framework | Next.js 16, App Router, TypeScript strict | Server Components leem o Postgres sem expor chave; Server Actions substituem `google.script.run` |
 | Hospedagem | Vercel | Preview por PR, variáveis de ambiente por ambiente |
 | Banco/Auth | Supabase (Postgres + GoTrue + RLS) | RLS move a autorização para o banco — elimina a classe de bug do filtro manual por e-mail |
-| Cliente Supabase | `@supabase/ssr` | Sessão via cookie; funciona em Server Component, Server Action e middleware |
+| Cliente Supabase | `@supabase/ssr` | Sessão via cookie; funciona em Server Component, Server Action e no proxy |
 | Estilo | Tailwind CSS v4 + shadcn/ui | Componentes acessíveis, tema por CSS variables |
 | Gráficos | Recharts | Componentes React nativos; substitui o Chart.js via CDN |
 | Validação | Zod | Um schema por entidade, reaproveitado no formulário e na Server Action |
@@ -116,8 +116,12 @@ sem I/O — ver o pipeline completo e as invariantes matemáticas em
 - **Chave de serviço** (`SUPABASE_SERVICE_ROLE_KEY`) só é usada em `lib/supabase/admin.ts`,
   módulo marcado `import 'server-only'`, exclusivamente para emitir convites. Nunca chega ao
   cliente.
-- `middleware.ts` renova a sessão a cada requisição e redireciona usuário não autenticado
-  para `/login`.
+- `proxy.ts` renova a sessão a cada requisição e redireciona usuário não autenticado
+  para `/login`. No Next 16 o antigo `middleware.ts` foi renomeado para `proxy.ts` e a
+  função exportada passou a se chamar `proxy`.
+- A validação de sessão em servidor é sempre `supabase.auth.getClaims()`, que confere a
+  assinatura do JWT contra as chaves públicas do projeto. `getSession()` aceita o que vier
+  no cookie sem revalidar — nunca use para proteger rota.
 
 ## O que não foi trazido do app antigo
 
@@ -147,7 +151,7 @@ components/
   finance/                    # BalanceHero, EntryRow, MoneyInput, CategoryPill,
                                # DailyFlowChart, CategoryDonut, UpcomingList
 lib/
-  supabase/{client,server,admin,middleware}.ts
+  supabase/{client,server,admin,proxy}.ts
   finance/{money,date,recurrence,installments,goals,projection,types}.ts
   db/queries/{entries,recurring,installments,goals,scenarios,categories}.ts
   actions/                    # Server Actions, uma por caso de uso
@@ -160,7 +164,7 @@ tests/
   rls/                        # dois usuários reais; cada um só enxerga o próprio
   e2e/                        # Playwright
 docs/                         # este diretório
-middleware.ts
+proxy.ts                      # renomeado de middleware.ts no Next 16
 ```
 
 Mutações passam por Server Actions, nunca por chamada Supabase direta a partir de Client
