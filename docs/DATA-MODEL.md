@@ -31,17 +31,30 @@ create table profiles (
   updated_at timestamptz not null default now()
 );
 
--- Auditoria de convites. O convite em si é emitido por auth.admin.inviteUserByEmail().
+-- Convite por código, sem e-mail. O admin gera o código em /ajustes/convites e
+-- repassa por fora; quem resgata escolhe e-mail e senha em /entrar.
+--
+-- Guardamos só o sha256 do código. Determinístico, e não bcrypt, porque o
+-- resgate busca PELO código; com ~116 bits de entropia, pré-computar é inútil.
 create table invites (
   id uuid primary key default gen_random_uuid(),
-  email citext not null,
+  code_hash text not null,
+  label text,                       -- rótulo livre do admin; não é o e-mail
   invited_by uuid not null references profiles(id),
   status invite_status not null default 'pending',
   accepted_by uuid references profiles(id),
+  expires_at timestamptz not null,
   created_at timestamptz not null default now(),
   accepted_at timestamptz,
-  unique (email) where (status = 'pending')
+  check (status <> 'accepted' or accepted_at is not null)
 );
+create unique index invites_code_hash_uniq on invites (code_hash);
+
+-- O resgate reivindica com UPDATE condicional, e é isso que garante uso único
+-- e respeita o prazo, inclusive com duas pessoas tentando ao mesmo tempo:
+--   update invites set status='accepted', accepted_at=now()
+--    where code_hash=$1 and status='pending' and expires_at > now()
+--   returning id;
 
 -- Categorias POR USUÁRIO (corrige o compartilhamento global do app antigo)
 create table categories (

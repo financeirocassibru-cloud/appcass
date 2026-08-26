@@ -6,8 +6,8 @@ A Fase 0 é pré-requisito de todas as demais. Contexto e "porquê" de cada peç
 
 ## Fase 0 — Fundação
 
-Scaffold Next.js 15 + TypeScript strict + Tailwind v4 + shadcn/ui. Clientes Supabase
-(`lib/supabase/{client,server,admin}.ts`), `middleware.ts`. CI no GitHub Actions
+Scaffold Next.js 16 + TypeScript strict + Tailwind v4. Clientes Supabase
+(`lib/supabase/{client,server,admin,proxy}.ts`) e `proxy.ts` na raiz. CI no GitHub Actions
 (typecheck, lint, test, build). Configuração de Vitest e Playwright, mesmo sem testes ainda.
 
 **Pronto quando:** `npm run build`, `npm run lint`, `npm run typecheck` e `npm run test`
@@ -16,7 +16,7 @@ passam; o app sobe localmente com uma página vazia.
 ## Fase 1 — Banco e autenticação
 
 Migrations `0001_extensions.sql` … `0007_views.sql` conforme [`DATA-MODEL.md`](./DATA-MODEL.md).
-Telas de login, definir senha, callback de auth, logout, guarda de rota no middleware. Tela
+Telas de login, definir senha, callback de auth, logout, guarda de rota no proxy. Tela
 de convites (`/ajustes/convites`) restrita a `is_admin()`. Trigger de criação de perfil +
 categorias-semente.
 

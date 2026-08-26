@@ -4,7 +4,23 @@ Reconstrução de um app de finanças pessoais que rodava como Google Apps Scrip
 planilha do Google Sheets. A nova versão é uma aplicação Next.js hospedada na Vercel, com
 Postgres, autenticação e RLS no Supabase.
 
-**Estado atual: arquitetura definida, implementação ainda não iniciada.**
+**Estado atual:** fundação, banco e núcleo financeiro implementados (fases 00–02 do
+[roadmap](docs/ROADMAP.md)). As telas do app entram na fase 03.
+
+## Começar
+
+```bash
+npm install
+cp .env.example .env.local   # preencha com os dados do seu projeto Supabase
+npm run dev
+```
+
+| Comando | O que faz |
+|---|---|
+| `npm run test` | Testes de unidade do núcleo financeiro |
+| `npm run db:verify` | Aplica as migrations num Postgres descartável e prova o isolamento por RLS |
+| `npm run typecheck` / `npm run lint` | Verificação estática |
+| `npm run build` | Build de produção |
 
 ## Documentação
 
