@@ -13,8 +13,8 @@ Eles bloqueiam a Fase 1 do [`ROADMAP.md`](./ROADMAP.md).
 3. **Configurar SMTP próprio.** Authentication → Emails → SMTP Settings. O SMTP padrão do
    Supabase tem limite baixo de envio e não é adequado nem para uso familiar. Serve qualquer
    provedor (Resend, SendGrid, Amazon SES).
-4. **Criar o projeto na Vercel** ligado a este repositório e cadastrar as variáveis de
-   ambiente abaixo, nos escopos Production e Preview.
+4. **Cadastrar as variáveis de ambiente na Vercel**, nos escopos Production e Preview. O
+   projeto `appcass` já existe e já faz deploy de preview a cada PR — não precisa ser criado.
 5. **Promover a primeira conta a admin.** Depois de criar a própria conta pelo fluxo normal,
    rodar no SQL Editor do Supabase:
    ```sql
@@ -37,8 +37,9 @@ Manter um `.env.example` versionado com as chaves e valores vazios; `.env.local`
 `.gitignore`.
 
 No painel do Supabase, em Authentication → URL Configuration, cadastrar a `Site URL` de
-produção e adicionar `https://*-<seu-escopo>.vercel.app/**` em *Redirect URLs*, para que o
-login funcione nos previews de PR.
+produção e adicionar `https://*-appcass.vercel.app/**` em *Redirect URLs*, para que o login
+funcione nos previews de PR — os previews deste projeto seguem o padrão
+`appcass-git-<branch>-appcass.vercel.app`.
 
 ## Comandos
 
