@@ -45,6 +45,9 @@ Cada uma existe porque o app antigo errou exatamente ali. O catálogo dos bugs e
     assíncronos — sempre `await`. `next lint` não existe mais; o lint é o ESLint direto.
 13. **Redirecionamento vindo da URL passa por `safeRedirectPath`** (`lib/safe-redirect.ts`).
     `startsWith('/')` sozinho deixa passar `//site-externo.com`.
+14. **Nenhum fluxo depende de e-mail enviado.** A entrada é por código de convite gerado em
+    `/ajustes/convites`. O banco guarda só o `sha256` do código. Antes de usar o cliente
+    admin — que ignora a RLS — verifique `is_admin()` com o cliente normal, onde ela vale.
 
 ## Convenções
 

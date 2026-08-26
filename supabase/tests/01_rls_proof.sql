@@ -177,4 +177,84 @@ begin
   end;
 end $$;
 
+-- === Convite por código: uso único e expiração ===
+-- O resgate reivindica o convite com um UPDATE condicional. Estas asserções
+-- provam que a condição segura de fato: o segundo resgate não pega nada, e um
+-- código expirado não é reivindicável.
+do $$
+declare
+  admin_id uuid := '11111111-1111-1111-1111-111111111111';
+  claimed uuid;
+  n int;
+begin
+  -- Convite válido.
+  insert into public.invites (code_hash, label, invited_by, expires_at)
+  values ('hash-valido', 'para a Ana', admin_id, now() + interval '7 days');
+
+  -- Primeiro resgate: pega.
+  update public.invites
+     set status = 'accepted', accepted_at = now()
+   where code_hash = 'hash-valido' and status = 'pending' and expires_at > now()
+  returning id into claimed;
+  if claimed is null then raise exception 'primeiro resgate deveria ter reivindicado o convite'; end if;
+
+  -- Segundo resgate do mesmo código: não pega nada.
+  update public.invites
+     set status = 'accepted', accepted_at = now()
+   where code_hash = 'hash-valido' and status = 'pending' and expires_at > now();
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'uso único falhou: o mesmo código foi resgatado % vezes a mais', n; end if;
+
+  -- Código expirado: não pega nada.
+  insert into public.invites (code_hash, label, invited_by, expires_at)
+  values ('hash-expirado', 'vencido', admin_id, now() - interval '1 day');
+
+  update public.invites
+     set status = 'accepted', accepted_at = now()
+   where code_hash = 'hash-expirado' and status = 'pending' and expires_at > now();
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'código expirado foi resgatado'; end if;
+
+  -- Código revogado: não pega nada.
+  insert into public.invites (code_hash, label, invited_by, status, expires_at)
+  values ('hash-revogado', 'revogado', admin_id, 'revoked', now() + interval '7 days');
+
+  update public.invites
+     set status = 'accepted', accepted_at = now()
+   where code_hash = 'hash-revogado' and status = 'pending' and expires_at > now();
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'código revogado foi resgatado'; end if;
+end $$;
+
+-- Dois convites não podem compartilhar o mesmo hash.
+do $$
+begin
+  insert into public.invites (code_hash, invited_by, expires_at)
+  values ('hash-valido', '11111111-1111-1111-1111-111111111111', now() + interval '7 days');
+  raise exception 'invites_code_hash_uniq falhou: hash duplicado foi aceito';
+exception
+  when unique_violation then null;  -- esperado
+end $$;
+
+-- === Convites são invisíveis para quem não é admin ===
+set role authenticated;
+set request.jwt.claim.sub = '22222222-2222-2222-2222-222222222222';  -- Bruno, member
+
+do $$
+declare n int;
+begin
+  select count(*) into n from public.invites;
+  if n <> 0 then raise exception 'usuário comum leu % convite(s)', n; end if;
+
+  begin
+    insert into public.invites (code_hash, invited_by, expires_at)
+    values ('forjado', '22222222-2222-2222-2222-222222222222', now() + interval '7 days');
+    raise exception 'usuário comum conseguiu criar convite';
+  exception
+    when insufficient_privilege then null;  -- esperado
+  end;
+end $$;
+
+reset role;
+
 select 'TODAS AS ASSERÇÕES DE RLS E CONSTRAINTS PASSARAM' as resultado;

@@ -109,13 +109,24 @@ sem I/O — ver o pipeline completo e as invariantes matemáticas em
 - **RLS em todas as tabelas.** Toda linha carrega `user_id`; as policies usam
   `(select auth.uid())` — avaliado uma vez por consulta, não por linha.
 - **Cadastro público desligado** no painel do Supabase (Authentication → Sign In / Providers).
-  É essa opção que fecha a porta — nenhuma policy de RLS substitui isso.
-- **Convite:** um admin (`profiles.role = 'admin'`) convida por e-mail via
-  `supabase.auth.admin.inviteUserByEmail`; o convidado define senha; um trigger cria o perfil
-  e as categorias-semente daquele usuário.
+  As contas nascem pela API de admin, que ignora essa chave; desligá-la fecha o cadastro aberto.
+- **Convite por código, sem e-mail.** Um admin (`profiles.role = 'admin'`) gera um código em
+  `/ajustes/convites` e repassa por fora. A pessoa usa em `/entrar` e escolhe e-mail e senha
+  ali mesmo. Nenhum e-mail é enviado, e portanto não há dependência de SMTP. O e-mail existe
+  só como identificador de login.
+  - O banco guarda apenas o `sha256` do código, nunca o código em claro — ele aparece uma
+    única vez, na geração. O hash é determinístico (e não bcrypt) porque o resgate precisa
+    buscar **pelo** código; com ~116 bits de entropia, pré-computar não leva a lugar nenhum.
+  - Uso único e com prazo, garantidos por um `UPDATE` condicional
+    (`where status='pending' and expires_at > now()`), que também fecha a corrida entre duas
+    pessoas usando o mesmo código.
+  - **Bootstrap:** enquanto `profiles` está vazia, `/entrar` dispensa o código e cria a
+    primeira conta já como `admin`. Sem essa porta o sistema seria impossível de iniciar —
+    convite-só sem nenhum admin não deixa ninguém entrar. Ela fecha sozinha na primeira conta.
 - **Chave de serviço** (`SUPABASE_SERVICE_ROLE_KEY`) só é usada em `lib/supabase/admin.ts`,
-  módulo marcado `import 'server-only'`, exclusivamente para emitir convites. Nunca chega ao
-  cliente.
+  módulo marcado `import 'server-only'`: para criar a conta no resgate (quem resgata ainda não
+  tem sessão) e para ler o convite pelo hash. As policies de `invites` continuam restritas a
+  admin, então anônimo nunca enumera convites. Nunca chega ao cliente.
 - `proxy.ts` renova a sessão a cada requisição e redireciona usuário não autenticado
   para `/login`. No Next 16 o antigo `middleware.ts` foi renomeado para `proxy.ts` e a
   função exportada passou a se chamar `proxy`.
@@ -135,7 +146,8 @@ sem I/O — ver o pipeline completo e as invariantes matemáticas em
 
 ```
 app/
-  (auth)/login/  (auth)/definir-senha/  auth/callback/route.ts
+  (auth)/login/  (auth)/entrar/        # entrar = resgate de convite / primeira conta
+  auth/logout/route.ts
   (app)/layout.tsx            # header com saldo + bottom nav
   (app)/page.tsx              # Início: saldo, próximos eventos, gráficos
   (app)/lancamentos/          # extrato: filtros por mês, categoria, pago/pendente

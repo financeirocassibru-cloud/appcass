@@ -8,21 +8,21 @@ Eles bloqueiam a Fase 1 do [`ROADMAP.md`](./ROADMAP.md).
 1. **Criar o projeto no Supabase.** Região `sa-east-1` (São Paulo), para latência menor no
    Brasil. Guardar a senha do banco em local seguro — ela não é recuperável depois.
 2. **Desligar o cadastro público.** Authentication → Sign In / Providers → desmarcar
-   *Enable new user signups*. É esta opção que torna o app "por convite" de verdade; nenhuma
-   policy de RLS substitui isso.
-3. **Configurar SMTP próprio.** Authentication → Emails → SMTP Settings. O SMTP padrão do
-   Supabase tem limite baixo de envio e não é adequado nem para uso familiar. Serve qualquer
-   provedor (Resend, SendGrid, Amazon SES).
-4. **Cadastrar as variáveis de ambiente na Vercel**, nos escopos Production e Preview. O
+   *Enable new user signups*. As contas são criadas pela API de admin, que ignora essa
+   chave; desligá-la fecha a porta do cadastro aberto.
+3. **Aplicar as migrations.** `npx supabase link --project-ref <ref> && npx supabase db push`.
+4. **Cadastrar as variáveis de ambiente na Vercel**, nos escopos Production **e Preview**. O
    projeto `appcass` já existe e já faz deploy de preview a cada PR — não precisa ser criado.
-5. **Promover a primeira conta a admin.** Depois de criar a própria conta pelo fluxo normal,
-   rodar no SQL Editor do Supabase:
-   ```sql
-   update profiles set role = 'admin' where id = (
-     select id from auth.users where email = 'SEU_EMAIL_AQUI'
-   );
-   ```
-   A partir daí, os demais convites saem pela tela `/ajustes/convites`.
+   A `SUPABASE_SERVICE_ROLE_KEY` precisa estar nos dois escopos: o resgate de convite
+   depende dela.
+
+**SMTP não é necessário.** Nenhum e-mail é enviado: os convites são códigos gerados na tela
+de ajustes e repassados por fora. Quando houver recuperação de senha por e-mail, o SMTP volta
+para esta lista.
+
+**Promover o primeiro admin por SQL também não é necessário.** Enquanto não existe nenhuma
+conta, `/entrar` dispensa o código e cria a primeira já como administrador. A porta fecha
+sozinha assim que essa conta existe.
 
 ## Variáveis de ambiente
 
@@ -30,16 +30,15 @@ Eles bloqueiam a Fase 1 do [`ROADMAP.md`](./ROADMAP.md).
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | cliente e servidor | Pública; a RLS é que protege os dados |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | cliente e servidor | Pública; idem. Antes chamada "anon key" |
-| `SUPABASE_SERVICE_ROLE_KEY` | **somente servidor** | Ignora RLS. Só em `lib/supabase/admin.ts`, módulo com `import 'server-only'`. Nunca commitar, nunca prefixar com `NEXT_PUBLIC_` |
-| `NEXT_PUBLIC_SITE_URL` | cliente e servidor | URL canônica, para montar os links de callback do e-mail de convite |
+| `SUPABASE_SERVICE_ROLE_KEY` | **somente servidor** | Ignora RLS. Só em `lib/supabase/admin.ts`, módulo com `import 'server-only'`. Necessária em Production **e** Preview, porque o resgate de convite cria a conta por ela. Nunca commitar, nunca prefixar com `NEXT_PUBLIC_` |
+| `NEXT_PUBLIC_SITE_URL` | cliente e servidor | URL canônica do app |
 
 Manter um `.env.example` versionado com as chaves e valores vazios; `.env.local` fica no
 `.gitignore`.
 
 No painel do Supabase, em Authentication → URL Configuration, cadastrar a `Site URL` de
-produção e adicionar `https://*-appcass.vercel.app/**` em *Redirect URLs*, para que o login
-funcione nos previews de PR — os previews deste projeto seguem o padrão
-`appcass-git-<branch>-appcass.vercel.app`.
+produção. Não há *Redirect URLs* a configurar enquanto o login for por senha: elas só passam
+a importar quando existir link por e-mail.
 
 ## Comandos
 

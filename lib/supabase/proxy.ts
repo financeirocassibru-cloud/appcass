@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { supabasePublishableKey, supabaseUrl } from './env'
 
 /** Rotas alcançáveis sem sessão. */
-const PUBLIC_PREFIXES = ['/login', '/definir-senha', '/auth']
+const PUBLIC_PREFIXES = ['/login', '/entrar', '/auth']
 
 /**
  * Renova a sessão do Supabase a cada requisição e barra quem não está

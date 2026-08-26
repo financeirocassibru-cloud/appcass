@@ -61,5 +61,13 @@ create index scenario_entries_scenario_idx
 create unique index scenario_overrides_target_uniq
   on public.scenario_overrides (scenario_id, target_type, target_id, coalesce(occurrence_key, ''));
 
+-- O resgate busca o convite pelo hash do código; único impede colisão.
+create unique index invites_code_hash_uniq
+  on public.invites (code_hash);
+
 create index invites_invited_by_idx
   on public.invites (invited_by);
+
+-- Lista de convites na tela de ajustes, mais recentes primeiro.
+create index invites_status_idx
+  on public.invites (status, created_at desc);

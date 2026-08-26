@@ -37,11 +37,15 @@ end
 $$;
 
 -- ---------------------------------------------------------------------------
--- Novo usuário: cria o perfil, semeia as categorias DELE e fecha o convite.
+-- Novo usuário: cria o perfil e semeia as categorias DELE.
 --
 -- As nove categorias são as mesmas do app antigo, com a diferença que importa:
 -- lá elas viviam numa aba sem coluna de usuário e eram compartilhadas por todo
 -- mundo; aqui cada usuário recebe a sua cópia.
+--
+-- Fechar o convite não acontece aqui: o convite é por código e não conhece o
+-- e-mail de quem vai resgatá-lo. Quem marca como aceito é a Server Action de
+-- resgate, que já reivindicou o código antes de criar a conta.
 -- ---------------------------------------------------------------------------
 create function public.handle_new_user()
 returns trigger
@@ -71,10 +75,6 @@ begin
 
   insert into public.categories (user_id, name, kind, sort_order)
   values (new.id, 'Salário', 'income', 0), (new.id, 'Outras receitas', 'income', 1);
-
-  update public.invites
-  set status = 'accepted', accepted_by = new.id, accepted_at = now()
-  where email = new.email and status = 'pending';
 
   return new;
 end;

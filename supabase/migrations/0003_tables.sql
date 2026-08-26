@@ -18,21 +18,27 @@ create table public.profiles (
   updated_at timestamptz not null default now()
 );
 
--- Auditoria de convites. O convite em si sai por auth.admin.inviteUserByEmail().
+-- Convite por código. Nenhum e-mail é enviado: o admin gera o código na tela de
+-- ajustes e repassa por fora. O e-mail só aparece depois, escolhido por quem
+-- resgata, como identificador de login.
+--
+-- Guardamos apenas o sha256 do código, nunca o código em claro. O hash é
+-- determinístico (e não bcrypt) porque a validação precisa buscar PELO código;
+-- com 128 bits de entropia, tabela arco-íris não ajuda ninguém.
 create table public.invites (
   id uuid primary key default gen_random_uuid(),
-  email extensions.citext not null,
+  code_hash text not null,
+  -- Rótulo livre, para o admin lembrar de quem é o convite. Não é o e-mail.
+  label text,
   invited_by uuid not null references public.profiles (id),
   status invite_status not null default 'pending',
   accepted_by uuid references public.profiles (id),
+  expires_at timestamptz not null,
   created_at timestamptz not null default now(),
-  accepted_at timestamptz
+  accepted_at timestamptz,
+  constraint invites_accepted_needs_who
+    check (status <> 'accepted' or accepted_at is not null)
 );
-
--- Um convite pendente por e-mail; reconvidar depois de aceito continua valendo.
-create unique index invites_pending_email_uniq
-  on public.invites (email)
-  where (status = 'pending');
 
 -- Categorias POR USUÁRIO. No app antigo a aba de categorias não tinha coluna
 -- de usuário e a lista era compartilhada entre todos.
