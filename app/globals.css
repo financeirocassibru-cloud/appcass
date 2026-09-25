@@ -39,6 +39,27 @@
 }
 
 /*
+ * Passos de gráfico, separados dos tokens de texto de propósito.
+ *
+ * `--income` e `--expense` são calibrados para **texto** sobre a superfície. Como
+ * preenchimento de barra eles reprovam na validação da skill `dataviz`: no tema
+ * escuro os dois ficam claros demais (L 0.77 e 0.71, fora da faixa 0.48–0.67) e a
+ * separação sob deuteranopia cai para ΔE 6.5 — dentro da faixa em que a cor
+ * sozinha não distingue verde de vermelho.
+ *
+ * Os passos abaixo são as mesmas duas rampas reposicionadas para a faixa de
+ * preenchimento, medidos com `scripts/validate_palette.js` da skill contra a
+ * superfície real de cada tema (`--surface`):
+ *
+ *   claro  #10a373 / #c2181d → ΔE 12.3 (deutan), contraste ≥ 3:1, tudo PASS
+ *   escuro #15ad7c / #bf3b3b → ΔE 11.7 (deutan), contraste ≥ 3:1, tudo PASS
+ *
+ * Verde e vermelho continuam significando só dinheiro. E a posição no gráfico
+ * (entrada à esquerda, saída à direita, sempre nessa ordem) carrega a mesma
+ * informação que a cor, para quem não distingue as duas.
+ */
+
+/*
  * `@theme inline` é o que faz o Tailwind v4 gerar os utilitários (`bg-background`,
  * `text-muted-foreground`) a partir das variáveis definidas em `:root`. Sem
  * `inline`, o valor seria capturado na definição e o tema escuro não trocaria.
@@ -105,6 +126,11 @@
     /* Independente de --expense, por decisão de design */
     --destructive: #9f1239;
     --destructive-foreground: #ffffff;
+
+    /* Preenchimento de gráfico — ver o comentário acima de @layer base */
+    --chart-income: #10a373;
+    --chart-expense: #c2181d;
+    --chart-magnitude: var(--brand);
   }
 
   @media (prefers-color-scheme: dark) {
@@ -121,6 +147,9 @@
       --expense: #f87171;
       --destructive: #e11d48;
       --destructive-foreground: #ffffff;
+      --chart-income: #15ad7c;
+      --chart-expense: #bf3b3b;
+      --chart-magnitude: var(--brand);
     }
   }
 
@@ -137,6 +166,9 @@
     --expense: #f87171;
     --destructive: #e11d48;
     --destructive-foreground: #ffffff;
+    --chart-income: #15ad7c;
+    --chart-expense: #bf3b3b;
+    --chart-magnitude: var(--brand);
   }
 
   html {

@@ -148,3 +148,34 @@ export async function getEntry(id: string): Promise<EntryWithCategory | null> {
 
   return toEntry(data as unknown as JoinedRow)
 }
+
+/**
+ * Pendentes para a agenda do Início: tudo em atraso, mais o que vence até o
+ * horizonte.
+ *
+ * Sem filtro de mês, de propósito — uma conta esquecida em março tem de
+ * aparecer em setembro, e foi justamente a agenda que sumia sozinha no app
+ * antigo. Cai no índice `entries_user_pending_idx (user_id, occurred_on) where
+ * is_settled = false`, que existe desde a migration 0004 para esta consulta.
+ *
+ * O `limit` protege a tela de uma lista absurda depois de meses sem uso; quem
+ * quiser a lista inteira vai ao extrato com o filtro de pendentes.
+ */
+export async function listPendingEntries(
+  horizon: ISODate,
+  limit = 200,
+): Promise<EntryWithCategory[]> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('entries')
+    .select(COLUMNS)
+    .eq('is_settled', false)
+    .lte('occurred_on', horizon)
+    .order('occurred_on', { ascending: true })
+    .limit(limit)
+
+  if (error) throw new Error(`Falha ao listar pendências: ${error.message}`)
+
+  return (data as unknown as JoinedRow[]).map(toEntry)
+}

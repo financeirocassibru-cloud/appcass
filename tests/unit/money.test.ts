@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { formatCents, MoneyError, parseCents, splitCents, sumCents } from '@/lib/finance/money'
+import {
+  formatCents,
+  formatCentsCompact,
+  MoneyError,
+  parseCents,
+  splitCents,
+  sumCents,
+} from '@/lib/finance/money'
 
 describe('splitCents', () => {
   it('distribui o resto entre as primeiras parcelas', () => {
@@ -89,5 +96,24 @@ describe('formatCents', () => {
     // O separador do Intl é espaço não-quebrável.
     expect(formatCents(123_456).replace(/ /g, ' ')).toBe('R$ 1.234,56')
     expect(formatCents(0).replace(/ /g, ' ')).toBe('R$ 0,00')
+  })
+})
+
+describe('formatCentsCompact', () => {
+  const limpo = (cents: number) => formatCentsCompact(cents).replace(/ /g, ' ')
+
+  it('abrevia valor grande, que não cabe num eixo de celular', () => {
+    expect(limpo(123_456_789)).toBe('R$ 1,2 mi')
+    expect(limpo(1_234_567)).toBe('R$ 12,3 mil')
+  })
+
+  it('mostra valor pequeno inteiro, sem casa decimal solta', () => {
+    // `notation: 'compact'` sozinho produziria "R$ 0,0", que lê como truncado.
+    expect(limpo(0)).toBe('R$ 0')
+    expect(limpo(1_234)).toBe('R$ 12')
+  })
+
+  it('abrevia valor negativo', () => {
+    expect(limpo(-1_234_567)).toBe('-R$ 12,3 mil')
   })
 })
