@@ -31,6 +31,12 @@ jobs:
       - name: Testes de unidade
         run: npm run test
 
+      - name: Testes sob outros fusos
+        # Cálculo de data que dependa do fuso do processo passa em São Paulo e
+        # falha em fuso positivo. Rodar a suíte em Tóquio, Honolulu e UTC expõe
+        # essa classe de bug, que foi a mais frequente no app antigo.
+        run: npm run test:tz
+
       - name: Verificar migrations e RLS
         # Aplica as 7 migrations num Postgres descartável e prova que a RLS
         # isola usuários. Não precisa de Docker nem de credencial do Supabase.

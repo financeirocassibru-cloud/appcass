@@ -4,6 +4,7 @@ import { useActionState, useState } from 'react'
 import { createInvite, revokeInvite, type CreateInviteState } from '@/lib/actions/invites'
 import type { ActionState } from '@/lib/actions/auth'
 import { FormField, FormMessage, SubmitButton } from '@/components/auth/form-field'
+import { Button } from '@/components/ui/button'
 import { DEFAULT_EXPIRY_DAYS, MAX_EXPIRY_DAYS } from '@/lib/invite-code'
 
 const initialCreate: CreateInviteState = {}
@@ -64,16 +65,12 @@ function GeneratedCode({ code }: { code: string }) {
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-[var(--brand)] bg-[var(--surface)] p-4">
+    <div className="border-primary bg-muted flex flex-col gap-3 rounded-lg border p-4">
       <p className="text-sm font-medium">Copie agora — não será exibido de novo.</p>
       <code className="select-all break-all font-mono text-lg tracking-wider">{code}</code>
-      <button
-        type="button"
-        onClick={copy}
-        className="min-h-11 rounded-lg bg-[var(--brand)] px-4 text-base font-semibold text-[var(--brand-foreground)]"
-      >
+      <Button type="button" onClick={copy} className="min-h-11 text-base">
         {copied ? 'Copiado' : 'Copiar código'}
-      </button>
+      </Button>
     </div>
   )
 }
@@ -84,14 +81,15 @@ export function RevokeInviteButton({ id }: { id: string }) {
   return (
     <form action={formAction} className="shrink-0">
       <input type="hidden" name="id" value={id} />
-      <button
+      <Button
         type="submit"
+        variant="ghost"
         disabled={pending}
         title={state.error ?? undefined}
-        className="min-h-11 rounded-lg px-3 text-sm font-medium text-[var(--expense)] disabled:opacity-60"
+        className="text-destructive hover:text-destructive min-h-11"
       >
         {pending ? '…' : 'Revogar'}
-      </button>
+      </Button>
     </form>
   )
 }
