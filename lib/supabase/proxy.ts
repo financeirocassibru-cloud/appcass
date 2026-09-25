@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import type { Database } from '@/lib/db/types'
 import { supabasePublishableKey, supabaseUrl } from './env'
 
 /** Rotas alcançáveis sem sessão. */
@@ -23,7 +24,7 @@ const PUBLIC_PREFIXES = ['/login', '/entrar', '/auth']
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
 
-  const supabase = createServerClient(supabaseUrl(), supabasePublishableKey(), {
+  const supabase = createServerClient<Database>(supabaseUrl(), supabasePublishableKey(), {
     cookies: {
       getAll() {
         return request.cookies.getAll()

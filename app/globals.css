@@ -1,10 +1,25 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
 /*
- * Tokens do tema. Regra de docs/DESIGN.md: a cor de marca vale para superfícies
- * e ações; verde e vermelho são reservados a entrada e saída de dinheiro, e
- * nunca usados como decoração — se aparecerem, significam dinheiro.
+ * Tokens do tema.
+ *
+ * Duas famílias convivem aqui, de propósito:
+ *
+ *  1. As do app — `--brand`, `--income`, `--expense`, `--surface`. São as que
+ *     `docs/DESIGN.md` define, e a regra dele vale: verde e vermelho são
+ *     reservados a entrada e saída de dinheiro, e nunca decoram nada. Se
+ *     aparecerem, significam dinheiro.
+ *
+ *  2. As que o shadcn/ui espera — `--primary`, `--muted`, `--card`, `--ring`.
+ *     Não são uma segunda paleta: apontam para as de cima. `--primary` é
+ *     `--brand`; não existem duas fontes de verdade para a cor de marca.
+ *
+ * A única que é deliberadamente independente é `--destructive`. Ela precisa
+ * continuar distinguível de `--expense`: um botão de excluir e um valor de saída
+ * não podem ler como o mesmo sinal. Daí o carmim mais escuro e menos alaranjado.
  */
+
 @theme {
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
 
@@ -23,8 +38,43 @@
   --color-expense-soft: #fee2e2;
 }
 
+/*
+ * `@theme inline` é o que faz o Tailwind v4 gerar os utilitários (`bg-background`,
+ * `text-muted-foreground`) a partir das variáveis definidas em `:root`. Sem
+ * `inline`, o valor seria capturado na definição e o tema escuro não trocaria.
+ */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
 @layer base {
   :root {
+    --radius: 0.625rem;
+
+    /* Família do app */
     --background: #ffffff;
     --surface: #f8fafc;
     --surface-raised: #ffffff;
@@ -35,6 +85,26 @@
     --brand-foreground: #ffffff;
     --income: var(--color-income);
     --expense: var(--color-expense);
+
+    /* Mapeamento para o shadcn — apontam para as de cima, não duplicam */
+    --primary: var(--brand);
+    --primary-foreground: var(--brand-foreground);
+    --card: var(--surface-raised);
+    --card-foreground: var(--foreground);
+    --popover: var(--surface-raised);
+    --popover-foreground: var(--foreground);
+    --secondary: var(--surface);
+    --secondary-foreground: var(--foreground);
+    --muted: var(--surface);
+    --muted-foreground: var(--foreground-muted);
+    --accent: var(--surface);
+    --accent-foreground: var(--foreground);
+    --input: var(--border);
+    --ring: var(--brand);
+
+    /* Independente de --expense, por decisão de design */
+    --destructive: #9f1239;
+    --destructive-foreground: #ffffff;
   }
 
   @media (prefers-color-scheme: dark) {
@@ -49,6 +119,8 @@
       --brand-foreground: #0b1020;
       --income: #34d399;
       --expense: #f87171;
+      --destructive: #e11d48;
+      --destructive-foreground: #ffffff;
     }
   }
 
@@ -63,6 +135,8 @@
     --brand-foreground: #0b1020;
     --income: #34d399;
     --expense: #f87171;
+    --destructive: #e11d48;
+    --destructive-foreground: #ffffff;
   }
 
   html {

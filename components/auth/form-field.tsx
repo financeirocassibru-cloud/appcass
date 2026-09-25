@@ -1,3 +1,15 @@
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { cn } from '@/lib/utils'
+
+/**
+ * Composição de label + campo + dica que o shadcn não fornece pronta.
+ *
+ * As primitivas (`Input`, `Label`, `Button`) vêm do shadcn; o que mora aqui é o
+ * arranjo e as regras do app: altura mínima de 44px para alvo de toque
+ * (`docs/DESIGN.md`) e a dica ligada ao campo por `aria-describedby`.
+ */
 export function FormField({
   label,
   name,
@@ -6,7 +18,7 @@ export function FormField({
   required = true,
   defaultValue,
   placeholder,
-  className = '',
+  className,
   hint,
   inputMode,
   min,
@@ -30,10 +42,8 @@ export function FormField({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="text-sm font-medium">
-        {label}
-      </label>
-      <input
+      <Label htmlFor={id}>{label}</Label>
+      <Input
         id={id}
         name={name}
         type={type}
@@ -45,10 +55,10 @@ export function FormField({
         min={min}
         max={max}
         aria-describedby={hintId}
-        className={`min-h-11 rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] px-3.5 text-base outline-none focus-visible:border-[var(--brand)] focus-visible:ring-2 focus-visible:ring-[var(--brand)]/25 ${className}`}
+        className={cn('min-h-11 text-base', className)}
       />
       {hint ? (
-        <p id={hintId} className="text-xs text-[var(--foreground-muted)]">
+        <p id={hintId} className="text-muted-foreground text-xs">
           {hint}
         </p>
       ) : null}
@@ -59,38 +69,37 @@ export function FormField({
 export function SubmitButton({
   children,
   pending,
-  variant = 'primary',
+  variant = 'default',
 }: {
   children: React.ReactNode
   pending: boolean
-  variant?: 'primary' | 'ghost'
+  variant?: 'default' | 'outline'
 }) {
-  const styles =
-    variant === 'primary'
-      ? 'bg-[var(--brand)] text-[var(--brand-foreground)]'
-      : 'border border-[var(--border)] bg-transparent text-[var(--foreground)]'
-
   return (
-    <button
-      type="submit"
-      disabled={pending}
-      className={`min-h-11 rounded-lg px-4 text-base font-semibold transition-opacity disabled:opacity-60 ${styles}`}
-    >
+    <Button type="submit" disabled={pending} variant={variant} className="min-h-11 text-base">
       {pending ? 'Aguarde…' : children}
-    </button>
+    </Button>
   )
 }
 
+/**
+ * Mensagem de resultado de uma Server Action.
+ *
+ * Usa os tokens de dinheiro de propósito: o verde e o vermelho aqui carregam o
+ * mesmo significado de sucesso e falha que carregam no extrato, e não competem
+ * com o `--destructive` dos botões de excluir.
+ */
 export function FormMessage({ error, success }: { error?: string; success?: string }) {
   if (!error && !success) return null
   return (
     <p
       role="status"
-      className={`rounded-lg px-3 py-2 text-sm ${
+      className={cn(
+        'rounded-lg px-3 py-2 text-sm',
         error
           ? 'bg-[var(--color-expense-soft)] text-[var(--color-expense)]'
-          : 'bg-[var(--color-income-soft)] text-[var(--color-income)]'
-      }`}
+          : 'bg-[var(--color-income-soft)] text-[var(--color-income)]',
+      )}
     >
       {error ?? success}
     </p>
