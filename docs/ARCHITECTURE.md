@@ -108,6 +108,14 @@ sem I/O — ver o pipeline completo e as invariantes matemáticas em
 
 - **RLS em todas as tabelas.** Toda linha carrega `user_id`; as policies usam
   `(select auth.uid())` — avaliado uma vez por consulta, não por linha.
+- **Privilégio de coluna onde a RLS não alcança.** A RLS decide quais *linhas*; ela não tem
+  granularidade de coluna. `profiles` concede `update` apenas em `display_name`, `timezone`,
+  `opening_balance_cents` e `opening_balance_on`; `role` e `id` ficam de fora.
+
+  Isto nasceu de um bug real, corrigido na migration 0008: a policy "edite a própria linha"
+  combinada com o `grant` amplo que o Supabase dá por padrão permitia a qualquer usuário
+  logado rodar `update profiles set role='admin' where id = auth.uid()` e se promover. As
+  duas checagens da policy passavam, porque as duas olham só a linha.
 - **Cadastro público desligado** no painel do Supabase (Authentication → Sign In / Providers).
   As contas nascem pela API de admin, que ignora essa chave; desligá-la fecha o cadastro aberto.
 - **Convite por código, sem e-mail.** Um admin (`profiles.role = 'admin'`) gera um código em
@@ -123,6 +131,11 @@ sem I/O — ver o pipeline completo e as invariantes matemáticas em
   - **Bootstrap:** enquanto `profiles` está vazia, `/entrar` dispensa o código e cria a
     primeira conta já como `admin`. Sem essa porta o sistema seria impossível de iniciar —
     convite-só sem nenhum admin não deixa ninguém entrar. Ela fecha sozinha na primeira conta.
+
+    Quem atribui o papel é o trigger `handle_new_user`, na mesma transação do insert em
+    `auth.users`. Era um `update` separado feito pela aplicação, que em produção não teve
+    efeito e deixou o sistema sem administrador nenhum — e sem volta, porque a porta de
+    bootstrap já havia fechado.
 - **Chave de serviço** (`SUPABASE_SERVICE_ROLE_KEY`) só é usada em `lib/supabase/admin.ts`,
   módulo marcado `import 'server-only'`: para criar a conta no resgate (quem resgata ainda não
   tem sessão) e para ler o convite pelo hash. As policies de `invites` continuam restritas a
