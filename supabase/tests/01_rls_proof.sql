@@ -28,9 +28,10 @@ values
   ('22222222-2222-2222-2222-222222222222', 'expense', '2026-01-06', 'Mercado do Bruno', 25000);
 
 -- A partir daqui, sem privilégio de dono e sem BYPASSRLS.
-grant usage on schema public, auth to authenticated;
-grant select, insert, update, delete on all tables in schema public to authenticated;
-grant execute on function auth.uid() to authenticated;
+--
+-- As concessões vivem em 00_shim.sql, ANTES das migrations, para que a 0008
+-- possa revogá-las. Reconcedê-las aqui desfaria a correção e faria a asserção
+-- de escalada passar por engano.
 
 set role authenticated;
 
@@ -256,5 +257,79 @@ begin
 end $$;
 
 reset role;
+
+-- === Escalada de privilégio em profiles.role ===
+-- A policy deixa o usuário editar a PRÓPRIA linha. Sem privilégio por coluna,
+-- isso incluía `role`, e qualquer pessoa logada virava admin sozinha. Estas
+-- asserções falham se a migration 0008 for removida.
+set role authenticated;
+set request.jwt.claim.sub = '22222222-2222-2222-2222-222222222222';  -- Bruno, member
+
+do $$
+declare papel app_role;
+begin
+  -- Tentativa de promoção: tem de ser barrada pelo privilégio de coluna.
+  begin
+    update public.profiles set role = 'admin'
+     where id = '22222222-2222-2222-2222-222222222222';
+    raise exception 'ESCALADA: member conseguiu se promover a admin';
+  exception
+    when insufficient_privilege then null;  -- esperado
+  end;
+
+  -- E nada de promover outra pessoa, nem por tabela inteira.
+  begin
+    update public.profiles set role = 'admin';
+    raise exception 'ESCALADA: member conseguiu promover alguém';
+  exception
+    when insufficient_privilege then null;  -- esperado
+  end;
+
+  select role into papel from public.profiles
+   where id = '22222222-2222-2222-2222-222222222222';
+  if papel <> 'member' then raise exception 'Bruno deveria continuar member, está %', papel; end if;
+end $$;
+
+-- O grant não pode ter travado demais: o que é do usuário continua editável.
+do $$
+declare nome text;
+begin
+  update public.profiles set display_name = 'Bruno Editado'
+   where id = '22222222-2222-2222-2222-222222222222';
+
+  select display_name into nome from public.profiles
+   where id = '22222222-2222-2222-2222-222222222222';
+  if nome <> 'Bruno Editado' then
+    raise exception 'member deveria conseguir editar o próprio display_name';
+  end if;
+
+  update public.profiles set opening_balance_cents = 50000
+   where id = '22222222-2222-2222-2222-222222222222';
+end $$;
+
+reset role;
+
+-- === Promoção do primeiro usuário ===
+-- Ana foi a primeira conta criada neste teste, então nasceu admin; Bruno, não.
+-- É o que substitui o UPDATE separado da aplicação, que falhou em produção e
+-- deixou o sistema sem nenhum administrador.
+do $$
+declare papel_ana app_role; papel_bruno app_role; n int;
+begin
+  select role into papel_ana from public.profiles
+   where id = '11111111-1111-1111-1111-111111111111';
+  if papel_ana <> 'admin' then
+    raise exception 'a primeira conta deveria nascer admin, nasceu %', papel_ana;
+  end if;
+
+  select role into papel_bruno from public.profiles
+   where id = '22222222-2222-2222-2222-222222222222';
+  if papel_bruno <> 'member' then
+    raise exception 'a segunda conta deveria nascer member, nasceu %', papel_bruno;
+  end if;
+
+  select count(*) into n from public.profiles where role = 'admin';
+  if n <> 1 then raise exception 'deveria existir exatamente 1 admin, existem %', n; end if;
+end $$;
 
 select 'TODAS AS ASSERÇÕES DE RLS E CONSTRAINTS PASSARAM' as resultado;

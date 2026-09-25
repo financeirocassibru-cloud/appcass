@@ -28,3 +28,26 @@ create or replace function auth.uid() returns uuid
 language sql stable as $$
   select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid;
 $$;
+
+-- ---------------------------------------------------------------------------
+-- Privilégios padrão, como o Supabase os concede.
+--
+-- Isto precisa vir ANTES das migrations, e não depois: é o que faz o teste
+-- reproduzir a produção. O Supabase concede tudo em `public` a `anon` e
+-- `authenticated` por privilégio padrão, e é exatamente essa concessão ampla
+-- que criou a escalada em `profiles.role` — a policy limitava a linha, mas o
+-- privilégio de coluna estava aberto.
+--
+-- Com as concessões aqui, o `revoke` da migration 0008 tem o que revogar, e a
+-- asserção correspondente em 01_rls_proof.sql testa o comportamento real.
+-- ---------------------------------------------------------------------------
+grant usage on schema public to anon, authenticated, service_role;
+grant usage on schema auth to anon, authenticated, service_role;
+grant execute on function auth.uid() to anon, authenticated, service_role;
+
+alter default privileges in schema public
+  grant all on tables to anon, authenticated, service_role;
+alter default privileges in schema public
+  grant all on functions to anon, authenticated, service_role;
+alter default privileges in schema public
+  grant all on sequences to anon, authenticated, service_role;

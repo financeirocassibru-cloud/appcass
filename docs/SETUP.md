@@ -15,6 +15,9 @@ Eles bloqueiam a Fase 1 do [`ROADMAP.md`](./ROADMAP.md).
    projeto `appcass` já existe e já faz deploy de preview a cada PR — não precisa ser criado.
    A `SUPABASE_SERVICE_ROLE_KEY` precisa estar nos dois escopos: o resgate de convite
    depende dela.
+5. **Ligar a proteção contra senha vazada.** Authentication → Policies → *Leaked password
+   protection*. Compara a senha escolhida contra a base do HaveIBeenPwned. Como a senha é o
+   único fator de autenticação, vale o clique.
 
 **SMTP não é necessário.** Nenhum e-mail é enviado: os convites são códigos gerados na tela
 de ajustes e repassados por fora. Quando houver recuperação de senha por e-mail, o SMTP volta

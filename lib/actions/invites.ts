@@ -89,14 +89,23 @@ export async function revokeInvite(
   }
 
   const supabase = await createClient()
-  const { error } = await supabase
+  // `.select()` não é enfeite: sem ele o supabase-js devolve sucesso mesmo
+  // quando o update não casa linha nenhuma, e o usuário veria "revogado" para
+  // um convite que continua valendo. Foi esse silêncio que escondeu a falha da
+  // promoção a admin em produção.
+  const { data, error } = await supabase
     .from('invites')
     .update({ status: 'revoked' })
     .eq('id', parsed.data.id)
     .eq('status', 'pending')
+    .select('id')
 
   if (error) {
     return { error: `Não foi possível revogar: ${error.message}` }
+  }
+
+  if (!data || data.length === 0) {
+    return { error: 'Este convite já foi usado ou revogado.' }
   }
 
   revalidatePath('/ajustes/convites')

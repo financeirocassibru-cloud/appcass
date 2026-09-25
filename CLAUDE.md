@@ -48,6 +48,17 @@ Cada uma existe porque o app antigo errou exatamente ali. O catálogo dos bugs e
 14. **Nenhum fluxo depende de e-mail enviado.** A entrada é por código de convite gerado em
     `/ajustes/convites`. O banco guarda só o `sha256` do código. Antes de usar o cliente
     admin — que ignora a RLS — verifique `is_admin()` com o cliente normal, onde ela vale.
+15. **RLS decide a LINHA; `GRANT` decide a COLUNA.** São controles diferentes, e a policy não
+    substitui o privilégio de coluna. Coluna que o dono da linha não pode escrever (`role`,
+    `id`, qualquer campo de privilégio) fica fora do `grant update (...)`. Já custou uma
+    escalada: a policy "edite a própria linha" deixava qualquer usuário rodar
+    `update profiles set role='admin' where id = auth.uid()`. Ver a migration 0008.
+16. **Migrations são imutáveis depois de aplicadas.** As 0001–0007 já rodaram no projeto real;
+    correção de schema é migration nova, nunca edição das anteriores. Antes de mexer no
+    schema, confira o que está aplicado com `list_migrations` no conector.
+17. **`update` que precisa casar linha usa `.select()` e verifica o resultado.** O
+    `supabase-js` devolve sucesso quando nada casou; foi esse silêncio que deixou a primeira
+    conta sem virar admin, em produção, sem nenhum erro aparecer.
 
 ## Convenções
 
@@ -63,8 +74,13 @@ npm run typecheck && npm run lint && npm run test && npm run build
 npm run db:verify   # se tocou em supabase/migrations/
 ```
 
-`db:verify` aplica as migrations num Postgres descartável e prova que a RLS isola usuários.
-Roda sem Docker e sem credencial — use sempre que mexer no schema.
+`db:verify` aplica as migrations num Postgres descartável e prova que a RLS isola usuários,
+que o privilégio de coluna barra a escalada e que a primeira conta nasce admin. Roda sem
+Docker e sem credencial — use sempre que mexer no schema.
+
+As concessões de privilégio vivem em `supabase/tests/00_shim.sql`, **antes** das migrations,
+reproduzindo o que o Supabase concede por padrão. Não as reconceda em `01_rls_proof.sql`:
+isso desfaz os `revoke` das migrations e faz asserção de segurança passar por engano.
 
 Os oito cenários manuais que precisam passar estão no fim de
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#verificação) — cada um reproduz um bug real do

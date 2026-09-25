@@ -53,7 +53,7 @@ export async function isSystemEmpty(): Promise<boolean> {
 }
 
 /**
- * Cria a primeira conta do sistema, já como administrador.
+ * Cria a primeira conta do sistema.
  *
  * Existe para resolver o impasse do bootstrap: com o cadastro público desligado
  * e a entrada só por convite, sem esta porta ninguém jamais entraria — não há
@@ -62,6 +62,11 @@ export async function isSystemEmpty(): Promise<boolean> {
  * A porta fecha sozinha: assim que existe uma conta, `isSystemEmpty()` passa a
  * ser falso e esta action recusa. A checagem é refeita aqui dentro, e não só na
  * tela, porque a tela pode estar em cache.
+ *
+ * Quem promove a admin é o trigger `handle_new_user`, na mesma transação do
+ * insert em `auth.users`. Antes isso era um UPDATE separado daqui, que em
+ * produção não teve efeito e deixou o sistema sem nenhum administrador — e sem
+ * volta, porque a porta de bootstrap já havia fechado. Ver a migration 0008.
  */
 export async function createFirstAccount(
   _prev: ActionState,
@@ -92,16 +97,6 @@ export async function createFirstAccount(
 
   if (error || !data.user) {
     return { error: 'Não foi possível criar a conta. Tente novamente.' }
-  }
-
-  // O trigger handle_new_user já criou o perfil como 'member'; promove a admin.
-  const { error: promoteError } = await admin
-    .from('profiles')
-    .update({ role: 'admin' })
-    .eq('id', data.user.id)
-
-  if (promoteError) {
-    return { error: 'Conta criada, mas a promoção a administrador falhou. Avise o suporte.' }
   }
 
   const supabase = await createClient()
@@ -164,6 +159,9 @@ export async function redeemInvite(
     }
   }
 
+  // Best-effort: a conta já existe e o convite já foi consumido ao ser
+  // reivindicado. Falhar aqui só deixa a trilha de auditoria sem o
+  // `accepted_by` — não é motivo para recusar um cadastro que deu certo.
   await admin.from('invites').update({ accepted_by: data.user.id }).eq('id', inviteId)
 
   const supabase = await createClient()
