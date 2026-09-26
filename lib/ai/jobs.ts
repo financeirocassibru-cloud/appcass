@@ -23,6 +23,7 @@ import { DEADLINE_MS, nextModel, resolveStartModel, shouldFallback } from './mod
 import {
   describeOperation,
   EMPTY_LABELS,
+  hasFunctionCall,
   isDestructive,
   parseFunctionCalls,
   type LabelIndex,
@@ -32,7 +33,15 @@ import { notifyJobFinished } from './push'
 import { TOOLS } from './tools'
 
 /**
- * Ciclo de vida de um trabalho da IA. v1.0 — 2026-09-26.
+ * Ciclo de vida de um trabalho da IA. v1.1 — 2026-09-26.
+ *
+ * v1.1: `advanceJob` deixou de exigir `status === 'completed'` para colher o
+ * resultado de uma interpretação. Uma interação com ferramentas para em
+ * `requires_action` — ela está esperando o retorno das chamadas — e este app é
+ * justamente o lado que NÃO responde ferramenta: ele propõe a operação a uma pessoa.
+ * Com a exigência antiga, toda frase que virava chamada de ferramenta ficava
+ * `running` para sempre, sem erro nenhum na tela. Agora quem decide é a presença da
+ * chamada, não o nome do status.
  *
  * O trabalho é uma LINHA no banco, não uma promessa em memória. É isso que faz
  * a frase continuar sendo processada com o app fechado: quem executa é o Gemini,
@@ -302,6 +311,21 @@ export async function advanceJob(supabase: Client, row: AiJobRow): Promise<AiJob
 
   if (interaction && status === 'completed') {
     return await completeJob(supabase, row, interaction)
+  }
+
+  // A interação não terminou do lado do provedor, mas já trouxe as chamadas de
+  // ferramenta — e é isso que este app queria. Uma interação com ferramentas para em
+  // `requires_action` aguardando o resultado das chamadas; aqui ninguém vai devolver
+  // resultado nenhum, porque a operação vai para a tela de confirmação, não para uma
+  // função. Esperar `completed` é esperar para sempre: foi esse o trabalho que ficou
+  // `em andamento` por mais de cinco minutos, sem erro, em 2026-09-26.
+  //
+  // Cancelar depois de colher não é zelo: sem isso a interação segue pendurada
+  // gastando cota à espera de uma resposta que nunca vem.
+  if (interaction && row.kind !== 'insights' && hasFunctionCall(interaction.steps ?? [])) {
+    const resultado = await completeJob(supabase, row, interaction)
+    if (row.provider_interaction_id) await cancelInteraction(row.provider_interaction_id)
+    return resultado
   }
 
   if (shouldFallback({ httpStatus, status, elapsedMs, deadlineMs })) {
