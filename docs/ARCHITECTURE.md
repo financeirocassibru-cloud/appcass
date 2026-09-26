@@ -215,6 +215,7 @@ inteiro gira em torno de uma frase: **a saída do modelo é dado, nunca comando.
 | `lib/ai/briefing.ts` | A chamada da triagem — sem contexto, sem ferramentas, sem background |
 | `lib/ai/edits.ts` | **Puro.** A lista branca dos ajustes da tela de confirmação |
 | `lib/ai/json.ts` | **Puro.** Lê o JSON do modelo tolerando cerca de markdown e frase em volta |
+| `lib/ai/insights.ts` | O resumo: o retrato com histórico, o executor no pedido e a leitura do texto |
 
 ### Os dois tempos da conversa (fase 7b)
 
@@ -257,6 +258,52 @@ A lista branca está em `lib/ai/edits.ts`, e o motivo dela é específico: a RLS
 outra pessoa, mas **não** barraria trocar "apague o lançamento do mercado" por "apague o
 salário" — as duas linhas são dela. Operação que apaga não tem campo para ajustar; o que se
 faz com ela é remover da proposta.
+
+### O diagnóstico não é um trabalho (fase 7c)
+
+**Na tela ele se chama Diagnóstico; no código, `insights`.** O invariante 10 pede
+identificadores em inglês e interface em português, então `ai_insights_enabled`,
+`runInsights` e o enum `ai_job_kind` continuam como estão — só o texto que a pessoa lê
+mudou.
+
+O diagnóstico mora em `/projecao`, **não** passa por `ai_jobs` e **não é gravado**. Três decisões
+que vêm do mesmo lugar.
+
+**Texto livre, não formato fixo.** A primeira versão pedia `{summary, tips}`, mandava um
+`response_format` e validava com Zod. Pareceu prudente e falhou três vezes em produção, sempre
+com o conteúdo certo na mão: um modelo devolve a mesma coisa em mil formas ligeiramente
+diferentes, e prever cada uma é uma corrida que não se ganha. Agora a validação inteira é "veio
+texto?". Some com isso uma classe de falha, e de lado some a dependência do `response_format`.
+
+**Nada gravado.** O diagnóstico não era um registro, era uma leitura. Guardá-lo acumulava análises
+que ninguém ia reler, no mesmo histórico dos lançamentos que a pessoa de fato pediu. Ele roda
+dentro do pedido, por `runInsights`, e volta como texto na resposta da Server Action. Quem
+quiser guardar, copia — a tela tem o botão.
+
+A consequência está dita na tela e não escondida: **enquanto o diagnóstico é gerado, a pessoa precisa
+ficar ali.** Sem linha no banco não há varredura para retomar nem push para chamar de volta. Foi
+a troca aceita, porque refazer um diagnóstico custa um toque e manter um histórico de coisas que
+ninguém consulta custa para sempre. É por isso também que `/projecao` declara `maxDuration = 60`:
+a action roda sob o orçamento da rota que a serve.
+
+O valor `insights` continua no enum `ai_job_kind` — migrations são imutáveis (invariante 16) —
+e as três linhas antigas seguem lá, terminais. Simplesmente não se cria mais nenhuma.
+
+**O aviso de privacidade mudou junto, e não por estilo.** `/ajustes/ia` dizia que o resumo
+enviava "totais já calculados". Deixou de ser verdade no instante em que o diagnóstico passou a
+ler os lançamentos do período, então a tela passou a dizer o que de fato sai: descrição, valor,
+data e categoria de cada lançamento pedido. Num app de dinheiro, um aviso de privacidade
+desatualizado é pior que nenhum — ele promete uma coisa e o código faz outra.
+
+**O histórico de verdade.** Antes o modelo recebia só agregados e nenhum lançamento; o prompt
+saía com 492 caracteres, e com tão pouco na mão ele tinha pouco a dizer. Agora ele lê os
+lançamentos dos últimos N dias, com N escolhido na tela (campo livre, 1 a 60), por
+`listEntriesInRange`. O período não é guardado: é uma escolha do momento.
+
+Por que uma query nova em vez de reaproveitar: `listEntriesByMonth` recorta por mês de
+calendário, e `listRecentEntries(N)` **não tem limite superior de data** — uma conta a pagar do
+mês que vem consome o limite, e quem tem muitas contas futuras receberia zero lançamento dos
+últimos N dias. Seria um bug silencioso.
 
 ### Dois bugs que este desenho fechou
 
@@ -371,8 +418,8 @@ npm run dev
 14. Com `GEMINI_MODELS` apontando para um modelo inexistente seguido de um válido, o trabalho cai
     no segundo e termina; `ai_jobs.model` registra qual respondeu.
 15. Enviar uma frase, fechar o app e reabrir: o trabalho aparece concluído em `/assistente`.
-16. Resumo desligado em `/ajustes/ia` → o botão "Ver resumo" não existe no Início nem em
-    `/assistente`.
+16. Diagnóstico desligado em `/ajustes/ia` → o botão "Ver diagnóstico" não existe em
+    `/projecao` (e não fica acinzentado: ele não é renderizado).
 17. Usuário A não vê trabalho nem inscrição de push do usuário B.
 
 **Cenários da conversa em dois tempos (fase 7b):**
@@ -388,8 +435,20 @@ npm run dev
     o pedido como editado.
 22. Tentar reapontar uma exclusão para outro lançamento não muda o alvo — a lista branca de
     `lib/ai/edits.ts` ignora o campo.
-23. O aviso "pode fechar o app" não aparece nos primeiros 5 segundos, e ligar "Mostrar as
-    etapas" não o adianta.
+23. A espera é narrada pela IA: "Um instante…" na hora e a fala dos 15 segundos depois, as duas
+    como balões. Ligar "Mostrar as etapas" não adianta a segunda.
+
+**Cenários do diagnóstico (fase 7c):**
+
+24. O diagnóstico aparece em `/projecao` e **não** no Início nem em `/assistente`, e em nenhum
+    lugar da interface ele é chamado de "resumo".
+25. Pedir o diagnóstico devolve **texto corrido** em português, sem lista de dicas.
+26. Nenhuma linha nova em `ai_jobs` com `kind = 'insights'` depois de pedir o diagnóstico — a
+    consulta `select count(*) from ai_jobs where kind = 'insights'` não muda.
+27. Campo de período: 60 e 1 funcionam; 90 é recortado em 60; **campo vazio cai em 30, não em
+    1** — `Number('')` é `0`, e sem o corte o piso daria um resumo de um dia só.
+28. O botão Copiar põe o texto na área de transferência; barrada, a tela diz isso em vez de
+    não fazer nada.
 
 **Produção:** deploy na Vercel com preview por PR; `Site URL`/`Redirect URLs` do Supabase
 apontando para produção e para os previews; `supabase db push` no projeto remoto; conferir

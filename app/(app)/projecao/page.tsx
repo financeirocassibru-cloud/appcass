@@ -6,6 +6,9 @@ import { overrideTargetOf } from '@/lib/finance/projection'
 import { formatDayLabel } from '@/lib/finance/grouping'
 import { formatCents } from '@/lib/finance/money'
 import { todayISO } from '@/lib/finance/date'
+import { isAiConfigured } from '@/lib/ai/env'
+import { createClient } from '@/lib/supabase/server'
+import { InsightsPanel } from '@/components/ai/insights-panel'
 import { BalanceArea } from '@/components/finance/charts/balance-area'
 import { Balance, Money } from '@/components/finance/money'
 import { HorizonTabs } from './horizon-tabs'
@@ -16,6 +19,16 @@ import { ScenarioEntries } from './scenario-entries'
 export const metadata = { title: 'Projeção · Finanças' }
 /** Depende de "hoje" e do banco: prerenderizada, congelaria os dois. */
 export const dynamic = 'force-dynamic'
+
+/**
+ * v1.1 — 2026-09-26: o resumo da IA passou a morar nesta tela, e trouxe isto com ele.
+ *
+ * Não é zelo. A Server Action do resumo é POSTada para a rota atual, então ela roda sob
+ * o orçamento de `/projecao`, e `runInsights` espera até 40s pela resposta do modelo.
+ * Sem esta linha a plataforma corta a função no meio e a pessoa recebe um erro de rede
+ * em vez do resumo. `/assistente` declara o mesmo, pelo mesmo motivo.
+ */
+export const maxDuration = 60
 
 const HORIZONS = [30, 90, 180] as const
 type Horizon = (typeof HORIZONS)[number]
@@ -35,7 +48,14 @@ export default async function ProjecaoPage({
   const horizon = parseHorizon(params.dias)
   const today = todayISO()
 
-  const [scenarios, activeId] = await Promise.all([listScenarios(), getActiveScenarioId()])
+  const supabase = await createClient()
+
+  const [scenarios, activeId, { data: profile }] = await Promise.all([
+    listScenarios(),
+    getActiveScenarioId(),
+    // Desligado nos ajustes, o resumo não aparece acinzentado: ele não é renderizado.
+    supabase.from('profiles').select('ai_insights_enabled').maybeSingle(),
+  ])
 
   // `cenario=real` é a escolha explícita de ver a projeção sem cenário; sem o
   // parâmetro, abre o cenário marcado como padrão. Sem essa distinção não
@@ -221,6 +241,8 @@ export default async function ProjecaoPage({
           nos seus lançamentos.
         </p>
       )}
+
+      {isAiConfigured() && profile?.ai_insights_enabled && <InsightsPanel />}
     </main>
   )
 }

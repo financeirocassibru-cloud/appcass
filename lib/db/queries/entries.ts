@@ -3,10 +3,13 @@ import type { EntryKind, EntrySource } from '@/lib/db/types'
 import { createClient } from '@/lib/supabase/server'
 
 /**
- * Leitura de lançamentos.
+ * Leitura de lançamentos. v1.1 — 2026-09-26.
  *
  * Como em `categories.ts`, nenhuma query repete `eq('user_id', ...)` — quem
  * restringe as linhas é a RLS. E coluna explícita em vez de `select('*')`.
+ *
+ * v1.1: acrescentada `listEntriesInRange`, para o resumo da IA ler o histórico de
+ * um período escolhido. Nenhuma das outras servia, e por quê está no docblock dela.
  */
 
 const COLUMNS = `
@@ -169,6 +172,47 @@ export async function listRecentEntries(limit = 40): Promise<EntryWithCategory[]
     .limit(limit)
 
   if (error) throw new Error(`Falha ao listar lançamentos recentes: ${error.message}`)
+
+  return (data as unknown as JoinedRow[]).map(toEntry)
+}
+
+/**
+ * Lançamentos de uma janela de datas.
+ *
+ * v1.1 — 2026-09-26: nasceu para o resumo da IA, que passou a ler o histórico dos
+ * últimos N dias em vez de só agregados. Nenhuma das funções acima servia, e a
+ * tentadora é a errada:
+ *
+ *  - `listEntriesByMonth` recorta por mês de calendário. "Últimos 45 dias" viraria
+ *    duas ou três chamadas e um filtro em JavaScript depois.
+ *  - `listRecentEntries(N)` parece perfeita e tem um buraco: ela ordena por
+ *    `occurred_on desc` **sem limite superior de data**. Uma conta a pagar lançada
+ *    para o mês que vem vem primeiro e consome o limite — quem tem muitas contas
+ *    futuras receberia zero lançamento dos últimos N dias. Ela também corta por
+ *    quantidade, não por data: um mês pesado engole a janela, um mês leve vaza um
+ *    ano para trás.
+ *
+ * Cai no índice `entries_user_date_idx (user_id, occurred_on desc)`, o mesmo de
+ * `listEntriesByMonth`. O `limit` é teto de segurança para o prompt não estourar,
+ * não regra de negócio: 60 dias de uso normal fica bem abaixo dele.
+ */
+export async function listEntriesInRange(
+  from: ISODate,
+  to: ISODate,
+  limit = 300,
+): Promise<EntryWithCategory[]> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('entries')
+    .select(COLUMNS)
+    .gte('occurred_on', from)
+    .lte('occurred_on', to)
+    .order('occurred_on', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(limit)
+
+  if (error) throw new Error(`Falha ao listar o histórico: ${error.message}`)
 
   return (data as unknown as JoinedRow[]).map(toEntry)
 }

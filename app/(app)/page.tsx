@@ -11,8 +11,6 @@ import { Upcoming } from '@/components/finance/upcoming'
 import { CategoryRanking } from '@/components/finance/charts/category-ranking'
 import { MonthlyBars } from '@/components/finance/charts/monthly-bars'
 import { AssistantComposer } from '@/components/ai/composer'
-import { InsightsPanel } from '@/components/ai/insights-panel'
-import { createClient } from '@/lib/supabase/server'
 
 export const metadata = { title: 'Início · Finanças' }
 
@@ -28,18 +26,15 @@ export default async function InicioPage() {
   // e aí o saldo e a agenda falariam de dias distintos.
   const today = todayISO()
 
-  const supabase = await createClient()
-
-  const [balance, agendaItems, breakdown, monthly, { data: profile }] = await Promise.all([
+  // v1.2 — 2026-09-26: a leitura de `ai_insights_enabled` saiu daqui junto com o resumo,
+  // que mudou para a Projeção. Uma query a menos na tela que mais se abre.
+  const [balance, agendaItems, breakdown, monthly] = await Promise.all([
     getCurrentBalance(today),
     // Junta pendentes reais e ocorrências de contas fixas ainda não
     // materializadas, já deduplicadas entre si.
     getAgendaItems(today, DEFAULT_HORIZON_DAYS),
     getCategoryBreakdown(today),
     getMonthlySeries(today, MONTHS_IN_CHART),
-    // v1.1 — 2026-09-26: fase 7. Desligado nos ajustes, o resumo não aparece
-    // acinzentado: ele não é renderizado.
-    supabase.from('profiles').select('ai_insights_enabled').maybeSingle(),
   ])
 
   const assistenteLigado = isAiConfigured()
@@ -98,7 +93,6 @@ export default async function InicioPage() {
         </section>
       ) : (
         <>
-          {assistenteLigado && profile?.ai_insights_enabled && <InsightsPanel />}
           <Upcoming agenda={agenda} today={today} />
           <CategoryRanking
             slices={breakdown.slices}

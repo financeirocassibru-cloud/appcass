@@ -188,3 +188,46 @@ Dois bugs bloqueantes entraram junto, e os dois ganharam o teste que os teria pe
   final?", e `advanceJob` colhe pela presença da chamada.
 - **O resumo "em formato inesperado".** A instrução não pedia JSON e o parser era `JSON.parse`
   cru, então uma cerca ```json descartava a resposta certa.
+
+## Fase 7c — O diagnóstico como leitura, e a conversa mais humana
+
+O resumo continuou falhando depois da 7b, e por outro motivo: o parser tolerante resolveu a
+cerca de markdown, mas o **schema rígido** seguia recusando o conteúdo. Dois pedidos seguidos
+terminaram em "O resumo voltou em formato inesperado" com a resposta certa na mão.
+
+Então o formato saiu. Ele mudou de nome — na tela é **Diagnóstico**, no código segue
+`insights`, como o invariante 10 pede — e agora é **texto corrido**, lê os **lançamentos** dos últimos N
+dias (campo livre, 1 a 60, escolhido na tela e não guardado), mora em **`/projecao`** e **não é
+gravado em lugar nenhum** — quem quiser guardar, copia. Junto, o convite virou "Ajuda para
+atualizar?" e a espera passou a ser narrada pela própria IA, em balões, aos 0 e aos 15 segundos.
+
+**Pronto quando:** pedir o diagnóstico devolve prosa em português sem nenhuma linha nova em
+`ai_jobs`; o campo de período vazio cai em 30 dias e não em 1; e o "pode fechar o app" não
+aparece antes dos 15 segundos.
+
+Quatro decisões que explicam o desenho:
+
+- **Texto livre em vez de formato fixo.** Pedir `{summary, tips}` e validar com Zod pareceu
+  prudente e falhou três vezes, sempre com o conteúdo certo: um modelo devolve a mesma coisa em
+  mil formas ligeiramente diferentes, e prever cada uma é uma corrida que não se ganha. A
+  validação inteira passou a ser "veio texto?". De lado, sai a dependência do `response_format`,
+  o campo cujo contrato não dava para verificar na API beta.
+- **O diagnóstico não é um registro.** Guardá-lo em `ai_jobs` acumulava análises que ninguém ia
+  reler, no mesmo histórico dos lançamentos que a pessoa pediu de verdade. Ele roda dentro do
+  pedido e volta como texto. O custo está dito na tela, não escondido: enquanto ele é gerado, a
+  pessoa precisa ficar ali — sem linha no banco não há varredura para retomar nem push para
+  avisar. O aviso de privacidade em `/ajustes/ia` foi corrigido junto: ele dizia "totais já
+  calculados", e passou a dizer que os lançamentos do período são enviados, porque é o que
+  acontece. Refazer custa um toque; manter um histórico morto custa para sempre.
+- **Uma query nova, e não a tentadora.** `listRecentEntries(N)` ordena por data desc **sem
+  limite superior**: uma conta a pagar do mês que vem consome o limite, e quem tem muitas contas
+  futuras receberia zero lançamento do período. `listEntriesInRange(de, até)` recorta por data,
+  como o pedido exige.
+- **A espera é fala, não aviso.** O texto cinza fora dos balões parecia mensagem de erro. Agora
+  são duas falas da IA — e elas são derivadas do estado da fase, nunca empurradas para o
+  histórico da conversa: se entrassem, viajariam de volta ao modelo, e "Um instante" não é
+  informação sobre o dinheiro de ninguém.
+
+Um bug encontrado por um teste que eu escrevi para isso: `Number('')` é `0`, então limpar o
+campo de período dava um resumo de **um dia** em vez do padrão de 30 — silenciosamente, sem
+ninguém ter pedido.
