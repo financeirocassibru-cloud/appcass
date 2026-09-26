@@ -1,0 +1,13 @@
+{
+  // O service worker roda em WorkerGlobalScope, não no DOM: `self` é outro
+  // objeto e tipos como `ExtendableMessageEvent` só existem na lib WebWorker.
+  // Misturar as duas libs no tsconfig do app causaria conflito de `self`, então
+  // o worker tem o seu — e `npm run typecheck` roda os dois.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["WebWorker", "ES2022"],
+    "types": []
+  },
+  "include": ["app/sw.ts"],
+  "exclude": []
+}

@@ -15,6 +15,9 @@ const eslintConfig = [
       'playwright-report/**',
       'test-results/**',
       'next-env.d.ts',
+      // Saída do `serwist build`: bundle gerado, não código-fonte.
+      'public/sw.js',
+      'public/swe-worker-*.js',
     ],
   },
   ...nextCoreWebVitals,

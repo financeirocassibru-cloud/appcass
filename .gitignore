@@ -29,3 +29,5 @@ supabase/.branches/
 .DS_Store
 *.log
 .vercel
+public/sw.js
+public/swe-worker-*.js
