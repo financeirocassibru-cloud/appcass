@@ -449,4 +449,189 @@ end $$;
 
 reset role;
 
+-- === Parcelamentos (migration 0010) ===
+--
+-- Duas garantias que só existem porque a criação é uma função: a soma das
+-- parcelas bate com o total centavo a centavo, e ou tudo entra ou nada entra.
+
+set role authenticated;
+set request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
+
+do $$
+declare plano uuid; n int; soma bigint; pendentes int;
+begin
+  -- R$ 100,00 em 3x: 33,34 + 33,33 + 33,33. O app antigo gravava 33,33 três
+  -- vezes e perdia um centavo.
+  plano := public.create_installment_plan(
+    p_description => 'Sofá', p_total_amount_cents => 10000,
+    p_installments_count => 3::smallint, p_first_due_on => '2026-03-10',
+    p_installments =>
+    '[{"number":"1","amount_cents":3334,"due_on":"2026-03-10","description":"Sofá (1/3)"},
+      {"number":"2","amount_cents":3333,"due_on":"2026-04-10","description":"Sofá (2/3)"},
+      {"number":"3","amount_cents":3333,"due_on":"2026-05-10","description":"Sofá (3/3)"}]'::jsonb
+  );
+  if plano is null then raise exception 'o plano deveria ter sido criado'; end if;
+
+  select count(*), sum(amount_cents) into n, soma from public.entries
+   where source = 'installment' and source_id = plano;
+  if n <> 3 then raise exception 'deveriam existir 3 parcelas, existem %', n; end if;
+  if soma <> 10000 then raise exception 'a soma deveria ser 10000, é %', soma; end if;
+
+  -- Todas nascem pendentes: a compra foi feita, mas o dinheiro ainda não saiu.
+  select count(*) into pendentes from public.entries
+   where source = 'installment' and source_id = plano and not is_settled;
+  if pendentes <> 3 then raise exception 'as 3 parcelas deveriam nascer pendentes'; end if;
+
+  -- E numeradas, para a view de progresso contar certo.
+  select count(*) into n from public.entries
+   where source = 'installment' and source_id = plano
+     and installment_number between 1 and 3 and installment_total = 3;
+  if n <> 3 then raise exception 'as parcelas deveriam estar numeradas 1..3'; end if;
+end $$;
+
+-- Soma que não bate com o total é recusada, e NADA entra.
+do $$
+declare plano uuid; planos_antes int; planos_depois int;
+begin
+  select count(*) into planos_antes from public.installment_plans;
+
+  begin
+    plano := public.create_installment_plan(
+      p_description => 'Errado', p_total_amount_cents => 10000,
+      p_installments_count => 3::smallint, p_first_due_on => '2026-03-10',
+      p_installments =>
+      '[{"number":"1","amount_cents":3333,"due_on":"2026-03-10","description":"a"},
+        {"number":"2","amount_cents":3333,"due_on":"2026-04-10","description":"b"},
+        {"number":"3","amount_cents":3333,"due_on":"2026-05-10","description":"c"}]'::jsonb
+    );
+    raise exception 'rateio que perde um centavo deveria ser recusado';
+  exception
+    when check_violation then null;  -- esperado
+  end;
+
+  -- A atomicidade: o plano não pode ter sobrado sem as parcelas.
+  select count(*) into planos_depois from public.installment_plans;
+  if planos_depois <> planos_antes then
+    raise exception 'plano órfão gravado: antes %, depois %', planos_antes, planos_depois;
+  end if;
+end $$;
+
+-- Atomicidade de verdade: falhar DEPOIS de gravar o plano.
+--
+-- A asserção acima recusa antes de escrever qualquer coisa, então ela prova
+-- validação, não rollback. Aqui a soma bate e a contagem bate — o plano é
+-- gravado — e só então uma parcela sem data viola o `not null` de
+-- `occurred_on`. Se a função não fosse transacional, sobraria um plano sem
+-- parcela nenhuma, somando zero na tela.
+do $$
+declare plano uuid; planos_antes int; planos_depois int;
+begin
+  select count(*) into planos_antes from public.installment_plans;
+
+  begin
+    plano := public.create_installment_plan(
+      p_description => 'Sem data', p_total_amount_cents => 6666,
+      p_installments_count => 2::smallint, p_first_due_on => '2026-03-10',
+      p_installments =>
+      '[{"number":"1","amount_cents":3333,"due_on":"2026-03-10","description":"a"},
+        {"number":"2","amount_cents":3333,"due_on":null,"description":"b"}]'::jsonb
+    );
+    raise exception 'parcela sem data deveria falhar';
+  exception
+    when not_null_violation then null;  -- esperado
+  end;
+
+  select count(*) into planos_depois from public.installment_plans;
+  if planos_depois <> planos_antes then
+    raise exception 'PLANO ÓRFÃO: a função não é transacional (antes %, depois %)',
+      planos_antes, planos_depois;
+  end if;
+end $$;
+
+-- Quantidade divergente também é recusada.
+do $$
+declare plano uuid;
+begin
+  plano := public.create_installment_plan(
+    p_description => 'Errado', p_total_amount_cents => 6666,
+    p_installments_count => 3::smallint, p_first_due_on => '2026-03-10',
+    p_installments =>
+    '[{"number":"1","amount_cents":3333,"due_on":"2026-03-10","description":"a"},
+      {"number":"2","amount_cents":3333,"due_on":"2026-04-10","description":"b"}]'::jsonb
+  );
+  raise exception 'contagem divergente deveria ser recusada';
+exception
+  when check_violation then null;  -- esperado
+end $$;
+
+-- Excluir mantém o que já foi pago e remove o que está pendente.
+do $$
+declare plano uuid; removidas int; restantes int; liquidadas int;
+begin
+  plano := public.create_installment_plan(
+    p_description => 'Geladeira', p_total_amount_cents => 30000,
+    p_installments_count => 3::smallint, p_first_due_on => '2026-06-10',
+    p_installments =>
+    '[{"number":"1","amount_cents":10000,"due_on":"2026-06-10","description":"Geladeira (1/3)"},
+      {"number":"2","amount_cents":10000,"due_on":"2026-07-10","description":"Geladeira (2/3)"},
+      {"number":"3","amount_cents":10000,"due_on":"2026-08-10","description":"Geladeira (3/3)"}]'::jsonb
+  );
+
+  update public.entries set is_settled = true, settled_on = occurred_on
+   where source = 'installment' and source_id = plano and installment_number = 1;
+
+  removidas := public.delete_installment_plan(plano);
+  if removidas <> 2 then raise exception 'deveriam sair 2 parcelas pendentes, saíram %', removidas; end if;
+
+  select count(*) into restantes from public.entries
+   where source = 'installment' and source_id = plano;
+  select count(*) into liquidadas from public.entries
+   where source = 'installment' and source_id = plano and is_settled;
+
+  if restantes <> 1 or liquidadas <> 1 then
+    raise exception 'a parcela já paga deveria continuar no extrato (restantes %, liquidadas %)',
+      restantes, liquidadas;
+  end if;
+
+  if exists (select 1 from public.installment_plans where id = plano) then
+    raise exception 'o plano deveria ter sido excluído';
+  end if;
+end $$;
+
+-- Ana não exclui o parcelamento do Bruno.
+reset role;
+insert into public.installment_plans
+  (id, user_id, description, total_amount_cents, installments_count, first_due_on)
+values
+  ('cccccccc-0000-0000-0000-000000000003',
+   '22222222-2222-2222-2222-222222222222', 'Notebook do Bruno', 50000, 5::smallint, '2026-03-01');
+
+set role authenticated;
+set request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
+
+do $$
+declare removidas int;
+begin
+  removidas := public.delete_installment_plan('cccccccc-0000-0000-0000-000000000003');
+  raise exception 'VAZAMENTO: Ana excluiu o parcelamento do Bruno';
+exception
+  when no_data_found then null;  -- esperado
+end $$;
+
+-- anon não executa nenhuma das duas.
+set role anon;
+do $$
+declare plano uuid;
+begin
+  plano := public.create_installment_plan(
+    p_description => 'x', p_total_amount_cents => 100, p_installments_count => 1::smallint,
+    p_first_due_on => '2026-03-10',
+    p_installments => '[{"number":"1","amount_cents":100,"due_on":"2026-03-10","description":"x"}]'::jsonb);
+  raise exception 'ESCALADA: anon executou create_installment_plan';
+exception
+  when insufficient_privilege then null;  -- esperado
+end $$;
+
+reset role;
+
 select 'TODAS AS ASSERÇÕES DE RLS E CONSTRAINTS PASSARAM' as resultado;
