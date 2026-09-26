@@ -586,6 +586,18 @@ export type Database = {
       };
     };
     Functions: {
+      create_installment_plan: {
+        Args: {
+          p_category_id?: string;
+          p_description: string;
+          p_first_due_on: string;
+          p_installments: Json;
+          p_installments_count: number;
+          p_total_amount_cents: number;
+        };
+        Returns: string;
+      };
+      delete_installment_plan: { Args: { p_plan_id: string }; Returns: number };
       is_admin: { Args: Record<PropertyKey, never>; Returns: boolean };
       materialize_recurring_occurrence: {
         Args: { p_occurs_on: string; p_rule_id: string; p_settled?: boolean };

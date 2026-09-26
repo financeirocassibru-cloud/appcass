@@ -98,3 +98,59 @@ describe('planInstallments', () => {
     expect(parcelas.at(-1)?.dueOn).toBe('2029-12-15')
   })
 })
+
+describe('contrato com a migration 0010', () => {
+  /**
+   * `create_installment_plan` recebe as parcelas prontas em JSON e confere a
+   * soma antes de gravar. O que a função espera de cada item está fixado aqui,
+   * porque é um contrato entre TypeScript e SQL: o `number` vira
+   * `occurrence_key` (texto) e `installment_number` (smallint), e divergir
+   * quebraria a unicidade que impede a parcela duplicada.
+   */
+  const plano = (total: number, count: number) =>
+    planInstallments({
+      id: 'plano-1',
+      description: 'Sofá',
+      categoryId: null,
+      totalAmountCents: total,
+      installmentsCount: count,
+      firstDueOn: '2026-03-10',
+    })
+
+  it('a chave de ocorrência é o número da parcela, em texto', () => {
+    const parcelas = plano(10_000, 3)
+    expect(parcelas.map((p) => p.occurrenceKey)).toEqual(['1', '2', '3'])
+  })
+
+  it('a chave casa com o installment_number, que o banco lê como smallint', () => {
+    for (const parcela of plano(10_000, 12)) {
+      expect(Number(parcela.occurrenceKey)).toBe(parcela.installmentNumber)
+      expect(Number.isInteger(Number(parcela.occurrenceKey))).toBe(true)
+    }
+  })
+
+  it('toda parcela tem valor positivo — o banco recusa zero ou negativo', () => {
+    for (const parcela of plano(101, 100)) {
+      expect(parcela.amountCents).toBeGreaterThan(0)
+    }
+  })
+
+  it('a soma bate com o total em muitas combinações', () => {
+    // A conferência que a função do banco repete antes de gravar. Se esta
+    // invariante cair, o parcelamento é recusado lá — mas o erro tem de
+    // aparecer aqui primeiro.
+    for (let total = 1; total <= 400; total += 7) {
+      for (const count of [2, 3, 4, 5, 7, 12, 13]) {
+        if (count > total) continue
+        const soma = plano(total, count).reduce((s, p) => s + p.amountCents, 0)
+        expect(soma).toBe(total)
+      }
+    }
+  })
+
+  it('as datas saem em YYYY-MM-DD, que é o que o cast para date espera', () => {
+    for (const parcela of plano(10_000, 14)) {
+      expect(parcela.dueOn).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    }
+  })
+})
