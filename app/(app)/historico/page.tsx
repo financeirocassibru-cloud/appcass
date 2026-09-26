@@ -59,9 +59,13 @@ export default async function LancamentosPage({
   const settled =
     params.status === 'pago' ? true : params.status === 'pendente' ? false : undefined
 
-  const [entries, categories] = await Promise.all([
+  // As listas por tipo são para o formulário de edição, que abre em cima da linha: alternar
+  // saída/entrada dentro dele não deve ir ao banco de novo.
+  const [entries, categories, expenseCategories, incomeCategories] = await Promise.all([
     listEntriesByMonth({ month, categoryId: params.categoria, kind, settled }),
     listActiveCategories(),
+    listActiveCategories('expense'),
+    listActiveCategories('income'),
   ])
 
   const totals = monthTotals(entries)
@@ -136,7 +140,13 @@ export default async function LancamentosPage({
               </h2>
               <ul className="divide-border bg-card divide-y rounded-xl border">
                 {group.items.map((entry) => (
-                  <EntryRow key={entry.id} entry={entry} />
+                  <EntryRow
+                    key={entry.id}
+                    entry={entry}
+                    expenseCategories={expenseCategories}
+                    incomeCategories={incomeCategories}
+                    today={today}
+                  />
                 ))}
               </ul>
             </section>

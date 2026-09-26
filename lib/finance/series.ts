@@ -324,6 +324,90 @@ export function categoryDeviation(
   return rows.sort((a, b) => Math.abs(b.deltaCents) - Math.abs(a.deltaCents))
 }
 
+export interface CommitmentMonth {
+  month: MonthKey
+  incomeCents: number
+  /** Conta fixa: já estava comprometido antes de a pessoa decidir qualquer coisa. */
+  fixedCents: number
+  /** Parcela: comprometido por uma decisão passada, que segue cobrando. */
+  installmentCents: number
+  /** Gasto avulso — o único pedaço sobre o qual a decisão é do mês. */
+  variableCents: number
+  /** Aporte de meta: saiu da conta, mas não foi gasto. */
+  savedCents: number
+  /** O que sobrou. Negativo quer dizer que o mês gastou mais do que entrou. */
+  leftoverCents: number
+}
+
+/** Uma linha de `v_source_breakdown`, como a camada de query a entrega. */
+export interface SourceTotal {
+  month: MonthKey
+  kind: 'expense' | 'income'
+  source: 'manual' | 'recurring' | 'installment' | 'goal'
+  totalCents: number
+}
+
+/**
+ * Quanto de cada mês já estava comprometido antes de a pessoa decidir.
+ *
+ * É a pergunta que mais muda decisão em finança pessoal e que nenhum extrato responde: o total
+ * de saídas do mês não distingue o aluguel, que não dá para não pagar, do delivery, que dá. A
+ * repartição sai de `entries.source`, que o app já preenche desde a fase 4.
+ *
+ * O aporte de meta fica **fora** de "sobra" e fora de "gasto": o dinheiro saiu da conta, então
+ * somá-lo à sobra seria mentira, mas chamá-lo de gasto também — ele continua sendo da pessoa.
+ *
+ * Mês sem lançamento entra zerado em vez de desaparecer, pela mesma razão de
+ * `buildMonthlySeries`: se sumisse, os meses vizinhos leriam como consecutivos.
+ *
+ * Puro: os meses entram por parâmetro.
+ */
+export function buildCommitment(
+  rows: readonly SourceTotal[],
+  months: readonly MonthKey[],
+): CommitmentMonth[] {
+  const byMonth = new Map<MonthKey, CommitmentMonth>()
+  for (const month of months) {
+    byMonth.set(month, {
+      month,
+      incomeCents: 0,
+      fixedCents: 0,
+      installmentCents: 0,
+      variableCents: 0,
+      savedCents: 0,
+      leftoverCents: 0,
+    })
+  }
+
+  for (const row of rows) {
+    const target = byMonth.get(row.month)
+    // Linha fora do intervalo pedido é descartada: quem decide o intervalo é `months`, não o
+    // que o banco devolveu.
+    if (!target) continue
+
+    if (row.kind === 'income') {
+      target.incomeCents += row.totalCents
+      continue
+    }
+
+    if (row.source === 'recurring') target.fixedCents += row.totalCents
+    else if (row.source === 'installment') target.installmentCents += row.totalCents
+    else if (row.source === 'goal') target.savedCents += row.totalCents
+    else target.variableCents += row.totalCents
+  }
+
+  for (const month of byMonth.values()) {
+    month.leftoverCents =
+      month.incomeCents -
+      month.fixedCents -
+      month.installmentCents -
+      month.variableCents -
+      month.savedCents
+  }
+
+  return months.map((month) => byMonth.get(month)!)
+}
+
 /** Chave de mês da data informada — ponte entre `ISODate` e `MonthKey`. */
 export function monthKeyOf(date: ISODate): MonthKey {
   parseISODate(date)

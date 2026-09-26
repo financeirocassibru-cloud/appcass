@@ -1,6 +1,6 @@
 import { listActiveCategories } from '@/lib/db/queries/categories'
 import { todayISO } from '@/lib/finance/date'
-import { NewEntryForm } from './form'
+import { QuickEntry } from './quick-entry'
 
 export const metadata = { title: 'Novo lançamento · Finanças' }
 export const dynamic = 'force-dynamic'
@@ -15,11 +15,7 @@ export default async function NovoPage() {
   return (
     <main className="mx-auto flex max-w-md flex-col gap-6 px-6 py-8">
       <h1 className="text-2xl font-bold tracking-tight">Novo lançamento</h1>
-      <NewEntryForm
-        expenseCategories={expense}
-        incomeCategories={income}
-        today={todayISO()}
-      />
+      <QuickEntry expenseCategories={expense} incomeCategories={income} today={todayISO()} />
     </main>
   )
 }

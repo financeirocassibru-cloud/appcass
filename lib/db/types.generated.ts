@@ -677,6 +677,17 @@ export type Database = {
         };
         Relationships: [];
       };
+      v_source_breakdown: {
+        Row: {
+          entry_count: number | null;
+          kind: Database["public"]["Enums"]["entry_kind"] | null;
+          month: string | null;
+          source: Database["public"]["Enums"]["entry_source"] | null;
+          total_cents: number | null;
+          user_id: string | null;
+        };
+        Relationships: [];
+      };
     };
     Functions: {
       activate_scenario: { Args: { p_scenario_id: string }; Returns: undefined };
