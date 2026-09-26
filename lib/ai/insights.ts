@@ -9,9 +9,23 @@ import { getCategoryBreakdown, getMonthlySeries } from '@/lib/db/queries/summary
 import { DEFAULT_HORIZON_DAYS, splitAgenda } from '@/lib/finance/agenda'
 import { todayISO, type ISODate } from '@/lib/finance/date'
 import { formatCents } from '@/lib/finance/money'
+import { parseLooseJson } from './json'
 
 /**
- * Resumo da situação financeira e dicas. v1.0 — 2026-09-26.
+ * Resumo da situação financeira e dicas. v1.1 — 2026-09-26.
+ *
+ * v1.1: consertado o "O resumo voltou em formato inesperado", que aparecia com a
+ * resposta certa na mão. Duas causas somadas:
+ *
+ *  1. a instrução do sistema não pedia JSON em lugar nenhum — apostava tudo em o
+ *     provedor honrar o `response_format`. Aposta única, e sem plano B;
+ *  2. `parseInsights` fazia `JSON.parse` cru, então o mesmo objeto correto dentro de
+ *     uma cerca ```json — o hábito do modelo — era descartado como ilegível.
+ *
+ * Agora o contrato está escrito no prompt E a leitura tolera envelope, por
+ * `parseLooseJson`. A validação com Zod não afrouxou nada: resumo sem `summary` ou
+ * sem `tips` continua recusado, porque meio resumo num app de dinheiro é pior que
+ * nenhum.
  *
  * **Só sob demanda.** Nada aqui roda ao abrir uma tela: o resumo nasce quando a
  * pessoa toca em "Ver resumo". Foi uma decisão explícita — um resumo gerado a
@@ -56,19 +70,17 @@ export type Insights = z.infer<typeof insightsSchema>
 /**
  * Lê a resposta do modelo.
  *
- * `output_text` vem como string JSON por causa do `response_format`. Se vier
- * torta, devolve `null` e quem chama trata como falha — melhor do que mostrar
- * um resumo pela metade num app de dinheiro.
+ * Tolera o **envelope** e não o conteúdo: cerca de markdown e frase de cortesia em
+ * volta passam, por `parseLooseJson`; objeto que não bate com `insightsSchema` não
+ * passa, e quem chama trata como falha. Mostrar um resumo pela metade num app de
+ * dinheiro é pior do que não mostrar nenhum.
+ *
+ * Não confie só no `response_format` para o JSON chegar limpo: foi exatamente essa
+ * confiança que fez a tela dizer "formato inesperado" tendo a resposta certa na mão.
  */
 export function parseInsights(outputText: string | undefined): Insights | null {
-  if (!outputText) return null
-
-  let raw: unknown
-  try {
-    raw = JSON.parse(outputText)
-  } catch {
-    return null
-  }
+  const raw = parseLooseJson(outputText)
+  if (raw === undefined) return null
 
   const parsed = insightsSchema.safeParse(raw)
   return parsed.success ? parsed.data : null
@@ -175,4 +187,9 @@ O QUE NÃO FAZER:
 - Não recalcule nada: os valores já vêm somados, copie-os como estão.
 - Nada de conselho de investimento, de produto financeiro ou de crédito.
 - Sem moralizar e sem elogio vazio. A pessoa quer saber onde está, não ser parabenizada.
-- Se o retrato tiver pouca informação, diga isso e sugira o que registrar para o próximo resumo valer mais.`
+- Se o retrato tiver pouca informação, diga isso e sugira o que registrar para o próximo resumo valer mais.
+
+FORMATO DA RESPOSTA:
+Responda com UM objeto JSON e nada mais, nesta forma exata:
+{"summary": "o resumo em parágrafos curtos", "tips": ["primeira dica", "segunda dica"]}
+Sem cerca de markdown, sem \`\`\`json, sem texto antes nem depois do objeto.`
