@@ -5,7 +5,13 @@ import { geminiApiKey } from './env'
 import type { ToolDeclaration } from './tools'
 
 /**
- * Cliente da Interactions API do Gemini. v1.0 — 2026-09-26.
+ * Cliente da Interactions API do Gemini. v1.1 — 2026-09-26.
+ *
+ * v1.1: removido o `tool_choice` da raiz do corpo, que fazia a API recusar toda
+ * requisição com 400 `Unknown parameter`. O campo existe, mas dentro de
+ * `generation_config` — e `auto`, que era o valor mandado, já é o padrão. Ver o
+ * comentário em `startInteraction`. Junto, as mensagens de erro passaram a
+ * distinguir o que a pessoa resolve do que ela não resolve.
  *
  * Três decisões que valem explicação:
  *
@@ -115,10 +121,7 @@ async function request(
     // O corpo do erro costuma trazer a razão; se não der para ler, o status já
     // diz o suficiente para decidir entre cair para o próximo e desistir.
     const detalhe = await response.text().catch(() => '')
-    throw new GeminiError(
-      `Gemini respondeu ${response.status}${detalhe ? `: ${detalhe.slice(0, 300)}` : ''}`,
-      response.status,
-    )
+    throw new GeminiError(mensagemDeErro(response.status, detalhe), response.status)
   }
 
   const body: unknown = await response.json().catch(() => null)
@@ -150,10 +153,21 @@ export async function startInteraction(
   if (input.systemInstruction) body.system_instruction = input.systemInstruction
   if (input.tools && input.tools.length > 0) {
     body.tools = input.tools
-    // O modelo pode responder em texto ("não entendi") em vez de chamar uma
-    // ferramenta, e isso é uma resposta legítima: forçar a chamada produziria
-    // um lançamento inventado a partir de uma frase ambígua.
-    body.tool_choice = 'auto'
+    // **Nada de `tool_choice` aqui.** A primeira versão mandava
+    // `tool_choice: 'auto'` no topo do corpo, e a API recusou a requisição
+    // inteira com 400 `Unknown parameter 'tool_choice'` — o campo existe, mas
+    // dentro de `generation_config`, não na raiz.
+    //
+    // A correção não é mudá-lo de lugar: é não mandá-lo. `auto` já é o padrão
+    // quando o campo é omitido, e `auto` é exatamente o que este app quer — o
+    // modelo pode responder em texto ("não entendi qual lançamento") em vez de
+    // chamar uma ferramenta, e isso é resposta legítima. Forçar a chamada com
+    // `any` produziria um lançamento inventado a partir de uma frase ambígua.
+    //
+    // Ou seja: o campo que quebrou a IA em produção pedia de forma explícita,
+    // e arriscada, o comportamento que já vinha de graça. Cada parâmetro
+    // mandado é uma chance de o provedor recusar o corpo todo; o que não muda
+    // nada em relação ao padrão não vai.
   }
   if (input.responseSchema) {
     body.response_format = {
@@ -198,6 +212,40 @@ export async function cancelInteraction(
   } catch {
     // Silencioso de propósito: já estamos no caminho de recuperação.
   }
+}
+
+/**
+ * A mensagem que a pessoa vai ler quando o provedor recusa.
+ *
+ * Distingue o que ela pode resolver do que não pode, porque a diferença muda o
+ * que ela faz em seguida. Um 400 é contrato: o corpo que mandamos não é o que a
+ * API espera, tentar de novo não muda nada, e não é culpa de quem escreveu a
+ * frase. Foi o caso real de `tool_choice` — a tela mostrava JSON cru em inglês
+ * num app em português, e parecia que a pessoa tinha digitado algo errado.
+ *
+ * O detalhe técnico continua na mensagem, no fim: é o que permite diagnosticar,
+ * e esconder isso trocaria um erro feio por um erro mudo.
+ */
+function mensagemDeErro(status: number, detalhe: string): string {
+  const tecnico = detalhe ? ` (${detalhe.slice(0, 300)})` : ''
+
+  if (status === 400) {
+    return `O pedido enviado à IA não bate com o que a API espera — isso é um problema do app, não do que você escreveu, e tentar de novo não resolve.${tecnico}`
+  }
+  if (status === 401 || status === 403) {
+    return `A chave da API do Gemini foi recusada. Confira GEMINI_API_KEY nas variáveis de ambiente.${tecnico}`
+  }
+  if (status === 429) {
+    return `A cota da API do Gemini estourou. Tente de novo em alguns minutos.${tecnico}`
+  }
+  if (status === 404) {
+    return `O modelo pedido não existe. Confira GEMINI_MODELS, ou o modelo escolhido em Ajustes › IA.${tecnico}`
+  }
+  if (status >= 500) {
+    return `O Gemini está indisponível agora. Tente de novo em alguns instantes.${tecnico}`
+  }
+
+  return `A IA respondeu com um erro (${status}).${tecnico}`
 }
 
 /** Status terminais, como a API os nomeia. */

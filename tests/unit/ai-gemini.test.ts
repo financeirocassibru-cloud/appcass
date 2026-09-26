@@ -63,7 +63,7 @@ describe('startInteraction', () => {
     expect(headers['Api-Revision']).toBe('2026-05-20')
   })
 
-  it('leva as ferramentas e deixa o modelo escolher se usa', async () => {
+  it('leva as ferramentas', async () => {
     const doFetch = vi.fn(async () => resposta({ id: 'int-1' }))
 
     await startInteraction({ model: 'm', input: 'oi', tools: TOOLS }, doFetch)
@@ -72,8 +72,47 @@ describe('startInteraction', () => {
     const body = JSON.parse(String(init.body)) as Record<string, unknown>
 
     expect((body.tools as unknown[]).length).toBe(TOOLS.length)
-    // Forçar a chamada inventaria um lançamento a partir de uma frase ambígua.
-    expect(body.tool_choice).toBe('auto')
+  })
+
+  it('NUNCA manda tool_choice — foi ele que derrubou a IA em produção', async () => {
+    // 400 `Unknown parameter 'tool_choice'`: o campo mora em
+    // `generation_config`, não na raiz. E `auto`, que era o valor mandado, já é
+    // o padrão — então a correção é omitir, não realocar. Este teste existe
+    // para ninguém "consertar" isto reintroduzindo o campo.
+    const doFetch = vi.fn(async () => resposta({ id: 'int-1' }))
+
+    await startInteraction({ model: 'm', input: 'oi', tools: TOOLS }, doFetch)
+
+    const [, init] = doFetch.mock.calls[0] as unknown as [string, RequestInit]
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>
+
+    expect(body.tool_choice).toBeUndefined()
+    expect(body.generation_config).toBeUndefined()
+  })
+
+  it('só manda parâmetros que a API documenta', async () => {
+    // O provedor recusa o corpo INTEIRO no primeiro parâmetro desconhecido, e
+    // erra um por vez: um campo a mais esconde os outros e vira uma sequência de
+    // deploys para descobrir. Esta lista é o contrato.
+    const doFetch = vi.fn(async () => resposta({ id: 'int-1' }))
+
+    await startInteraction(
+      {
+        model: 'm',
+        input: 'oi',
+        systemInstruction: 'regras',
+        tools: TOOLS,
+        responseSchema: { type: 'object' },
+      },
+      doFetch,
+    )
+
+    const [, init] = doFetch.mock.calls[0] as unknown as [string, RequestInit]
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>
+
+    expect(Object.keys(body).sort()).toEqual(
+      ['background', 'input', 'model', 'response_format', 'system_instruction', 'tools'].sort(),
+    )
   })
 
   it('omite ferramentas quando não há nenhuma', async () => {
@@ -85,7 +124,6 @@ describe('startInteraction', () => {
     const body = JSON.parse(String(init.body)) as Record<string, unknown>
 
     expect(body.tools).toBeUndefined()
-    expect(body.tool_choice).toBeUndefined()
   })
 
   it('pede JSON quando há esquema de resposta', async () => {
@@ -99,6 +137,35 @@ describe('startInteraction', () => {
 
     expect(body.response_format?.mime_type).toBe('application/json')
     expect(body.response_format?.schema).toEqual(schema)
+  })
+
+  it('explica um 400 como problema do app, não de quem escreveu a frase', async () => {
+    // Foi o caso real do `tool_choice`: a tela mostrava JSON cru em inglês num
+    // app em português, e parecia erro de digitação da pessoa.
+    const doFetch = vi.fn(async () =>
+      resposta({ error: { message: "Unknown parameter 'x'." } }, 400),
+    )
+
+    const erro = await startInteraction({ model: 'm', input: 'oi' }, doFetch).catch((e) => e)
+
+    expect((erro as Error).message).toContain('problema do app')
+    expect((erro as Error).message).toContain('tentar de novo não resolve')
+    // O detalhe técnico fica: esconder trocaria um erro feio por um erro mudo.
+    expect((erro as Error).message).toContain('Unknown parameter')
+  })
+
+  it('aponta a chave quando ela é recusada, e a cota quando ela estoura', async () => {
+    for (const [status, esperado] of [
+      [401, 'GEMINI_API_KEY'],
+      [403, 'GEMINI_API_KEY'],
+      [429, 'cota'],
+      [404, 'GEMINI_MODELS'],
+      [503, 'indisponível'],
+    ] as [number, string][]) {
+      const doFetch = vi.fn(async () => resposta({ error: 'x' }, status))
+      const erro = await startInteraction({ model: 'm', input: 'oi' }, doFetch).catch((e) => e)
+      expect((erro as Error).message, `status ${status}`).toContain(esperado)
+    }
   })
 
   it('preserva o status HTTP no erro — é ele que decide a queda para o próximo', async () => {
