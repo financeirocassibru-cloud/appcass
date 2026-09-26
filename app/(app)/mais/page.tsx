@@ -9,6 +9,7 @@ const ITENS = [
   { href: '/ajustes/categorias', label: 'Categorias', nota: null },
   { href: '/compromissos', label: 'Contas fixas', nota: null },
   { href: '/parcelas', label: 'Parcelas', nota: null },
+  { href: '/cenarios', label: 'Cenários', nota: null },
   { href: '/metas', label: 'Metas', nota: 'fase 6' },
 ] as const
 

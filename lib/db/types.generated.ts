@@ -586,6 +586,7 @@ export type Database = {
       };
     };
     Functions: {
+      activate_scenario: { Args: { p_scenario_id: string }; Returns: undefined };
       create_installment_plan: {
         Args: {
           p_category_id?: string;
@@ -601,6 +602,18 @@ export type Database = {
       is_admin: { Args: Record<PropertyKey, never>; Returns: boolean };
       materialize_recurring_occurrence: {
         Args: { p_occurs_on: string; p_rule_id: string; p_settled?: boolean };
+        Returns: string;
+      };
+      set_scenario_override: {
+        Args: {
+          p_amount_cents?: number;
+          p_date_override?: string;
+          p_is_included?: boolean;
+          p_occurrence_key?: string;
+          p_scenario_id: string;
+          p_target_id: string;
+          p_target_type: Database["public"]["Enums"]["override_target"];
+        };
         Returns: string;
       };
     };

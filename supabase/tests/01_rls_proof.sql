@@ -634,4 +634,210 @@ end $$;
 
 reset role;
 
+-- === Cenários (migration 0011) ===
+--
+-- O critério de pronto da fase 5 no ROADMAP: alterar um override muda a
+-- projeção sem escrever em nenhuma tabela de dado real. É o que separa este
+-- app do antigo, onde `syncPlanToGlobal` sobrescrevia o lançamento verdadeiro
+-- quando se editava um valor dentro do planejamento.
+
+reset role;
+insert into public.scenarios (id, user_id, name, starts_on, ends_on)
+values
+  ('dddddddd-0000-0000-0000-000000000001',
+   '11111111-1111-1111-1111-111111111111', 'E se eu trocar de carro', '2026-03-01', '2026-12-31'),
+  ('eeeeeeee-0000-0000-0000-000000000002',
+   '11111111-1111-1111-1111-111111111111', 'Ano apertado', '2026-03-01', '2026-12-31'),
+  ('ffffffff-0000-0000-0000-000000000003',
+   '22222222-2222-2222-2222-222222222222', 'Cenário do Bruno', '2026-03-01', '2026-12-31');
+
+set role authenticated;
+set request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
+
+-- Gravar o mesmo override duas vezes atualiza, não duplica.
+do $$
+declare id1 uuid; id2 uuid; n int; valor bigint;
+begin
+  id1 := public.set_scenario_override(
+    p_scenario_id => 'dddddddd-0000-0000-0000-000000000001',
+    p_target_type => 'recurring_rule',
+    p_target_id   => 'aaaaaaaa-0000-0000-0000-000000000001',
+    p_occurrence_key => '2026-06',
+    p_amount_cents   => 250000
+  );
+
+  id2 := public.set_scenario_override(
+    p_scenario_id => 'dddddddd-0000-0000-0000-000000000001',
+    p_target_type => 'recurring_rule',
+    p_target_id   => 'aaaaaaaa-0000-0000-0000-000000000001',
+    p_occurrence_key => '2026-06',
+    p_amount_cents   => 300000
+  );
+
+  if id1 <> id2 then raise exception 'o segundo override deveria atualizar o primeiro'; end if;
+
+  select count(*), max(amount_cents_override) into n, valor
+    from public.scenario_overrides
+   where scenario_id = 'dddddddd-0000-0000-0000-000000000001';
+
+  if n <> 1 then raise exception 'deveria existir 1 override, existem %', n; end if;
+  if valor <> 300000 then raise exception 'o valor deveria ser 300000, é %', valor; end if;
+end $$;
+
+-- NULL em occurrence_key vale para todas as ocorrências, e é um override só.
+-- Sem o `coalesce` no índice, NULL não colidiria com NULL e daria para criar
+-- vários "vale para todas" disputando entre si.
+do $$
+declare id1 uuid; id2 uuid; n int;
+begin
+  id1 := public.set_scenario_override(
+    p_scenario_id => 'dddddddd-0000-0000-0000-000000000001',
+    p_target_type => 'recurring_rule',
+    p_target_id   => 'aaaaaaaa-0000-0000-0000-000000000001',
+    p_is_included => false
+  );
+  id2 := public.set_scenario_override(
+    p_scenario_id => 'dddddddd-0000-0000-0000-000000000001',
+    p_target_type => 'recurring_rule',
+    p_target_id   => 'aaaaaaaa-0000-0000-0000-000000000001',
+    p_is_included => false
+  );
+
+  if id1 <> id2 then raise exception 'o override sem chave deveria ser único por alvo'; end if;
+
+  select count(*) into n from public.scenario_overrides
+   where scenario_id = 'dddddddd-0000-0000-0000-000000000001'
+     and occurrence_key is null;
+  if n <> 1 then raise exception 'deveria existir 1 override sem chave, existem %', n; end if;
+end $$;
+
+-- O CRITÉRIO DA FASE 5: nada de dado real foi tocado.
+do $$
+declare
+  entries_antes int; regras_antes int; planos_antes int;
+  entries_depois int; regras_depois int; planos_depois int;
+  soma_antes bigint; soma_depois bigint;
+begin
+  select count(*), coalesce(sum(amount_cents), 0) into entries_antes, soma_antes
+    from public.entries;
+  select count(*) into regras_antes from public.recurring_rules;
+  select count(*) into planos_antes from public.installment_plans;
+
+  perform public.set_scenario_override(
+    p_scenario_id => 'dddddddd-0000-0000-0000-000000000001',
+    p_target_type => 'entry',
+    p_target_id   => 'aaaaaaaa-0000-0000-0000-000000000001',
+    p_occurrence_key => '2026-07',
+    p_amount_cents   => 999999,
+    p_date_override  => '2026-07-28'
+  );
+
+  select count(*), coalesce(sum(amount_cents), 0) into entries_depois, soma_depois
+    from public.entries;
+  select count(*) into regras_depois from public.recurring_rules;
+  select count(*) into planos_depois from public.installment_plans;
+
+  if entries_antes <> entries_depois or soma_antes <> soma_depois then
+    raise exception 'VAZAMENTO: o override mexeu em entries (% -> %, soma % -> %)',
+      entries_antes, entries_depois, soma_antes, soma_depois;
+  end if;
+  if regras_antes <> regras_depois then
+    raise exception 'VAZAMENTO: o override mexeu em recurring_rules';
+  end if;
+  if planos_antes <> planos_depois then
+    raise exception 'VAZAMENTO: o override mexeu em installment_plans';
+  end if;
+end $$;
+
+-- Ana não grava override no cenário do Bruno.
+do $$
+declare id1 uuid;
+begin
+  id1 := public.set_scenario_override(
+    p_scenario_id => 'ffffffff-0000-0000-0000-000000000003',
+    p_target_type => 'entry',
+    p_target_id   => 'aaaaaaaa-0000-0000-0000-000000000001'
+  );
+  raise exception 'VAZAMENTO: Ana gravou override no cenário do Bruno';
+exception
+  when no_data_found then null;  -- esperado
+end $$;
+
+-- Ativar um cenário desativa o anterior, sem violar o índice no meio.
+do $$
+declare n int; ativo uuid;
+begin
+  perform public.activate_scenario('dddddddd-0000-0000-0000-000000000001');
+  perform public.activate_scenario('eeeeeeee-0000-0000-0000-000000000002');
+
+  select count(*) into n from public.scenarios
+   where user_id = '11111111-1111-1111-1111-111111111111' and is_active;
+  if n <> 1 then raise exception 'deveria haver exatamente 1 cenário ativo, há %', n; end if;
+
+  select id into ativo from public.scenarios
+   where user_id = '11111111-1111-1111-1111-111111111111' and is_active;
+  if ativo <> 'eeeeeeee-0000-0000-0000-000000000002' then
+    raise exception 'o cenário ativo deveria ser o último ativado, é %', ativo;
+  end if;
+end $$;
+
+-- Ativar de novo o mesmo cenário é idempotente.
+do $$
+declare n int;
+begin
+  perform public.activate_scenario('eeeeeeee-0000-0000-0000-000000000002');
+  select count(*) into n from public.scenarios
+   where user_id = '11111111-1111-1111-1111-111111111111' and is_active;
+  if n <> 1 then raise exception 'reativar deveria continuar com 1 ativo, há %', n; end if;
+end $$;
+
+-- Ativar o cenário do Bruno a partir da Ana não acha a linha.
+do $$
+begin
+  perform public.activate_scenario('ffffffff-0000-0000-0000-000000000003');
+  raise exception 'VAZAMENTO: Ana ativou o cenário do Bruno';
+exception
+  when no_data_found then null;  -- esperado
+end $$;
+
+-- Excluir o cenário leva os overrides junto (cascade), sem tocar em entries.
+do $$
+declare overrides_restantes int; entries_depois int;
+begin
+  delete from public.scenarios where id = 'dddddddd-0000-0000-0000-000000000001';
+
+  select count(*) into overrides_restantes from public.scenario_overrides
+   where scenario_id = 'dddddddd-0000-0000-0000-000000000001';
+  if overrides_restantes <> 0 then
+    raise exception 'os overrides deveriam sair junto com o cenário, sobraram %', overrides_restantes;
+  end if;
+
+  select count(*) into entries_depois from public.entries;
+  if entries_depois = 0 then raise exception 'excluir o cenário não deveria esvaziar entries'; end if;
+end $$;
+
+-- anon não executa nenhuma das duas.
+set role anon;
+do $$
+declare id1 uuid;
+begin
+  id1 := public.set_scenario_override(
+    p_scenario_id => 'eeeeeeee-0000-0000-0000-000000000002',
+    p_target_type => 'entry',
+    p_target_id   => 'aaaaaaaa-0000-0000-0000-000000000001');
+  raise exception 'ESCALADA: anon executou set_scenario_override';
+exception
+  when insufficient_privilege then null;  -- esperado
+end $$;
+
+do $$
+begin
+  perform public.activate_scenario('eeeeeeee-0000-0000-0000-000000000002');
+  raise exception 'ESCALADA: anon executou activate_scenario';
+exception
+  when insufficient_privilege then null;  -- esperado
+end $$;
+
+reset role;
+
 select 'TODAS AS ASSERÇÕES DE RLS E CONSTRAINTS PASSARAM' as resultado;
