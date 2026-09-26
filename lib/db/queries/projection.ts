@@ -1,5 +1,6 @@
 import { getCurrentBalance } from '@/lib/db/queries/balance'
 import { listActiveRecurringRules } from '@/lib/db/queries/recurring'
+import { listGoalsForProjection } from '@/lib/db/queries/goals'
 import { getScenario } from '@/lib/db/queries/scenarios'
 import { addDays, todayISO, type ISODate } from '@/lib/finance/date'
 import { entriesAheadOf, projectRange, rollOverdueTo } from '@/lib/finance/projection'
@@ -19,8 +20,9 @@ import { createClient } from '@/lib/supabase/server'
  * `computeBalance()` — sem ela, o gasto liquidado hoje seria descontado duas
  * vezes, e o saldo projetado sairia menor que a realidade.
  *
- * Metas ainda não existem (fase 6), então entram como lista vazia. O motor já
- * as aceita.
+ * As metas entram como aporte mensal projetado: `expandGoal()` deriva o valor
+ * do que falta e do prazo, e o lança no último dia de cada mês. Uma meta
+ * arquivada ou já cumprida não gera aporte — quem decide isso é o motor.
  */
 
 export interface Projection {
@@ -49,10 +51,11 @@ export async function getProjection(
 ): Promise<Projection> {
   const to = addDays(today, horizonDays)
 
-  const [balance, rules, entries, scenario] = await Promise.all([
+  const [balance, rules, entries, goals, scenario] = await Promise.all([
     getCurrentBalance(today),
     listActiveRecurringRules(),
     listEntriesForProjection(today, to),
+    listGoalsForProjection(),
     scenarioId ? getScenario(scenarioId) : Promise.resolve(null),
   ])
 
@@ -82,7 +85,7 @@ export async function getProjection(
     data: {
       entries: rollOverdueTo(ahead, today),
       recurringRules: rules,
-      goals: [],
+      goals,
     },
     scenario: scenario ?? undefined,
   })
