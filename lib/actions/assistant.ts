@@ -122,7 +122,9 @@ export async function requestInsights(
   }
 
   after(async () => {
-    await trackJob(jobId, 60_000)
+    // Abaixo do `maxDuration` de 60s: pedir o limite inteiro faria a plataforma
+    // cortar o acompanhamento em vez de ele terminar por conta própria.
+    await trackJob(jobId, 50_000)
   })
 
   return { success: 'Estou montando seu resumo.', jobId }

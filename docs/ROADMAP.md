@@ -133,7 +133,11 @@ Duas notas para quem mexer nisto depois:
 - **`/api/ai/sweep` precisa estar em `PUBLIC_PREFIXES`** (`lib/supabase/proxy.ts`). `/api/**` está
   dentro do matcher de `proxy.ts`, a requisição do cron não traz cookie, e sem a exceção o guarda
   a redireciona para `/login` antes de o handler existir — com aparência de "o cron não faz nada".
-- **Cron por minuto exige plano Vercel Pro.** No Hobby a granularidade é diária, e o caso comum
-  fica por conta do `after()` e do poll do cliente. `vercel.json` também passou a chamar
-  `npm run build`, e não `next build`: como estava, o deploy não compilava o service worker — o
-  que quebraria justamente o push desta fase.
+- **A varredura roda uma vez por dia, e isso não é preguiça.** O plano Hobby da Vercel recusa o
+  deploy inteiro com "Hobby accounts are limited to daily cron jobs" — a primeira versão pediu
+  `* * * * *` e nada subiu. Quem fecha o trabalho de quem escreveu e fechou o app é o `after()`,
+  com orçamento dimensionado em `trackJob` para cobrir o prazo de interpretar mais uma queda de
+  modelo; a varredura é a rede de segurança para o que escapou. Virando Pro, baixar a
+  periodicidade em `vercel.json` é a única mudança necessária.
+- **`vercel.json` passou a chamar `npm run build`**, e não `next build`: como estava, o deploy não
+  compilava o service worker — o que quebraria justamente o push desta fase.

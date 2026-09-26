@@ -233,7 +233,13 @@ Três caminhos fecham um trabalho, e os três chamam o mesmo `advanceJob`:
 
 1. o poll do cliente, enquanto a folha está aberta;
 2. o `after()` do Next, que roda **depois** de a resposta sair e sobrevive ao navegador fechar;
-3. a varredura do cron, em `/api/ai/sweep`.
+3. a varredura do cron, em `/api/ai/sweep`, uma vez por dia.
+
+O peso entre os três não é igual. A varredura é diária porque o plano Hobby da Vercel recusa o
+deploy com qualquer coisa mais frequente, então quem fecha o trabalho de quem escreveu e fechou o
+app é o `after()` — e é por isso que o orçamento de `trackJob` é dimensionado para cobrir o prazo
+de interpretar mais uma queda de modelo, em vez de um valor redondo qualquer. A varredura é a rede
+de segurança para o que escapou.
 
 O pedido inteiro — prompt, instrução e os rótulos dos ids — fica gravado em `ai_jobs.input`. Sem
 isso a varredura não conseguiria trocar de modelo: ela roda sem sessão, e remontar o contexto

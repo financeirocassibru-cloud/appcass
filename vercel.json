@@ -6,7 +6,7 @@
   "crons": [
     {
       "path": "/api/ai/sweep",
-      "schedule": "* * * * *"
+      "schedule": "17 4 * * *"
     }
   ]
 }

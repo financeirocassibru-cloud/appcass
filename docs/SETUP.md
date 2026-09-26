@@ -94,10 +94,17 @@ Trocar o par depois invalida todas as inscrições existentes: cada pessoa preci
 "Ativar avisos" de novo no aparelho dela. As linhas velhas em `push_subscriptions` são podadas
 sozinhas no primeiro envio que falhar com 404 ou 410.
 
-O cron de `/api/ai/sweep` está declarado em `vercel.json` com periodicidade de um minuto, que
-**exige plano Pro**. No Hobby a Vercel reduz para uma vez por dia; nesse caso o assistente
-continua funcionando — quem fecha os trabalhos é o `after()` do Next e o poll do cliente —, mas o
-aviso de conclusão com o app fechado por muito tempo pode demorar.
+O cron de `/api/ai/sweep` está declarado em `vercel.json` **uma vez por dia**, porque é o que o
+plano Hobby aceita: pedir mais que isso não degrada nada, faz o deploy inteiro falhar com "Hobby
+accounts are limited to daily cron jobs".
+
+Isso não deixa o assistente capenga. Quem fecha o trabalho de quem escreveu e fechou o app é o
+`after()` do Next, que roda depois da resposta, sobrevive ao navegador fechar e tem orçamento para
+cobrir o prazo de interpretar mais uma queda de modelo. A varredura é a rede de segurança para o
+que escapou — a função que morreu no meio, o trabalho pendurado além do prazo.
+
+Se o projeto virar Pro, baixe a periodicidade em `vercel.json` (por exemplo `*/2 * * * *`). O
+código não muda.
 
 Sem `GEMINI_API_KEY` o app sobe normalmente e o assistente simplesmente não aparece, com um aviso
 em `/ajustes/ia`. Sem as chaves VAPID, tudo funciona menos a notificação.

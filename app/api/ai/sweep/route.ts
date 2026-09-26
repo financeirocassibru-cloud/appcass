@@ -10,8 +10,18 @@ import { createSweeperClient } from '@/lib/supabase/sweeper'
  * É a terceira e última camada que faz o trabalho continuar com o app fechado.
  * As duas primeiras cobrem o caso comum: o poll do cliente, enquanto a folha
  * está aberta, e o `after()` do Next, que roda depois da resposta e sobrevive ao
- * navegador fechar. Esta cobre o resto — o app fechado por minutos, a função que
- * morreu no meio — e é quem dispara o aviso quando ninguém está olhando.
+ * navegador fechar.
+ *
+ * **Esta roda UMA VEZ POR DIA**, e não de minuto em minuto como a primeira
+ * versão tentou: o plano Hobby da Vercel recusa o deploy inteiro com "Hobby
+ * accounts are limited to daily cron jobs" e nada sobe. Então ela não é o
+ * fechador do dia a dia — é a rede de segurança para o que escapou: a função que
+ * morreu no meio, o trabalho que ficou pendurado além do prazo. Quem fecha o
+ * trabalho de quem escreveu e fechou o app é o `after()`, com orçamento
+ * dimensionado para isso em `trackJob`.
+ *
+ * Se o projeto virar Pro, baixar a periodicidade em `vercel.json` é a única
+ * mudança necessária — o código aqui não muda.
  *
  * SOBRE O INVARIANTE 14 ("antes de usar o cliente admin, verifique `is_admin()`
  * com o cliente normal"): aqui ele não tem como ser cumprido ao pé da letra, e

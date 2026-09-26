@@ -465,11 +465,16 @@ export async function listRecentJobs(limit = 20): Promise<JobView[]> {
  * Acompanha um trabalho até terminar, ou até o tempo acabar.
  *
  * Usado dentro de `after()`: roda depois de a resposta já ter saído, no mesmo
- * request, e por isso continua mesmo que a pessoa feche o app. O limite existe
- * porque a função na Vercel tem duração máxima — quando ele estoura, a varredura
- * do cron assume.
+ * request, e por isso continua mesmo que a pessoa feche o app.
+ *
+ * **Este é o fechador principal, não um atalho.** A varredura do cron roda uma
+ * vez por dia (é o que o plano Hobby da Vercel aceita), então quem termina o
+ * trabalho de quem fechou o app é isto aqui. O orçamento padrão cobre o prazo de
+ * interpretar (20s) MAIS uma queda para o próximo modelo, com folga para o
+ * `maxDuration` de 60s dos segmentos que chamam — estourá-lo faria a plataforma
+ * cortar no meio e o trabalho esperar até a varredura do dia seguinte.
  */
-export async function trackJob(jobId: string, budgetMs = 30_000): Promise<void> {
+export async function trackJob(jobId: string, budgetMs = 45_000): Promise<void> {
   const supabase = await createClient()
   const until = Date.now() + budgetMs
 
