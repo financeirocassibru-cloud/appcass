@@ -17,8 +17,14 @@ Cada uma existe porque o app antigo errou exatamente ali. O catálogo dos bugs e
    dia em fuso negativo. Também é proibido `.toISOString().split('T')[0]` para extrair a data
    de um `Date` local. "Hoje" vem de `todayISO()`, fixado em `America/Sao_Paulo`.
 3. **Autorização é do banco, não do código.** Toda tabela tem RLS habilitada e `user_id`.
-   Nunca filtre por usuário só na query da aplicação. Policies usam `(select auth.uid())`,
-   não `auth.uid()` solto.
+   Nunca filtre por usuário **só** na query da aplicação — a RLS é quem autoriza. Policies
+   usam `(select auth.uid())`, não `auth.uid()` solto.
+   **Mas "não só na aplicação" não quer dizer "sem filtro nenhum":** todo `update` e `delete`
+   do supabase-js precisa de `.eq(...)`. O PostgREST recusa escrita sem cláusula `WHERE`
+   ("UPDATE requires a WHERE clause") **antes** de a RLS entrar em cena, e um `update` sem
+   filtro simplesmente falha. A RLS autoriza a linha; o filtro faz o pedido ser aceito.
+   Ler este invariante ao contrário já quebrou a tela de ajustar saldo em produção —
+   `tests/unit/write-filters.test.ts` existe para isso não voltar.
 4. **`SUPABASE_SERVICE_ROLE_KEY` só em `lib/supabase/admin.ts`**, com `import 'server-only'`
    no topo. Nunca em Client Component, nunca com prefixo `NEXT_PUBLIC_`.
 5. **Mutação passa por Server Action.** Valide com Zod, execute, chame `revalidatePath`.
