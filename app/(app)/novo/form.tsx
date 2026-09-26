@@ -40,7 +40,7 @@ export function NewEntryForm({
       const result = await createEntry(prev, formData)
       if (result.success) {
         toast.success(result.success)
-        router.push('/lancamentos')
+        router.push('/historico')
       }
       return result
     },

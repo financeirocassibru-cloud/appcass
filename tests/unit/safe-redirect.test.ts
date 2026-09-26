@@ -3,9 +3,9 @@ import { safeRedirectPath } from '@/lib/safe-redirect'
 
 describe('safeRedirectPath', () => {
   it('aceita caminho relativo', () => {
-    expect(safeRedirectPath('/lancamentos')).toBe('/lancamentos')
+    expect(safeRedirectPath('/historico')).toBe('/historico')
     expect(safeRedirectPath('/ajustes/convites')).toBe('/ajustes/convites')
-    expect(safeRedirectPath('/projecao?mes=2026-01')).toBe('/projecao?mes=2026-01')
+    expect(safeRedirectPath('/analise?mes=2026-01')).toBe('/analise?mes=2026-01')
   })
 
   it('bloqueia redirecionamento aberto por barra dupla', () => {

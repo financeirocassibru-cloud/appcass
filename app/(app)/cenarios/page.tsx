@@ -39,7 +39,7 @@ export default async function CenariosPage() {
 
       <p className="text-xs text-[var(--foreground-muted)]">
         Os ajustes — excluir uma conta, mudar valor, mudar data — você faz na{' '}
-        <Link href="/projecao" className="text-[var(--brand)] underline">
+        <Link href="/analise" className="text-[var(--brand)] underline">
           projeção
         </Link>
         , com o cenário selecionado.

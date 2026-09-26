@@ -16,8 +16,8 @@ import { cn } from '@/lib/utils'
 
 const TABS = [
   { href: '/', label: 'Início', Icon: House },
-  { href: '/lancamentos', label: 'Extrato', Icon: ReceiptText },
-  { href: '/projecao', label: 'Projeção', Icon: TrendingUp },
+  { href: '/historico', label: 'Histórico', Icon: ReceiptText },
+  { href: '/analise', label: 'Análise', Icon: TrendingUp },
   { href: '/mais', label: 'Mais', Icon: Ellipsis },
 ] as const
 

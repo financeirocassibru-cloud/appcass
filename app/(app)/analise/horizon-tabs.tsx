@@ -27,7 +27,7 @@ export function HorizonTabs({
           return (
             <li key={option} className="flex-1">
               <Link
-                href={{ pathname: '/projecao', query: { dias: String(option) } }}
+                href={{ pathname: '/analise', query: { dias: String(option) } }}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
                   'block min-h-11 rounded-md py-2.5 text-center text-sm font-semibold transition-colors',

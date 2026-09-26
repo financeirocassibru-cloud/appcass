@@ -123,7 +123,7 @@ export function ScenarioRow({ scenario }: { scenario: ScenarioSummary }) {
 
       <div className="flex items-center gap-2">
         <Link
-          href={{ pathname: '/projecao', query: { cenario: scenario.id } }}
+          href={{ pathname: '/analise', query: { cenario: scenario.id } }}
           className="bg-primary text-primary-foreground flex min-h-11 flex-1 items-center justify-center rounded-lg text-sm font-semibold"
         >
           Abrir na projeção

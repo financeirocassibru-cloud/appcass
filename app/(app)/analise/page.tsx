@@ -145,7 +145,7 @@ export default async function ProjecaoPage({
         <p className="text-xs text-[var(--foreground-muted)]">
           Inclui <span className="tabular">{formatCents(Math.abs(projection.overdueCents))}</span>{' '}
           de contas já vencidas, contadas no primeiro dia —{' '}
-          <Link href="/lancamentos?status=pendente" className="text-[var(--brand)] underline">
+          <Link href="/historico?status=pendente" className="text-[var(--brand)] underline">
             ver quais
           </Link>
           .

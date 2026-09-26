@@ -35,7 +35,7 @@ export interface ScenarioActionState {
 }
 
 function revalidateScenarioViews(): void {
-  revalidatePath('/projecao')
+  revalidatePath('/analise')
   revalidatePath('/cenarios')
 }
 

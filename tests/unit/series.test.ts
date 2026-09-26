@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildMonthlySeries,
+  categoryDeviation,
   formatMonthLabel,
   formatMonthLong,
   lastMonthKeys,
   monthKeyOf,
   niceTicks,
   niceTicksRange,
+  tickOffsets,
   topCategories,
   type MonthlyTotals,
 } from '@/lib/finance/series'
@@ -241,5 +243,114 @@ describe('niceTicksRange', () => {
 
   it('recusa contagem inválida', () => {
     expect(() => niceTicksRange(0, 100, 0)).toThrow()
+  })
+})
+
+/**
+ * v1.1 — 2026-09-26: o eixo Y da Análise é desenhado em DOM para poder ficar fixo enquanto o
+ * gráfico rola, então a posição de cada marca passou a ser uma conta deste módulo.
+ */
+describe('tickOffsets', () => {
+  it('a marca do zero cai na posição do zero do domínio', () => {
+    // Domínio de −100 a 300 em 200px de área útil: o zero fica a um quarto do topo.
+    const offsets = tickOffsets([-100, 0, 100, 200, 300], 220, 10, 10)
+    const zero = offsets.find((offset) => offset.value === 0)
+    expect(zero?.topPx).toBe(10 + 0.75 * 200)
+  })
+
+  it('a primeira marca fica no rodapé e a última no topo da área de plotagem', () => {
+    const offsets = tickOffsets([0, 500, 1_000], 220, 8, 12)
+    expect(offsets.at(0)?.topPx).toBe(8 + 200)
+    expect(offsets.at(-1)?.topPx).toBe(8)
+  })
+
+  it('domínio degenerado não divide por zero', () => {
+    const offsets = tickOffsets([0], 220, 10, 10)
+    expect(offsets).toEqual([{ value: 0, topPx: 110 }])
+    expect(tickOffsets([], 220, 10, 10)).toEqual([])
+  })
+})
+
+describe('categoryDeviation', () => {
+  const fatia = (name: string, totalCents: number, categoryId = name.toLowerCase()) => ({
+    categoryId,
+    name,
+    color: '#7c3aed',
+    totalCents,
+  })
+
+  it('normaliza os dois lados para média mensal antes de comparar', () => {
+    // Três meses de período contra doze de base: sem normalizar, tudo acusaria queda.
+    const rows = categoryDeviation(
+      [fatia('Mercado', 300_000)],
+      [fatia('Mercado', 1_200_000)],
+      { currentMonths: 3, baselineMonths: 12 },
+    )
+
+    expect(rows[0]?.currentCents).toBe(100_000)
+    expect(rows[0]?.baselineCents).toBe(100_000)
+    expect(rows[0]?.deltaCents).toBe(0)
+    expect(rows[0]?.deltaRatio).toBe(0)
+  })
+
+  it('calcula a variação relativa contra a média', () => {
+    const rows = categoryDeviation(
+      [fatia('Mercado', 138_000)],
+      [fatia('Mercado', 100_000)],
+      { currentMonths: 1, baselineMonths: 1 },
+    )
+
+    expect(rows[0]?.deltaCents).toBe(38_000)
+    expect(rows[0]?.deltaRatio).toBeCloseTo(0.38)
+    expect(rows[0]?.isNew).toBe(false)
+  })
+
+  it('categoria sem histórico é "nova", e não uma variação infinita', () => {
+    const rows = categoryDeviation([fatia('Academia', 12_000)], [], {
+      currentMonths: 1,
+      baselineMonths: 6,
+    })
+
+    expect(rows[0]?.isNew).toBe(true)
+    // Dividir por zero daria Infinity, que a tela mostraria como "+Infinity%".
+    expect(rows[0]?.deltaRatio).toBeNull()
+  })
+
+  it('categoria que sumiu aparece com queda, e não desaparece do gráfico', () => {
+    const rows = categoryDeviation([], [fatia('Farmácia', 60_000)], {
+      currentMonths: 1,
+      baselineMonths: 1,
+    })
+
+    expect(rows[0]?.name).toBe('Farmácia')
+    expect(rows[0]?.currentCents).toBe(0)
+    expect(rows[0]?.deltaCents).toBe(-60_000)
+    expect(rows[0]?.deltaRatio).toBe(-1)
+  })
+
+  it('ordena pelo maior desvio em reais, não pelo maior percentual', () => {
+    const rows = categoryDeviation(
+      [fatia('Mercado', 150_000), fatia('Cafe', 2_000)],
+      [fatia('Mercado', 100_000), fatia('Cafe', 200)],
+      { currentMonths: 1, baselineMonths: 1 },
+    )
+
+    // Café subiu 900% e Mercado 50%; o desvio que muda o mês é o do Mercado.
+    expect(rows.map((row) => row.name)).toEqual(['Mercado', 'Cafe'])
+  })
+
+  it('ignora categoria sem movimento nos dois lados', () => {
+    expect(
+      categoryDeviation([fatia('Luz', 0)], [fatia('Luz', 0)], {
+        currentMonths: 1,
+        baselineMonths: 1,
+      }),
+    ).toEqual([])
+  })
+
+  it('recusa número de meses inválido em vez de dividir por zero', () => {
+    expect(() =>
+      categoryDeviation([], [], { currentMonths: 0, baselineMonths: 1 }),
+    ).toThrow(/meses inválido/)
   })
 })

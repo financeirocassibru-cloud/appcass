@@ -31,8 +31,8 @@ export default function manifest(): MetadataRoute.Manifest {
     ],
     shortcuts: [
       { name: 'Novo lançamento', short_name: 'Novo', url: '/novo' },
-      { name: 'Extrato', short_name: 'Extrato', url: '/lancamentos' },
-      { name: 'Projeção', short_name: 'Projeção', url: '/projecao' },
+      { name: 'Histórico', short_name: 'Histórico', url: '/historico' },
+      { name: 'Análise', short_name: 'Análise', url: '/analise' },
     ],
   }
 }

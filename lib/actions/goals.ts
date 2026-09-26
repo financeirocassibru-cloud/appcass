@@ -28,7 +28,7 @@ export interface GoalActionState {
 
 function revalidateGoalViews(): void {
   revalidatePath('/metas')
-  revalidatePath('/projecao')
+  revalidatePath('/analise')
 }
 
 function readGoalForm(formData: FormData) {

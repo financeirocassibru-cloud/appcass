@@ -33,7 +33,7 @@ export interface RecurringActionState {
 function revalidateRecurringViews(): void {
   revalidatePath('/compromissos')
   revalidatePath('/')
-  revalidatePath('/lancamentos')
+  revalidatePath('/historico')
 }
 
 /** Os campos do formulário, na forma que os schemas esperam. */

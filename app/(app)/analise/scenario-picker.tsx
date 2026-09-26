@@ -27,7 +27,7 @@ export function ScenarioPicker({
     <nav aria-label="Cenário" className="flex flex-col gap-2">
       <div className="-mx-6 flex gap-2 overflow-x-auto px-6 pb-1">
         <Link
-          href={{ pathname: '/projecao', query: { dias: String(horizon), cenario: 'real' } }}
+          href={{ pathname: '/analise', query: { dias: String(horizon), cenario: 'real' } }}
           aria-current={selectedId === null ? 'page' : undefined}
           className={cn(
             'flex min-h-11 shrink-0 items-center rounded-full border px-4 text-sm font-medium transition-colors',
@@ -42,7 +42,7 @@ export function ScenarioPicker({
         {scenarios.map((scenario) => (
           <Link
             key={scenario.id}
-            href={{ pathname: '/projecao', query: { dias: String(horizon), cenario: scenario.id } }}
+            href={{ pathname: '/analise', query: { dias: String(horizon), cenario: scenario.id } }}
             aria-current={selectedId === scenario.id ? 'page' : undefined}
             className={cn(
               'flex min-h-11 shrink-0 items-center rounded-full border px-4 text-sm font-medium transition-colors',
