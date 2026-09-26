@@ -59,3 +59,77 @@ const serwist = new Serwist({
 })
 
 serwist.addEventListeners()
+
+// ---------------------------------------------------------------------------
+// Web Push — v1.1 — 2026-09-26, fase 7.
+//
+// O trabalho da IA continua depois que o app fecha, e é aqui que o aviso de
+// "terminei" chega: sem estes dois ouvintes, a inscrição de push existiria e
+// nenhuma notificação apareceria.
+//
+// Os ouvintes vêm DEPOIS de `serwist.addEventListeners()` de propósito: ele
+// registra os dele para fetch/install/activate, e 'push' e 'notificationclick'
+// não colidem com nenhum.
+// ---------------------------------------------------------------------------
+
+interface PushPayload {
+  title: string
+  body: string
+  url: string
+}
+
+const FALLBACK: PushPayload = {
+  title: 'Assistente',
+  body: 'Seu pedido terminou.',
+  url: '/assistente',
+}
+
+self.addEventListener('push', (event) => {
+  // Sem carga, ou com carga ilegível, ainda mostramos algo: o navegador exige
+  // uma notificação visível para cada push recebido (`userVisibleOnly`), e
+  // engolir o evento em silêncio faz o navegador revogar a inscrição.
+  let payload: PushPayload = FALLBACK
+  try {
+    const data = event.data?.json() as Partial<PushPayload> | undefined
+    if (data?.title && data?.body) {
+      payload = { title: data.title, body: data.body, url: data.url ?? FALLBACK.url }
+    }
+  } catch {
+    // Fica o texto padrão.
+  }
+
+  event.waitUntil(
+    self.registration.showNotification(payload.title, {
+      body: payload.body,
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
+      // Uma notificação por vez: o aviso mais novo substitui o anterior em vez
+      // de empilhar três "terminei" na bandeja.
+      tag: 'assistente',
+      data: { url: payload.url },
+    }),
+  )
+})
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const url = (event.notification.data as { url?: string } | undefined)?.url ?? FALLBACK.url
+
+  event.waitUntil(
+    (async () => {
+      const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+
+      // Reaproveita uma aba aberta em vez de abrir a quinta: quem tocou no aviso
+      // quer VER o resultado, não colecionar janelas.
+      for (const client of clients) {
+        if ('focus' in client) {
+          await client.focus()
+          if ('navigate' in client) await client.navigate(url)
+          return
+        }
+      }
+
+      await self.clients.openWindow(url)
+    })(),
+  )
+})

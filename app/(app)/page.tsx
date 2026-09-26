@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { Plus } from 'lucide-react'
+import { isAiConfigured } from '@/lib/ai/env'
 import { getCurrentBalance } from '@/lib/db/queries/balance'
 import { getAgendaItems } from '@/lib/db/queries/agenda'
 import { getCategoryBreakdown, getMonthlySeries, MONTHS_IN_CHART } from '@/lib/db/queries/summary'
@@ -9,6 +10,9 @@ import { BalanceHero } from '@/components/finance/balance-hero'
 import { Upcoming } from '@/components/finance/upcoming'
 import { CategoryRanking } from '@/components/finance/charts/category-ranking'
 import { MonthlyBars } from '@/components/finance/charts/monthly-bars'
+import { AssistantComposer } from '@/components/ai/composer'
+import { InsightsPanel } from '@/components/ai/insights-panel'
+import { createClient } from '@/lib/supabase/server'
 
 export const metadata = { title: 'Início · Finanças' }
 
@@ -24,14 +28,21 @@ export default async function InicioPage() {
   // e aí o saldo e a agenda falariam de dias distintos.
   const today = todayISO()
 
-  const [balance, agendaItems, breakdown, monthly] = await Promise.all([
+  const supabase = await createClient()
+
+  const [balance, agendaItems, breakdown, monthly, { data: profile }] = await Promise.all([
     getCurrentBalance(today),
     // Junta pendentes reais e ocorrências de contas fixas ainda não
     // materializadas, já deduplicadas entre si.
     getAgendaItems(today, DEFAULT_HORIZON_DAYS),
     getCategoryBreakdown(today),
     getMonthlySeries(today, MONTHS_IN_CHART),
+    // v1.1 — 2026-09-26: fase 7. Desligado nos ajustes, o resumo não aparece
+    // acinzentado: ele não é renderizado.
+    supabase.from('profiles').select('ai_insights_enabled').maybeSingle(),
   ])
+
+  const assistenteLigado = isAiConfigured()
 
   const agenda = splitAgenda(agendaItems, today, DEFAULT_HORIZON_DAYS)
 
@@ -50,6 +61,11 @@ export default async function InicioPage() {
         incomeCents={balance.settledIncomeCents}
         expenseCents={balance.settledExpenseCents}
       />
+
+      {/* A caixa vem logo abaixo do saldo: é o caminho mais curto entre "isso
+          acabou de acontecer" e o registro, e não exige saber em qual tela cada
+          tipo de lançamento mora. */}
+      {assistenteLigado && <AssistantComposer variant="hero" />}
 
       {/* Conta nova: em vez de três blocos vazios, um caminho. É o primeiro estado
           que a pessoa vê, e ele tem de dizer o que fazer. */}
@@ -82,6 +98,7 @@ export default async function InicioPage() {
         </section>
       ) : (
         <>
+          {assistenteLigado && profile?.ai_insights_enabled && <InsightsPanel />}
           <Upcoming agenda={agenda} today={today} />
           <CategoryRanking
             slices={breakdown.slices}

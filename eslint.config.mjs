@@ -26,6 +26,15 @@ const eslintConfig = [
     rules: {
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/consistent-type-imports': 'error',
+      // Toda Server Action deste app tem a assinatura `(prev, formData)` que o
+      // `useActionState` exige, e algumas não usam nenhum dos dois. O padrão do
+      // ESLint (`args: 'after-used'`) já perdoa o primeiro quando o segundo é
+      // usado; o prefixo `_` — que o projeto inteiro já usa — passa a valer para
+      // os dois casos, em vez de obrigar a inventar um uso para o parâmetro.
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
+      ],
     },
   },
 ]
