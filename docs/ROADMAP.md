@@ -79,3 +79,17 @@ feedback.
 
 **Pronto quando:** o app é instalável como PWA no celular e funciona (leitura, ao menos) sem
 rede após o primeiro carregamento.
+
+Entregue em dois PRs: **6a** (metas com aportes) e **6b** (PWA e acabamento).
+
+Duas notas para quem mexer no PWA depois:
+
+- O Serwist roda em **modo configurador**, não no modo plugin. O modo plugin injeta configuração
+  de webpack e o Next 16 usa Turbopack por padrão — o build falha com "This build is using
+  Turbopack, with a `webpack` config". Por isso o service worker é compilado pelo `@serwist/cli`
+  **depois** do `next build`, e o script `build` encadeia os dois. Invertida, a ordem produz um
+  precache vazio.
+- `sw.js`, `~offline` e `icons/` ficam **fora do matcher do `proxy.ts`**. Um service worker
+  servido com redirecionamento é recusado pelo navegador, e o guarda manda para `/login` tudo que
+  não é público: dentro do matcher, o worker nunca registra e o app nunca funciona offline — sem
+  erro visível, só sem funcionar.
