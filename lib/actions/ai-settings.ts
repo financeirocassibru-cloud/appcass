@@ -8,6 +8,7 @@ import {
   pushSubscriptionSchema,
   setModelSchema,
   toggleInsightsSchema,
+  toggleReasoningSchema,
   toggleNotificationsSchema,
 } from '@/lib/validation/assistant'
 
@@ -56,6 +57,28 @@ async function updateProfile(
 }
 
 /** Liga e desliga o resumo e as dicas. */
+/**
+ * Liga e desliga a trilha de etapas da folha do assistente.
+ *
+ * O nome da coluna fala em `reasoning`, a tela fala em "etapas", e a diferença é
+ * deliberada: o que aparece são as etapas do app mais o texto que o próprio modelo
+ * emitir. Nada de pensamento inventado para a espera parecer trabalhosa.
+ */
+export async function setShowReasoning(
+  _prev: AiSettingsActionState,
+  formData: FormData,
+): Promise<AiSettingsActionState> {
+  const parsed = toggleReasoningSchema.safeParse({ enabled: formData.get('enabled') })
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos' }
+  }
+
+  return await updateProfile(
+    { ai_show_reasoning: parsed.data.enabled },
+    parsed.data.enabled ? 'Vou mostrar as etapas.' : 'Não vou mostrar as etapas.',
+  )
+}
+
 export async function setInsightsEnabled(
   _prev: AiSettingsActionState,
   formData: FormData,

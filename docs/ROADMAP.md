@@ -141,3 +141,50 @@ Duas notas para quem mexer nisto depois:
   periodicidade em `vercel.json` é a única mudança necessária.
 - **`vercel.json` passou a chamar `npm run build`**, e não `next build`: como estava, o deploy não
   compilava o service worker — o que quebraria justamente o push desta fase.
+
+## Fase 7b — A conversa antes do lançamento
+
+A caixa deixou de ser um tiro só. Escrever uma frase disparava de uma vez o caminho pesado —
+oito queries de contexto e uma interação com 27 ferramentas — e a primeira coisa na tela era
+"Pode fechar o app", **antes de nada ter acontecido**. Se a IA entendesse errado, só se
+descobria no fim, e a tela de aprovação mostrava texto sem edição.
+
+Agora são dois tempos. A **triagem** responde em um ou dois segundos: diz se o assunto é
+dinheiro, preenche um rascunho e lê de volta, em português, o que entendeu — sem tocar no
+banco, sem ferramenta e sem background. A pessoa confirma ou corrige conversando, quantas
+vezes precisar. Só depois do "É isso" nasce o trabalho pesado, levando o rascunho aprovado. E
+na aprovação dá para ajustar valor, data, descrição e categoria campo a campo.
+
+**Pronto quando:** "Recebi dois mil ontem. fui ao mercado hoje e já gastei 200 reais" devolve
+o briefing em segundos com dois itens; "que horas são?" recebe resposta sem enfileirar
+trabalho nenhum; ajustar um valor na aprovação registra o valor ajustado; e nenhum trabalho
+fica `em andamento` além do prazo.
+
+Quatro decisões que explicam o desenho:
+
+- **A triagem é efêmera, e isso é o desenho.** `ai_jobs` existe para o trabalho sobreviver ao
+  app fechar, e isso vale quando perder o trabalho custaria a frase da pessoa. A triagem custa
+  uma chamada de um segundo e é re-derivável — é justamente por isso que ela dispensa
+  `background: true`. Somado a isso, a 0012 revoga `update` em `ai_jobs.input`: acrescentar
+  falas a uma linha existente seria impossível sem migration nova. A conversa vive no cliente e
+  entra no banco de uma vez, no `insert` da aprovação.
+- **A triagem nunca pode travar a tela.** Toda falha devolve `null` e o app segue pelo caminho
+  que já tinha — `submitMessage` continua existindo, agora como reserva. O pior caso da etapa
+  nova é o comportamento antigo, nunca uma regressão.
+- **Ajuste não é confiar no formulário.** A identidade de cada operação continua vindo do
+  banco; do corpo vem só o que uma pessoa digitaria, por lista branca, e a mesclagem inteira
+  passa de novo pelo `operationSchema`. `op`, `id`, `rule_id`, `goal_id` e `scenario_id` nunca
+  são editáveis — a RLS barra um id de outra pessoa, mas não barraria trocar "apague o mercado"
+  por "apague o salário".
+- **O aviso de fechar o app espera silêncio, não tempo.** Cinco segundos sem nada de
+  substantivo na tela (`useQuietFor`). A trilha de etapas, ativável em `/ajustes/ia`, **não**
+  conta como resposta — senão o app pareceria ocupado sem nunca admitir que está demorando.
+
+Dois bugs bloqueantes entraram junto, e os dois ganharam o teste que os teria pegado:
+
+- **O trabalho preso para sempre.** `shouldFallback` listava os status "em andamento" pelo
+  nome, e `requires_action` — onde a interação para quando o modelo emite chamada de
+  ferramenta — não estava na lista. O prazo nunca era avaliado. Agora a pergunta é "o status é
+  final?", e `advanceJob` colhe pela presença da chamada.
+- **O resumo "em formato inesperado".** A instrução não pedia JSON e o parser era `JSON.parse`
+  cru, então uma cerca ```json descartava a resposta certa.

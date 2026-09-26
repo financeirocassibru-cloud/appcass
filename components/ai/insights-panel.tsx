@@ -5,9 +5,14 @@ import { pollJob, requestInsights, type AssistantActionState } from '@/lib/actio
 import type { JobView } from '@/lib/ai/jobs'
 import { FormMessage } from '@/components/auth/form-field'
 import { Button } from '@/components/ui/button'
+import { useQuietFor } from './use-quiet-for'
 
 /**
- * Resumo da situação financeira e dicas. v1.0 — 2026-09-26.
+ * Resumo da situação financeira e dicas. v1.1 — 2026-09-26.
+ *
+ * v1.1: o "pode fechar o app" saiu do primeiro instante e passou a esperar cinco
+ * segundos de espera real (`useQuietFor`). Ele aparecia junto com o toque no botão, o que
+ * lido de fora era o app dizendo "vá fazer outra coisa" antes de ter feito nada.
  *
  * **Só sob demanda**, por decisão de produto: nada é gerado ao abrir a tela. O
  * botão é o gatilho, e enquanto ninguém o toca não há chamada nenhuma à API.
@@ -18,6 +23,9 @@ import { Button } from '@/components/ui/button'
  */
 
 const POLL_MS = 1_200
+
+/** Quanto silêncio na tela antes de admitir que a espera é longa. */
+const QUIET_MS = 5_000
 
 interface Insights {
   summary?: string
@@ -64,6 +72,10 @@ export function InsightsPanel() {
   const insights = (job?.result ?? null) as Insights | null
   const trabalhando = Boolean(jobId) && (!job || job.status === 'queued' || job.status === 'running')
 
+  // Cinco segundos de espera de verdade antes de sugerir que a pessoa vá fazer outra
+  // coisa. Antes este aviso aparecia junto com o toque no botão.
+  const avisoLongo = useQuietFor(QUIET_MS, trabalhando)
+
   return (
     <section className="flex flex-col gap-3 rounded-xl bg-[var(--surface)] p-5">
       <h2 className="text-base font-semibold">Como estão suas finanças</h2>
@@ -84,8 +96,12 @@ export function InsightsPanel() {
       {trabalhando && (
         <p role="status" className="text-muted-foreground py-4 text-sm">
           Olhando suas contas…
-          <br />
-          <span className="text-xs">Pode fechar o app: eu aviso quando terminar.</span>
+        </p>
+      )}
+
+      {avisoLongo && (
+        <p role="status" className="text-muted-foreground text-xs">
+          Está demorando mais que o normal. Pode fechar o app — eu aviso quando terminar.
         </p>
       )}
 

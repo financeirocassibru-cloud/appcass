@@ -3,10 +3,12 @@ import {
   DEADLINE_MS,
   DEFAULT_MODEL_CHAIN,
   isRetriableHttpStatus,
+  isTerminal,
   nextModel,
   parseModelChain,
   resolveStartModel,
   shouldFallback,
+  TERMINAL_STATUSES,
 } from '@/lib/ai/models'
 
 describe('parseModelChain', () => {
@@ -141,5 +143,65 @@ describe('shouldFallback', () => {
 
   it('o resumo tem prazo maior que a interpretação', () => {
     expect(DEADLINE_MS.insights).toBeGreaterThan(DEADLINE_MS.interpret)
+  })
+})
+
+/**
+ * O teste que teria pegado o travamento de 2026-09-26.
+ *
+ * `shouldFallback` listava os status "em andamento" pelo nome — `undefined` e
+ * `'in_progress'`. Um `requires_action`, que é onde a interação para quando o modelo
+ * emite chamada de ferramenta, não estava na lista, então o prazo nunca era avaliado
+ * e o trabalho ficava pendurado para sempre, sem erro e sem saída.
+ */
+describe('nenhum status desconhecido segura o trabalho além do prazo', () => {
+  const deadlineMs = DEADLINE_MS.interpret
+
+  const naoFinais = [
+    'requires_action',
+    'in_progress',
+    'pending',
+    'queued',
+    'running',
+    'IN_PROGRESS',
+    'status_que_a_api_ainda_nao_inventou',
+    undefined,
+  ]
+
+  for (const status of naoFinais) {
+    it(`cai por prazo com status ${String(status)}`, () => {
+      expect(shouldFallback({ status, elapsedMs: deadlineMs, deadlineMs })).toBe(true)
+    })
+
+    it(`respeita o prazo com status ${String(status)}`, () => {
+      expect(shouldFallback({ status, elapsedMs: deadlineMs - 1, deadlineMs })).toBe(false)
+    })
+  }
+
+  it('status final nunca cai por prazo, por mais que tenha demorado', () => {
+    for (const status of ['completed', 'failed', 'cancelled']) {
+      const caiu = shouldFallback({ status, elapsedMs: 999_999, deadlineMs })
+      // 'failed' cai, mas pelo motivo certo — a interação falhou, não por prazo.
+      expect(caiu).toBe(status === 'failed')
+    }
+  })
+})
+
+describe('isTerminal', () => {
+  it('reconhece os finais, inclusive o "cancelled" com dois L', () => {
+    expect(isTerminal('completed')).toBe(true)
+    expect(isTerminal('failed')).toBe(true)
+    expect(isTerminal('cancelled')).toBe(true)
+  })
+
+  it('em andamento, ausente e desconhecido não são finais', () => {
+    expect(isTerminal('in_progress')).toBe(false)
+    expect(isTerminal('requires_action')).toBe(false)
+    expect(isTerminal('cancelado')).toBe(false)
+    expect(isTerminal(undefined)).toBe(false)
+  })
+
+  it('a lista de finais tem exatamente três status', () => {
+    expect([...TERMINAL_STATUSES]).toEqual(['completed', 'failed', 'cancelled'])
   })
 })

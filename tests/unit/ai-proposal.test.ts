@@ -7,6 +7,7 @@ import {
   ACTION_FOR_OPERATION,
   describeOperation,
   formatISODateBR,
+  hasFunctionCall,
   isDestructive,
   operationSchema,
   operationToFormData,
@@ -445,5 +446,47 @@ describe('operationToFormData', () => {
     for (const op of todas) {
       expect([...operationToFormData(op).keys()].length, op.op).toBeGreaterThan(0)
     }
+  })
+})
+
+/**
+ * `hasFunctionCall` — o sinal que substituiu o status do provedor.
+ *
+ * Uma interação com ferramentas para em `requires_action`, não em `completed`, porque
+ * espera o retorno das chamadas. Este app nunca devolve esse retorno: ele manda a
+ * operação para a tela de confirmação. Então a presença da chamada é o que diz que há
+ * o que colher.
+ */
+describe('hasFunctionCall', () => {
+  it('reconhece a chamada de ferramenta', () => {
+    expect(hasFunctionCall([{ type: 'function_call', name: 'create_entry', arguments: {} }])).toBe(
+      true,
+    )
+  })
+
+  it('acha a chamada mesmo no meio de passos de texto', () => {
+    expect(
+      hasFunctionCall([
+        { type: 'reasoning' },
+        { type: 'message', name: 'assistant' },
+        { type: 'function_call', name: 'create_entry', arguments: {} },
+      ]),
+    ).toBe(true)
+  })
+
+  it('resposta só de texto não tem o que colher', () => {
+    expect(hasFunctionCall([{ type: 'message' }])).toBe(false)
+    expect(hasFunctionCall([])).toBe(false)
+  })
+
+  it('chamada sem nome não conta — não daria para saber que ferramenta é', () => {
+    expect(hasFunctionCall([{ type: 'function_call' }])).toBe(false)
+  })
+
+  it('não explode com entrada torta', () => {
+    expect(hasFunctionCall(null)).toBe(false)
+    expect(hasFunctionCall(undefined)).toBe(false)
+    expect(hasFunctionCall('texto solto')).toBe(false)
+    expect(hasFunctionCall({ steps: [] })).toBe(false)
   })
 })

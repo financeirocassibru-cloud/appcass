@@ -19,13 +19,14 @@ export default async function AjustesIaPage() {
   const supabase = await createClient()
   const { data: profile } = await supabase
     .from('profiles')
-    .select('ai_insights_enabled, ai_notifications_enabled, ai_model')
+    .select('ai_insights_enabled, ai_notifications_enabled, ai_model, ai_show_reasoning')
     .maybeSingle()
 
   return (
     <AiSettingsForm
       insightsEnabled={profile?.ai_insights_enabled ?? true}
       notificationsEnabled={profile?.ai_notifications_enabled ?? true}
+      showReasoning={profile?.ai_show_reasoning ?? false}
       model={profile?.ai_model ?? ''}
       models={[...DEFAULT_MODEL_CHAIN]}
       aiConfigured={isAiConfigured()}

@@ -2,10 +2,23 @@ import 'server-only'
 
 import { z } from 'zod'
 import { geminiApiKey } from './env'
+import { isTerminal } from './models'
 import type { ToolDeclaration } from './tools'
 
 /**
- * Cliente da Interactions API do Gemini. v1.1 — 2026-09-26.
+ * Cliente da Interactions API do Gemini. v1.3 — 2026-09-26.
+ *
+ * v1.3: `background` virou opcional (padrão `true`) e ganhou `runInteraction`, que
+ * resolve a interação na mesma viagem HTTP. É o que a triagem usa: ela é barata e
+ * re-derivável, ninguém precisa que ela sobreviva ao app fechar, e o que se quer dela
+ * é a resposta agora — esperar um poll para ler uma frase de confirmação seria trocar
+ * dois segundos por dez.
+ *
+ * v1.2: `isTerminal` saiu daqui e passou a ser reexportada de `models.ts`. Ela
+ * definia os status finais neste arquivo, mas a única regra que precisava saber
+ * disso — `shouldFallback` — vive no módulo puro e não pode importar de um
+ * `server-only`. Resultado: a regra tinha a própria lista, incompleta, e um status
+ * não-final que ela não conhecia travava o trabalho para sempre. Agora a lista é uma.
  *
  * v1.1: removido o `tool_choice` da raiz do corpo, que fazia a API recusar toda
  * requisição com 400 `Unknown parameter`. O campo existe, mas dentro de
@@ -75,6 +88,17 @@ export interface StartInteractionInput {
   tools?: readonly ToolDeclaration[]
   /** Esquema JSON da resposta, para o resumo voltar em formato fixo. */
   responseSchema?: Record<string, unknown>
+  /**
+   * Executar do lado do provedor, devolvendo só o `id`? Padrão `true`.
+   *
+   * `false` é a exceção da triagem, e vale explicar por que ela é exceção: o
+   * background existe para o trabalho sobreviver ao app fechar, e isso importa quando
+   * perder o trabalho custaria a frase da pessoa. A triagem não custa nada — é uma
+   * chamada curta, sem ferramentas e sem contexto, refeita em um segundo. O que ela
+   * precisa é do oposto: responder AGORA, na mesma viagem, para a conversa não
+   * engasgar.
+   */
+  background?: boolean
 }
 
 async function request(
@@ -147,7 +171,7 @@ export async function startInteraction(
   const body: Record<string, unknown> = {
     model: input.model,
     input: input.input,
-    background: true,
+    background: input.background ?? true,
   }
 
   if (input.systemInstruction) body.system_instruction = input.systemInstruction
@@ -170,6 +194,19 @@ export async function startInteraction(
     // nada em relação ao padrão não vai.
   }
   if (input.responseSchema) {
+    // **`type: 'text'` fica como está, e isso é deliberado.**
+    //
+    // Este corpo é aceito: o resumo que voltou "em formato inesperado" voltou com
+    // 200, não com 400 — o que falhou foi a leitura, não o pedido. Trocar o `type`
+    // por um valor mais expressivo (`json_object`, `json_schema`) é tentador e está
+    // errado pelo mesmo motivo do `tool_choice` logo acima: um valor que a API não
+    // reconheça derruba o corpo INTEIRO com 400, e `isRetriableHttpStatus(400)` é
+    // `false`, então o resumo pararia de funcionar sempre em vez de às vezes.
+    //
+    // O que garante o JSON é o contrato escrito na instrução do sistema
+    // (`INSIGHTS_SYSTEM_INSTRUCTION`) mais a leitura tolerante de `parseLooseJson`.
+    // Os dois funcionam sem depender de o provedor honrar campo nenhum — e o schema
+    // segue indo, porque ajuda quando é honrado e não custa nada quando não é.
     body.response_format = {
       type: 'text',
       mime_type: 'application/json',
@@ -190,6 +227,47 @@ export async function getInteraction(
     { method: 'GET' },
     doFetch,
   )
+}
+
+/** Quantas vezes reler a interação da triagem antes de desistir dela. */
+const FOREGROUND_RETRIES = 3
+
+/** Quanto esperar entre duas releituras da triagem. */
+const FOREGROUND_GAP_MS = 1_200
+
+/**
+ * Resolve uma interação **agora**, na mesma requisição.
+ *
+ * É o caminho da triagem. Cria sem background e, se o provedor ainda devolver algo
+ * não-final, relê no máximo três vezes — orçamento total de uns 4s, muito abaixo do
+ * `HTTP_TIMEOUT_MS` de 15s por chamada e do `maxDuration` de 60s do segmento.
+ *
+ * Devolve `null` quando não resolveu a tempo, e isso é degradação deliberada: quem
+ * chama segue pelo caminho pesado de sempre. O pior caso desta função é o
+ * comportamento que o app já tinha, nunca uma tela travada — a triagem é uma
+ * gentileza, não uma dependência.
+ */
+export async function runInteraction(
+  input: StartInteractionInput,
+  doFetch: FetchLike = globalThis.fetch,
+): Promise<Interaction | null> {
+  const criada = await startInteraction({ ...input, background: false }, doFetch)
+  if (isTerminal(criada.status) || criada.output_text) return criada
+
+  let atual = criada
+
+  for (let tentativa = 0; tentativa < FOREGROUND_RETRIES; tentativa += 1) {
+    await new Promise((resolve) => setTimeout(resolve, FOREGROUND_GAP_MS))
+
+    atual = await getInteraction(criada.id, doFetch)
+    if (isTerminal(atual.status) || atual.output_text) return atual
+  }
+
+  // Não resolveu: cancelar para não deixar cota queimando por uma resposta que já
+  // não tem para onde ir.
+  await cancelInteraction(criada.id, doFetch)
+
+  return null
 }
 
 /**
@@ -248,7 +326,11 @@ function mensagemDeErro(status: number, detalhe: string): string {
   return `A IA respondeu com um erro (${status}).${tecnico}`
 }
 
-/** Status terminais, como a API os nomeia. */
-export function isTerminal(status: string | undefined): boolean {
-  return status === 'completed' || status === 'failed' || status === 'cancelled'
-}
+/**
+ * Status terminais, como a API os nomeia.
+ *
+ * A definição mora em `models.ts` — módulo puro, que é onde `shouldFallback` a
+ * consulta. Aqui fica só a reexportação, para quem pensa neste arquivo como o dono
+ * do vocabulário da API continuar achando o que procura.
+ */
+export { isTerminal, TERMINAL_STATUSES } from './models'

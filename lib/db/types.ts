@@ -32,13 +32,13 @@ export type PushSubscriptionRow = Tables<'push_subscriptions'>
 /**
  * As únicas colunas de `profiles` que a tela de IA escreve.
  *
- * Recorta `TablesUpdate<'profiles'>` de propósito: a migration 0012 concedeu
- * `update` só nestas três, e um tipo mais largo deixaria passar no typecheck um
- * `patch` que o Postgres recusaria em tempo de execução.
+ * Recorta `TablesUpdate<'profiles'>` de propósito: as migrations 0012 e 0013
+ * concederam `update` só nestas quatro, e um tipo mais largo deixaria passar no
+ * typecheck um `patch` que o Postgres recusaria em tempo de execução.
  */
 export type AiSettingsPatch = Pick<
   TablesUpdate<'profiles'>,
-  'ai_insights_enabled' | 'ai_notifications_enabled' | 'ai_model'
+  'ai_insights_enabled' | 'ai_notifications_enabled' | 'ai_model' | 'ai_show_reasoning'
 >
 
 export type MonthlySummaryRow = Tables<'v_monthly_summary'>
