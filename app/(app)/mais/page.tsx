@@ -10,7 +10,7 @@ const ITENS = [
   { href: '/compromissos', label: 'Contas fixas', nota: null },
   { href: '/parcelas', label: 'Parcelas', nota: null },
   { href: '/cenarios', label: 'Cenários', nota: null },
-  { href: '/metas', label: 'Metas', nota: 'fase 6' },
+  { href: '/metas', label: 'Metas', nota: null },
 ] as const
 
 export default function MaisPage() {
