@@ -150,6 +150,30 @@ export async function getEntry(id: string): Promise<EntryWithCategory | null> {
 }
 
 /**
+ * Os lançamentos mais recentes, sem filtro de mês.
+ *
+ * v1.1 — 2026-09-26: adicionada na fase 7. O assistente precisa saber do que a
+ * pessoa está falando quando ela diz "apaga o do mercado" — sem uma lista de
+ * candidatos com id, a IA teria de inventar um, e inventar id é exatamente o
+ * que o contexto dela proíbe. Recorta por quantidade e não por mês porque
+ * "recente" aqui é do ponto de vista da conversa, não do calendário.
+ */
+export async function listRecentEntries(limit = 40): Promise<EntryWithCategory[]> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('entries')
+    .select(COLUMNS)
+    .order('occurred_on', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(limit)
+
+  if (error) throw new Error(`Falha ao listar lançamentos recentes: ${error.message}`)
+
+  return (data as unknown as JoinedRow[]).map(toEntry)
+}
+
+/**
  * Pendentes para a agenda do Início: tudo em atraso, mais o que vence até o
  * horizonte.
  *

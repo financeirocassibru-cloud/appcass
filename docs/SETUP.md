@@ -69,3 +69,35 @@ apenas como **referência de regras de negócio**. Ele não é executado, não �
 mantido. Consultar para entender uma regra ou reproduzir um bug conhecido; nunca copiar
 código de lá. Os problemas estruturais estão catalogados em
 [`ARCHITECTURE.md`](./ARCHITECTURE.md#bugs-do-app-antigo-que-motivam-decisões-de-arquitetura).
+
+## Assistente de IA (fase 7)
+
+Cinco variáveis, todas em **Project Settings → Environment Variables** na Vercel. As de segredo
+não podem ter o prefixo `NEXT_PUBLIC_`, que as colocaria no bundle do navegador.
+
+| Variável | Onde | Para quê |
+|---|---|---|
+| `GEMINI_API_KEY` | servidor | Chave da API do Gemini. Gere em <https://aistudio.google.com/apikey> |
+| `GEMINI_MODELS` | servidor, opcional | Sobrescreve a cadeia de modelos, separada por vírgula |
+| `CRON_SECRET` | servidor | Autoriza `/api/ai/sweep`. `openssl rand -base64 32` |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | público | O navegador precisa dela para se inscrever no push |
+| `VAPID_PRIVATE_KEY` | servidor | Assina o envio do push |
+| `VAPID_SUBJECT` | servidor | `mailto:` exigido pelo protocolo Web Push |
+
+O par VAPID sai de um comando só, e as duas chaves precisam ser do **mesmo par**:
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+Trocar o par depois invalida todas as inscrições existentes: cada pessoa precisa tocar em
+"Ativar avisos" de novo no aparelho dela. As linhas velhas em `push_subscriptions` são podadas
+sozinhas no primeiro envio que falhar com 404 ou 410.
+
+O cron de `/api/ai/sweep` está declarado em `vercel.json` com periodicidade de um minuto, que
+**exige plano Pro**. No Hobby a Vercel reduz para uma vez por dia; nesse caso o assistente
+continua funcionando — quem fecha os trabalhos é o `after()` do Next e o poll do cliente —, mas o
+aviso de conclusão com o app fechado por muito tempo pode demorar.
+
+Sem `GEMINI_API_KEY` o app sobe normalmente e o assistente simplesmente não aparece, com um aviso
+em `/ajustes/ia`. Sem as chaves VAPID, tudo funciona menos a notificação.

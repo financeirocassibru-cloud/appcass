@@ -93,3 +93,47 @@ Duas notas para quem mexer no PWA depois:
   servido com redirecionamento é recusado pelo navegador, e o guarda manda para `/login` tudo que
   não é público: dentro do matcher, o worker nunca registra e o app nunca funciona offline — sem
   erro visível, só sem funcionar.
+
+## Fase 7 — Assistente de IA
+
+Uma caixa que convida a contar o que aconteceu, em português corrido, e uma IA (Gemini) que
+traduz a frase nas operações que o app já sabe executar. **Sem ícone de IA**: o convite é o
+texto dentro da caixa. A mesma caixa aparece em três lugares — grande no Início, em uma linha
+ancorada acima da barra inferior (logo, em qualquer tela) e na tela própria `/assistente`.
+
+A IA alcança tudo: lançamentos, contas fixas, parcelamentos, metas, aportes, categorias,
+cenários e a âncora do saldo — criar, alterar **e excluir**. Nada executa antes de a pessoa ler,
+em português, o que foi entendido e tocar em Confirmar.
+
+Também gera resumo da situação financeira e dicas, **só sob demanda**, ligáveis e desligáveis
+em `/ajustes/ia` junto com o aviso de conclusão e a escolha do modelo.
+
+**Pronto quando:** "paguei 87,50 no mercado hoje" vira uma despesa de 8750 centavos na data de
+hoje em `America/Sao_Paulo`; descartar a proposta não escreve nada; enviar uma frase, fechar o
+app e voltar mostra o trabalho concluído.
+
+Três decisões que explicam o desenho:
+
+- **Nada de caminho de escrita próprio.** `lib/ai/apply.ts` traduz cada operação confirmada em
+  `FormData` e chama a Server Action que a tela já usa. Validação Zod, guardas `.eq()`/`.select()`
+  e `revalidatePath` vêm de graça, e continuam existindo em um lugar só. Consequência: a execução
+  só roda dentro do request de quem confirmou — toda action passa por `currentUserId()`, que lê
+  cookie. É por isso que a varredura do cron nunca chama uma action.
+- **O trabalho é uma linha no banco, e a execução é do Gemini.** A Interactions API tem
+  `background: true`: ela devolve um `id` na hora e segura a execução do lado deles. Fechar o app
+  não perde nada. Três caminhos fecham um trabalho e os três são o mesmo código — o poll do
+  cliente, o `after()` do Next (roda depois da resposta, sobrevive ao navegador fechar) e a
+  varredura do cron.
+- **O pedido inteiro fica gravado em `ai_jobs.input`.** A varredura roda sem sessão, então não
+  teria como remontar o contexto financeiro — toda query passa pela RLS. Com o pedido gravado,
+  cair para o próximo modelo é reenviar o mesmo texto, o que além de possível é mais correto.
+
+Duas notas para quem mexer nisto depois:
+
+- **`/api/ai/sweep` precisa estar em `PUBLIC_PREFIXES`** (`lib/supabase/proxy.ts`). `/api/**` está
+  dentro do matcher de `proxy.ts`, a requisição do cron não traz cookie, e sem a exceção o guarda
+  a redireciona para `/login` antes de o handler existir — com aparência de "o cron não faz nada".
+- **Cron por minuto exige plano Vercel Pro.** No Hobby a granularidade é diária, e o caso comum
+  fica por conta do `after()` e do poll do cliente. `vercel.json` também passou a chamar
+  `npm run build`, e não `next build`: como estava, o deploy não compilava o service worker — o
+  que quebraria justamente o push desta fase.

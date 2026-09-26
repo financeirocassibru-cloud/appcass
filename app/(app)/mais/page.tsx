@@ -4,7 +4,9 @@ import type { Route } from 'next'
 
 export const metadata = { title: 'Mais · Finanças' }
 
+// v1.1 — 2026-09-26: fase 7, a tela do assistente.
 const ITENS = [
+  { href: '/assistente', label: 'Assistente', nota: null },
   { href: '/ajustes', label: 'Ajustes', nota: null },
   { href: '/ajustes/categorias', label: 'Categorias', nota: null },
   { href: '/compromissos', label: 'Contas fixas', nota: null },

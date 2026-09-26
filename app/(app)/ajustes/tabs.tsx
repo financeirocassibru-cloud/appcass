@@ -4,10 +4,12 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import type { Route } from 'next'
 
+// v1.1 — 2026-09-26: fase 7, aba de ajustes da IA.
 const BASE_TABS = [
   { href: '/ajustes', label: 'Perfil' },
   { href: '/ajustes/saldo', label: 'Saldo' },
   { href: '/ajustes/categorias', label: 'Categorias' },
+  { href: '/ajustes/ia', label: 'IA' },
 ] as const
 
 export function AjustesTabs({ isAdmin }: { isAdmin: boolean }) {

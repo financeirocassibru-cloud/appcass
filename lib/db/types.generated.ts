@@ -10,6 +10,57 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 export type Database = {
   public: {
     Tables: {
+      ai_jobs: {
+        Row: {
+          attempts: number;
+          created_at: string;
+          error: string | null;
+          finished_at: string | null;
+          id: string;
+          input: NonNullable<Json>;
+          kind: Database["public"]["Enums"]["ai_job_kind"];
+          model: string | null;
+          notified_at: string | null;
+          provider_interaction_id: string | null;
+          result: Json | null;
+          started_at: string | null;
+          status: Database["public"]["Enums"]["ai_job_status"];
+          user_id: string;
+        };
+        Insert: {
+          attempts?: number;
+          created_at?: string;
+          error?: string | null;
+          finished_at?: string | null;
+          id?: string;
+          input?: NonNullable<Json>;
+          kind: Database["public"]["Enums"]["ai_job_kind"];
+          model?: string | null;
+          notified_at?: string | null;
+          provider_interaction_id?: string | null;
+          result?: Json | null;
+          started_at?: string | null;
+          status?: Database["public"]["Enums"]["ai_job_status"];
+          user_id: string;
+        };
+        Update: {
+          attempts?: number;
+          created_at?: string;
+          error?: string | null;
+          finished_at?: string | null;
+          id?: string;
+          input?: NonNullable<Json>;
+          kind?: Database["public"]["Enums"]["ai_job_kind"];
+          model?: string | null;
+          notified_at?: string | null;
+          provider_interaction_id?: string | null;
+          result?: Json | null;
+          started_at?: string | null;
+          status?: Database["public"]["Enums"]["ai_job_status"];
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       categories: {
         Row: {
           archived_at: string | null;
@@ -305,6 +356,9 @@ export type Database = {
       };
       profiles: {
         Row: {
+          ai_insights_enabled: boolean;
+          ai_model: string | null;
+          ai_notifications_enabled: boolean;
           created_at: string;
           display_name: string;
           id: string;
@@ -315,6 +369,9 @@ export type Database = {
           updated_at: string;
         };
         Insert: {
+          ai_insights_enabled?: boolean;
+          ai_model?: string | null;
+          ai_notifications_enabled?: boolean;
           created_at?: string;
           display_name?: string;
           id: string;
@@ -325,6 +382,9 @@ export type Database = {
           updated_at?: string;
         };
         Update: {
+          ai_insights_enabled?: boolean;
+          ai_model?: string | null;
+          ai_notifications_enabled?: boolean;
           created_at?: string;
           display_name?: string;
           id?: string;
@@ -333,6 +393,36 @@ export type Database = {
           role?: Database["public"]["Enums"]["app_role"];
           timezone?: string;
           updated_at?: string;
+        };
+        Relationships: [];
+      };
+      push_subscriptions: {
+        Row: {
+          auth_secret: string;
+          created_at: string;
+          endpoint: string;
+          id: string;
+          p256dh: string;
+          user_agent: string | null;
+          user_id: string;
+        };
+        Insert: {
+          auth_secret: string;
+          created_at?: string;
+          endpoint: string;
+          id?: string;
+          p256dh: string;
+          user_agent?: string | null;
+          user_id: string;
+        };
+        Update: {
+          auth_secret?: string;
+          created_at?: string;
+          endpoint?: string;
+          id?: string;
+          p256dh?: string;
+          user_agent?: string | null;
+          user_id?: string;
         };
         Relationships: [];
       };
@@ -618,6 +708,8 @@ export type Database = {
       };
     };
     Enums: {
+      ai_job_kind: "interpret" | "apply" | "insights";
+      ai_job_status: "queued" | "running" | "completed" | "failed" | "canceled";
       app_role: "admin" | "member";
       entry_kind: "expense" | "income";
       entry_source: "manual" | "recurring" | "installment" | "goal";
@@ -739,6 +831,8 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      ai_job_kind: ["interpret", "apply", "insights"],
+      ai_job_status: ["queued", "running", "completed", "failed", "canceled"],
       app_role: ["admin", "member"],
       entry_kind: ["expense", "income"],
       entry_source: ["manual", "recurring", "installment", "goal"],

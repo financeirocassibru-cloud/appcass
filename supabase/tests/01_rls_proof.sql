@@ -840,4 +840,151 @@ end $$;
 
 reset role;
 
+-- === Assistente de IA (migration 0012) ===
+-- Mesmo padrão das demais tabelas do dono: cada um vê, apaga e enfileira só o
+-- que é seu. E o privilégio de coluna precisa ter travado o que devia sem travar
+-- o que a tela de ajustes precisa escrever.
+reset role;
+
+insert into public.ai_jobs (user_id, kind, input) values
+  ('11111111-1111-1111-1111-111111111111', 'interpret', '{"text": "mercado 150"}'::jsonb),
+  ('22222222-2222-2222-2222-222222222222', 'interpret', '{"text": "posto 200"}'::jsonb);
+
+insert into public.push_subscriptions (user_id, endpoint, p256dh, auth_secret) values
+  ('11111111-1111-1111-1111-111111111111', 'https://push.exemplo/ana', 'chave-ana', 'segredo-ana'),
+  ('22222222-2222-2222-2222-222222222222', 'https://push.exemplo/bruno', 'chave-bruno', 'segredo-bruno');
+
+set role authenticated;
+set request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
+
+do $$
+declare n int;
+begin
+  select count(*) into n from public.ai_jobs;
+  if n <> 1 then raise exception 'Ana deveria ver 1 trabalho, viu %', n; end if;
+
+  select count(*) into n from public.push_subscriptions;
+  if n <> 1 then raise exception 'Ana deveria ver 1 inscrição de push, viu %', n; end if;
+end $$;
+
+-- Ana não apaga o que é do Bruno.
+do $$
+declare n int;
+begin
+  delete from public.ai_jobs where user_id = '22222222-2222-2222-2222-222222222222';
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'RLS falhou: Ana apagou % trabalho(s) do Bruno', n; end if;
+
+  delete from public.push_subscriptions where user_id = '22222222-2222-2222-2222-222222222222';
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'RLS falhou: Ana apagou % inscrição(ões) do Bruno', n; end if;
+end $$;
+
+-- Nem enfileira em nome dele.
+do $$
+begin
+  insert into public.ai_jobs (user_id, kind, input)
+  values ('22222222-2222-2222-2222-222222222222', 'apply', '{}'::jsonb);
+  raise exception 'RLS falhou: Ana enfileirou trabalho em nome do Bruno';
+exception
+  when insufficient_privilege then null;  -- esperado
+end $$;
+
+-- `input` é escrito uma vez, no insert: reescrevê-lo faria o histórico mentir
+-- sobre o que foi perguntado.
+do $$
+begin
+  update public.ai_jobs set input = '{"text": "outra coisa"}'::jsonb
+   where user_id = '11111111-1111-1111-1111-111111111111';
+  raise exception 'ESCALADA: o pedido original pôde ser reescrito';
+exception
+  when insufficient_privilege then null;  -- esperado
+end $$;
+
+-- O que o Server Action da própria pessoa precisa escrever continua escrevível.
+do $$
+declare s ai_job_status;
+begin
+  update public.ai_jobs set status = 'running', started_at = now(), model = 'gemini-3.8-flash'
+   where user_id = '11111111-1111-1111-1111-111111111111';
+
+  select status into s from public.ai_jobs;
+  if s <> 'running' then raise exception 'o trabalho da Ana deveria estar running, está %', s; end if;
+end $$;
+
+-- Duas contas no mesmo navegador: a unicidade é (user_id, endpoint), então o
+-- mesmo endpoint pode ser reaproveitado por outra pessoa sem colidir. Global,
+-- essa colisão responderia "esta pessoa existe" sem ler linha nenhuma.
+do $$
+declare n int;
+begin
+  insert into public.push_subscriptions (user_id, endpoint, p256dh, auth_secret)
+  values ('11111111-1111-1111-1111-111111111111', 'https://push.exemplo/bruno',
+          'chave-compartilhada', 'segredo-compartilhado');
+
+  select count(*) into n from public.push_subscriptions;
+  if n <> 2 then raise exception 'Ana deveria ver 2 inscrições, viu %', n; end if;
+
+  -- Mas o MESMO par continua barrado.
+  begin
+    insert into public.push_subscriptions (user_id, endpoint, p256dh, auth_secret)
+    values ('11111111-1111-1111-1111-111111111111', 'https://push.exemplo/bruno', 'x', 'y');
+    raise exception 'push_subscriptions_user_endpoint_uniq falhou: par duplicado aceito';
+  exception
+    when unique_violation then null;  -- esperado
+  end;
+end $$;
+
+-- As preferências de IA são editáveis pelo dono (grant de coluna da 0012).
+do $$
+declare ligado boolean;
+begin
+  update public.profiles
+     set ai_insights_enabled = false, ai_notifications_enabled = false, ai_model = 'gemini-3.6-flash'
+   where id = '11111111-1111-1111-1111-111111111111';
+
+  select ai_insights_enabled into ligado from public.profiles
+   where id = '11111111-1111-1111-1111-111111111111';
+  if ligado then raise exception 'o dono deveria conseguir desligar o resumo'; end if;
+end $$;
+
+-- Mas o grant novo não pode ter reaberto a escalada que a 0008 fechou.
+do $$
+begin
+  update public.profiles set role = 'admin'
+   where id = '11111111-1111-1111-1111-111111111111';
+  raise exception 'ESCALADA: o grant da 0012 reabriu a escrita em profiles.role';
+exception
+  when insufficient_privilege then null;  -- esperado
+end $$;
+
+-- === Bruno enxerga só o dele ===
+set request.jwt.claim.sub = '22222222-2222-2222-2222-222222222222';
+
+do $$
+declare n int;
+begin
+  select count(*) into n from public.ai_jobs;
+  if n <> 1 then raise exception 'Bruno deveria ver 1 trabalho, viu %', n; end if;
+
+  -- Ana registrou o endpoint dele, mas a linha é dela: Bruno continua com uma.
+  select count(*) into n from public.push_subscriptions;
+  if n <> 1 then raise exception 'Bruno deveria ver 1 inscrição, viu %', n; end if;
+end $$;
+
+-- === Sem sessão, nada ===
+set request.jwt.claim.sub = '';
+
+do $$
+declare n int;
+begin
+  select count(*) into n from public.ai_jobs;
+  if n <> 0 then raise exception 'sem sessão deveriam aparecer 0 trabalhos, apareceram %', n; end if;
+
+  select count(*) into n from public.push_subscriptions;
+  if n <> 0 then raise exception 'sem sessão deveriam aparecer 0 inscrições, apareceram %', n; end if;
+end $$;
+
+reset role;
+
 select 'TODAS AS ASSERÇÕES DE RLS E CONSTRAINTS PASSARAM' as resultado;

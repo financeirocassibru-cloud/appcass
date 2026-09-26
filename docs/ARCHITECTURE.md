@@ -197,6 +197,75 @@ Component. A Action valida com Zod, executa, e chama `revalidatePath`. Isso reso
 não atualiza depois de salvar" do app antigo, onde `updateAll()` precisava ser chamado à mão
 em cada handler.
 
+## Assistente de IA (fase 7)
+
+A caixa que convida a contar o que aconteceu e traduz a frase em operações do app. O desenho
+inteiro gira em torno de uma frase: **a saída do modelo é dado, nunca comando.**
+
+| Peça | Papel |
+|---|---|
+| `lib/ai/tools.ts` | O vocabulário da IA: 27 declarações de função, uma por Server Action existente |
+| `lib/ai/proposal.ts` | **Puro.** Zod da proposta, o texto em português da confirmação e a tradução para `FormData` |
+| `lib/ai/models.ts` | **Puro.** A cadeia de modelos e a regra de queda para o próximo |
+| `lib/ai/gemini.ts` | Cliente REST da Interactions API, com `fetch` injetável |
+| `lib/ai/context.ts` | O retrato financeiro que vai no prompt, das queries que as telas já usam |
+| `lib/ai/jobs.ts` | O ciclo de vida do trabalho: enfileirar, avançar, cair para o próximo, fechar |
+| `lib/ai/apply.ts` | Executa a proposta confirmada **chamando as Server Actions**, sem escrever no banco |
+
+### Por que nada disto abre um caminho de escrita novo
+
+O que o modelo devolve vira uma proposta, passa por Zod, é lida por uma pessoa em português e só
+então executa — e executa pela mesma Server Action que o formulário da tela usa. Disso decorre
+tudo o que importa de graça: a validação, a exigência de `settled_on` quando liquidado, as
+guardas `.eq()` + `.select()` com verificação de linha casada, o `revalidatePath`.
+
+A autorização continua sendo da RLS. Um id de outra pessoa numa proposta não casa linha nenhuma
+e volta como "não encontrado" — e é assim que tem de ser: uma checagem de dono em JavaScript aqui
+seria a segunda fonte de verdade que o app antigo tinha, e que errava.
+
+### Por que o trabalho é uma linha no banco
+
+A Interactions API do Gemini tem execução em background: `background: true` devolve um `id` na
+hora e o Google segura a execução. `ai_jobs` guarda o ponteiro. Fechar o app no meio de uma frase
+não perde nada, e é isso que permite avisar depois, por Web Push.
+
+Três caminhos fecham um trabalho, e os três chamam o mesmo `advanceJob`:
+
+1. o poll do cliente, enquanto a folha está aberta;
+2. o `after()` do Next, que roda **depois** de a resposta sair e sobrevive ao navegador fechar;
+3. a varredura do cron, em `/api/ai/sweep`.
+
+O pedido inteiro — prompt, instrução e os rótulos dos ids — fica gravado em `ai_jobs.input`. Sem
+isso a varredura não conseguiria trocar de modelo: ela roda sem sessão, e remontar o contexto
+exige queries que passam pela RLS. Não é cópia de dado de domínio (invariante 6): é o registro do
+que foi perguntado, e o lançamento continua morando só em `entries`.
+
+### A cadeia de modelos
+
+Ordem de lançamento, do mais recente para o mais antigo, em `DEFAULT_MODEL_CHAIN` e
+sobrescritível por `GEMINI_MODELS`. A escolha manual em `/ajustes/ia` é o **ponto de partida**,
+não uma amarra: passado o prazo do tipo de trabalho (20s para interpretar, 45s para o resumo), ou
+diante de 429/404/5xx, a interação é cancelada e a pergunta segue para o próximo da cadeia. Um
+modelo aposentado gravado em `profiles.ai_model` não trava nada — cai de volta no mais recente.
+
+### Onde a chave mora
+
+`GEMINI_API_KEY` e `VAPID_PRIVATE_KEY` são lidas por `lib/ai/env.ts`, que abre com
+`import 'server-only'`. O invariante 4 continua valendo sem alteração: a
+`SUPABASE_SERVICE_ROLE_KEY` não saiu de `lib/supabase/`. A varredura usa
+`lib/supabase/sweeper.ts`, separado de `admin.ts` de propósito — o docblock de lá diz "existe por
+um único motivo: emitir convites", e alargar aquele escopo em silêncio aposentaria um guarda.
+
+### O invariante 14 numa rota de cron
+
+`/api/ai/sweep` não tem sessão, então `is_admin()` não tem o que conferir. O que o invariante
+protege — chave de serviço usada com base numa autorização que ninguém checou — continua valendo,
+cumprido em outro tempo: quem autorizou foi o **enfileiramento**, na sessão da pessoa, sob a
+policy `own rows: insert`; a varredura só lê o `user_id` de uma linha que a RLS já carimbou. A
+rota em si é autorizada por `CRON_SECRET`, comparado em tempo constante. O raciocínio completo
+está escrito no topo do arquivo, porque quem o ler depois vai bater o olho no invariante e
+precisar da resposta ali.
+
 ## Verificação
 
 **Local**
@@ -219,6 +288,22 @@ npm run dev
 6. Usuário A não vê categoria nem lançamento do usuário B.
 7. Ativar um cenário desativa o anterior atomicamente — nunca dois ativos ao mesmo tempo.
 8. Editar um valor dentro do cenário não altera o lançamento real correspondente.
+
+**Cenários do assistente (fase 7):**
+
+9. "paguei 87,50 no mercado hoje" propõe **uma** despesa de 8750 centavos na data de hoje em
+   `America/Sao_Paulo` — não 87 centavos, não o dia anterior.
+10. "aluguel de 2.400 todo dia 10" propõe conta fixa mensal, não um lançamento avulso.
+11. "comprei uma geladeira em 3x de 100" gera parcelas que somam exatamente 30000 centavos.
+12. "apaga o lançamento do mercado" mostra **qual** lançamento, em vermelho, e nada some antes do
+    Confirmar.
+13. Descartar a proposta não escreve nada em lugar nenhum.
+14. Com `GEMINI_MODELS` apontando para um modelo inexistente seguido de um válido, o trabalho cai
+    no segundo e termina; `ai_jobs.model` registra qual respondeu.
+15. Enviar uma frase, fechar o app e reabrir: o trabalho aparece concluído em `/assistente`.
+16. Resumo desligado em `/ajustes/ia` → o botão "Ver resumo" não existe no Início nem em
+    `/assistente`.
+17. Usuário A não vê trabalho nem inscrição de push do usuário B.
 
 **Produção:** deploy na Vercel com preview por PR; `Site URL`/`Redirect URLs` do Supabase
 apontando para produção e para os previews; `supabase db push` no projeto remoto; conferir
