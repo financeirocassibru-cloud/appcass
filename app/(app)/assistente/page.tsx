@@ -1,9 +1,7 @@
 import { isAiConfigured } from '@/lib/ai/env'
 import { listRecentJobs, type JobView } from '@/lib/ai/jobs'
 import { formatISODateBR } from '@/lib/ai/proposal'
-import { createClient } from '@/lib/supabase/server'
 import { AssistantComposer } from '@/components/ai/composer'
-import { InsightsPanel } from '@/components/ai/insights-panel'
 
 export const metadata = { title: 'Assistente · Finanças' }
 
@@ -25,11 +23,9 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 export default async function AssistentePage() {
-  const supabase = await createClient()
-  const [{ data: profile }, jobs] = await Promise.all([
-    supabase.from('profiles').select('ai_insights_enabled').maybeSingle(),
-    listRecentJobs(),
-  ])
+  // v1.1 — 2026-09-26: a leitura de `ai_insights_enabled` saiu daqui junto com o resumo,
+  // que mudou para a Projeção.
+  const jobs = await listRecentJobs()
 
   return (
     <main className="mx-auto flex max-w-md flex-col gap-6 px-6 py-8">
@@ -49,7 +45,6 @@ export default async function AssistentePage() {
         </p>
       )}
 
-      {profile?.ai_insights_enabled && isAiConfigured() && <InsightsPanel />}
 
       <History jobs={jobs} />
     </main>
