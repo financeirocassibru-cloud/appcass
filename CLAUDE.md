@@ -72,6 +72,12 @@ Cada uma existe porque o app antigo errou exatamente ali. O catálogo dos bugs e
 - Não copie código de `legacy/`. Consulte para entender a regra, reimplemente conforme os
   documentos em `docs/`.
 - Antes de escrever qualquer gráfico, consulte a skill `dataviz`.
+- **O comando de build vive só no `package.json`.** O `vercel.json` não repete `buildCommand`:
+  com ele preenchido, a Vercel ignora o script `build` e roda o que está ali. Foi assim que o
+  `serwist build` deixou de rodar em todo deploy, `/sw.js` respondeu 404 em produção por três
+  deploys, e o PR que "corrigiu" a ordem dos comandos dentro do script não mudou nada — porque
+  o script não era chamado. `tests/unit/build-pipeline.test.ts` e o guarda no `next.config.ts`
+  existem para isso não voltar.
 
 ## Verificação antes de abrir PR
 
