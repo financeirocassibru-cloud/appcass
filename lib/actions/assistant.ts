@@ -8,6 +8,7 @@ import { buildContext } from '@/lib/ai/context'
 import { isAiConfigured } from '@/lib/ai/env'
 import { runTriage } from '@/lib/ai/briefing'
 import { applyEdits, editsPayloadSchema, revalidateOperations } from '@/lib/ai/edits'
+import { parsePeriodDays, runInsights } from '@/lib/ai/insights'
 import { advanceJob, enqueueJob, getJob, getJobRow, trackJob, type JobView } from '@/lib/ai/jobs'
 import { operationSchema } from '@/lib/ai/proposal'
 import { draftSummary, type DraftItem, type Triage } from '@/lib/ai/triage'
@@ -21,7 +22,10 @@ import {
 } from '@/lib/validation/assistant'
 
 /**
- * O assistente, do lado do servidor. v1.1 — 2026-09-26.
+ * O assistente, do lado do servidor. v1.2 — 2026-09-26.
+ *
+ * v1.2: `requestInsights` passou a levar o período do histórico que a pessoa escolhe na
+ * Projeção, e `enqueueJob` recebe as opções num objeto.
  *
  * O fluxo tem **três** tempos, e o primeiro é novo:
  *
@@ -56,6 +60,8 @@ export interface AssistantActionState {
   jobId?: string
   /** O resultado da triagem, quando esta resposta vem do primeiro tempo. */
   briefing?: BriefingView
+  /** O resumo, já pronto. Não vem do banco: nasceu e voltou neste mesmo pedido. */
+  insights?: { text: string; days: number }
 }
 
 /** O que a folha precisa exibir depois da triagem. */
@@ -193,7 +199,7 @@ async function iniciarTrabalho(
 ): Promise<AssistantActionState> {
   let jobId: string
   try {
-    jobId = await enqueueJob('interpret', text, draft)
+    jobId = await enqueueJob('interpret', text, { draft })
   } catch (cause) {
     return { error: cause instanceof Error ? cause.message : 'Não foi possível falar com a IA.' }
   }
@@ -230,10 +236,21 @@ export async function submitMessage(
   return await iniciarTrabalho(parsed.data.text, [])
 }
 
-/** Pede o resumo e as dicas. Só acontece quando a pessoa toca no botão. */
+/**
+ * Monta o resumo e devolve o texto. Só acontece quando a pessoa toca no botão.
+ *
+ * **Nada é gravado.** O resumo não é um registro, é uma leitura: guardá-lo em `ai_jobs`
+ * enchia o histórico de análises que ninguém ia reler, ao lado dos lançamentos que a
+ * pessoa de fato pediu. Ele roda dentro deste pedido, volta como texto, e quem quiser
+ * guardar copia.
+ *
+ * A consequência está dita na tela, não escondida: enquanto ele é gerado, a pessoa
+ * precisa ficar ali. Sem linha no banco não há varredura para retomar nem push para
+ * avisar — e o resumo é barato de refazer, o que torna a troca aceitável.
+ */
 export async function requestInsights(
   _prev: AssistantActionState,
-  _formData: FormData,
+  formData: FormData,
 ): Promise<AssistantActionState> {
   if (!isAiConfigured()) {
     return { error: 'O assistente não está configurado. Falta a chave da API do Gemini.' }
@@ -249,20 +266,24 @@ export async function requestInsights(
     return { error: 'O resumo está desligado. Ligue em Ajustes › IA.' }
   }
 
-  let jobId: string
+  // Recorta em vez de recusar: quem digitou 90 quis "bastante", e devolver erro para um
+  // campo numérico seria trocar uma resposta por um formulário.
+  const dias = parsePeriodDays(formData.get('dias'))
+
+  let texto: string | null
   try {
-    jobId = await enqueueJob('insights', '')
+    texto = await runInsights(dias)
   } catch (cause) {
     return { error: cause instanceof Error ? cause.message : 'Não foi possível falar com a IA.' }
   }
 
-  after(async () => {
-    // Abaixo do `maxDuration` de 60s: pedir o limite inteiro faria a plataforma
-    // cortar o acompanhamento em vez de ele terminar por conta própria.
-    await trackJob(jobId, 50_000)
-  })
+  if (!texto) {
+    return {
+      error: 'Nenhum modelo entregou o resumo a tempo. Tente de novo em alguns instantes.',
+    }
+  }
 
-  return { success: 'Estou montando seu resumo.', jobId }
+  return { insights: { text: texto, days: dias } }
 }
 
 /**

@@ -13,12 +13,6 @@ import {
   startInteraction,
   type Interaction,
 } from './gemini'
-import {
-  buildInsightsInput,
-  INSIGHTS_RESPONSE_SCHEMA,
-  INSIGHTS_SYSTEM_INSTRUCTION,
-  parseInsights,
-} from './insights'
 import { DEADLINE_MS, nextModel, resolveStartModel, shouldFallback } from './models'
 import {
   describeOperation,
@@ -34,7 +28,16 @@ import { TOOLS } from './tools'
 import { draftPromptBlock, type DraftItem } from './triage'
 
 /**
- * Ciclo de vida de um trabalho da IA. v1.1 — 2026-09-26.
+ * Ciclo de vida de um trabalho da IA. v1.2 — 2026-09-26.
+ *
+ * v1.2: **o resumo saiu daqui.** Ele não era um trabalho: era uma leitura, e guardá-lo
+ * em `ai_jobs` acumulava linhas que ninguém ia reler, aparecendo no histórico ao lado
+ * dos lançamentos que a pessoa de fato pediu. Agora ele roda dentro do próprio pedido,
+ * em `runInsights` (`lib/ai/insights.ts`), e volta como texto na resposta da action.
+ *
+ * O valor `insights` continua no enum `ai_job_kind` — migrations são imutáveis
+ * (invariante 16) — e as três linhas antigas seguem lá, todas terminais. Simplesmente
+ * não se cria mais nenhuma.
  *
  * v1.1: `enqueueJob` passou a aceitar o rascunho já aprovado na triagem, que entra no
  * prompt como bloco próprio. E `advanceJob` deixou de exigir `status === 'completed'` para colher o
@@ -134,6 +137,17 @@ function deadlineFor(kind: AiJobKind): number {
  * Não confunde com o invariante 6: isto não é cópia de dado de domínio, é o
  * registro do que foi perguntado. O lançamento continua morando só em `entries`.
  */
+/**
+ * O que varia entre um pedido e outro, além do texto.
+ *
+ * Objeto e não mais parâmetros posicionais: com dois opcionais,
+ * `enqueueJob('insights', '', [], 45)` não diz nada a quem lê.
+ */
+export interface EnqueueOptions {
+  /** O rascunho que a pessoa aprovou na triagem. */
+  draft?: readonly DraftItem[]
+}
+
 interface JobRequest {
   text: string
   prompt: string
@@ -148,19 +162,9 @@ interface JobRequest {
 async function buildRequest(
   kind: AiJobKind,
   text: string,
-  draft: readonly DraftItem[] = [],
+  options: EnqueueOptions = {},
 ): Promise<JobRequest> {
-  if (kind === 'insights') {
-    return {
-      text,
-      prompt: await buildInsightsInput(),
-      systemInstruction: INSIGHTS_SYSTEM_INSTRUCTION,
-      labels: EMPTY_LABELS,
-      validCategoryIds: [],
-      useTools: false,
-      responseSchema: INSIGHTS_RESPONSE_SCHEMA as unknown as Record<string, unknown>,
-    }
-  }
+  const draft = options.draft ?? []
 
   const context = await buildContext()
 
@@ -214,7 +218,7 @@ function readRequest(row: AiJobRow): JobRequest | null {
 export async function enqueueJob(
   kind: AiJobKind,
   text: string,
-  draft: readonly DraftItem[] = [],
+  options: EnqueueOptions = {},
 ): Promise<string> {
   const supabase = await createClient()
 
@@ -227,7 +231,7 @@ export async function enqueueJob(
   const chain = geminiModelChain()
   const model = resolveStartModel(preference, chain)
 
-  const request = await buildRequest(kind, text, draft)
+  const request = await buildRequest(kind, text, options)
 
   const { data: created, error } = await supabase
     .from('ai_jobs')
@@ -345,7 +349,7 @@ export async function advanceJob(supabase: Client, row: AiJobRow): Promise<AiJob
   //
   // Cancelar depois de colher não é zelo: sem isso a interação segue pendurada
   // gastando cota à espera de uma resposta que nunca vem.
-  if (interaction && row.kind !== 'insights' && hasFunctionCall(interaction.steps ?? [])) {
+  if (interaction && hasFunctionCall(interaction.steps ?? [])) {
     const resultado = await completeJob(supabase, row, interaction)
     if (row.provider_interaction_id) await cancelInteraction(row.provider_interaction_id)
     return resultado
@@ -399,16 +403,6 @@ async function completeJob(
   row: AiJobRow,
   interaction: Interaction,
 ): Promise<AiJobStatus> {
-  if (row.kind === 'insights') {
-    const insights = parseInsights(interaction.output_text)
-    if (!insights) {
-      await failJob(supabase, row.id, 'O resumo voltou em formato inesperado.')
-      return 'failed'
-    }
-    await finishJob(supabase, row, insights, 'Seu resumo financeiro está pronto.')
-    return 'completed'
-  }
-
   const { operations, rejected } = parseFunctionCalls(interaction.steps ?? [])
   // Rótulos do pedido, e não de um contexto remontado agora: quem chega aqui
   // pode ser a varredura, que não tem sessão para remontar coisa nenhuma.
