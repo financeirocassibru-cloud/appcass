@@ -18,13 +18,18 @@ import { cn } from '@/lib/utils'
 const initialState: AiSettingsActionState = {}
 
 /**
- * Os interruptores da IA. v1.1 — 2026-09-26.
+ * Os interruptores da IA. v1.2 — 2026-09-26.
+ *
+ * v1.2: o "Resumo e dicas" virou **Diagnóstico**, e o aviso de privacidade foi corrigido:
+ * ele dizia que o resumo mandava "totais já calculados", o que deixou de ser verdade
+ * quando o diagnóstico passou a ler os lançamentos do período. Num app de dinheiro, um
+ * aviso de privacidade desatualizado é pior que nenhum.
  *
  * v1.1: acrescentado "Mostrar as etapas", que a conversa em dois tempos tornou útil.
  *
  * Quatro ajustes, e um aviso que não é opcional: a tela diz, com todas as letras,
  * quais dados saem daqui para o Gemini. Num app de dinheiro isso não é letra
- * miúda — e desligar o resumo não é desculpa para esconder a informação, já que
+ * miúda — e desligar o diagnóstico não é desculpa para esconder a informação, já que
  * a caixa de lançar continua mandando o mesmo retrato.
  */
 export function AiSettingsForm({
@@ -55,8 +60,8 @@ export function AiSettingsForm({
       )}
 
       <Toggle
-        titulo="Resumo e dicas"
-        descricao="Mostra um resumo da sua situação financeira e sugestões, quando você pedir. Desligado, o botão some do Início e da tela do assistente."
+        titulo="Diagnóstico"
+        descricao="Lê seus lançamentos do período que você escolher e escreve, em texto corrido, como estão suas finanças. Fica na tela de Projeção; desligado, ele não aparece lá."
         enabled={insightsEnabled}
         action={setInsightsEnabled}
       />
@@ -91,7 +96,8 @@ export function AiSettingsForm({
         <p className="text-muted-foreground text-sm">
           Para entender o que você escreve, o assistente envia ao Gemini um retrato das suas
           finanças: saldo, categorias, os lançamentos mais recentes, contas fixas, parcelamentos,
-          metas e cenários. O resumo envia totais já calculados. Seu e-mail e sua senha nunca são
+          metas e cenários. O diagnóstico envia, além disso, os lançamentos do período que você
+          pedir — descrição, valor, data e categoria de cada um. Seu e-mail e sua senha nunca são
           enviados.
         </p>
       </section>

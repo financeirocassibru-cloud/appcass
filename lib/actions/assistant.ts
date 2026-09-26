@@ -237,7 +237,9 @@ export async function submitMessage(
 }
 
 /**
- * Monta o resumo e devolve o texto. Só acontece quando a pessoa toca no botão.
+ * Monta o diagnóstico e devolve o texto. Só acontece quando a pessoa toca no botão.
+ *
+ * Na tela ele se chama **Diagnóstico**; no código, `insights` — invariante 10.
  *
  * **Nada é gravado.** O resumo não é um registro, é uma leitura: guardá-lo em `ai_jobs`
  * enchia o histórico de análises que ninguém ia reler, ao lado dos lançamentos que a
@@ -263,7 +265,7 @@ export async function requestInsights(
     .maybeSingle()
 
   if (!profile?.ai_insights_enabled) {
-    return { error: 'O resumo está desligado. Ligue em Ajustes › IA.' }
+    return { error: 'O diagnóstico está desligado. Ligue em Ajustes › IA.' }
   }
 
   // Recorta em vez de recusar: quem digitou 90 quis "bastante", e devolver erro para um
@@ -279,7 +281,7 @@ export async function requestInsights(
 
   if (!texto) {
     return {
-      error: 'Nenhum modelo entregou o resumo a tempo. Tente de novo em alguns instantes.',
+      error: 'Nenhum modelo entregou o diagnóstico a tempo. Tente de novo em alguns instantes.',
     }
   }
 

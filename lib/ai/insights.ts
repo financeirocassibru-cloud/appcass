@@ -15,7 +15,11 @@ import { nextModel } from './models'
 import { formatISODateBR } from './proposal'
 
 /**
- * Resumo da situação financeira e dicas. v1.2 — 2026-09-26.
+ * Diagnóstico da situação financeira. v1.2 — 2026-09-26.
+ *
+ * Na tela ele se chama **Diagnóstico**; aqui, `insights`. O invariante 10 pede
+ * identificadores em inglês e interface em português, e este arquivo é a costura entre
+ * os dois — por isso todo texto que a pessoa lê, daqui em diante, diz "diagnóstico".
  *
  * **Só sob demanda.** Nada aqui roda ao abrir uma tela: o resumo nasce quando a
  * pessoa toca em "Ver resumo". Foi uma decisão explícita — um resumo gerado a
@@ -194,7 +198,7 @@ export async function buildInsightsInput(
     }
   } else {
     linhas.push(
-      `Nenhum lançamento nos últimos ${periodo} dias. Diga isso à pessoa e sugira registrar o que aconteceu, para o próximo resumo valer mais.`,
+      `Nenhum lançamento nos últimos ${periodo} dias. Diga isso à pessoa e sugira registrar o que aconteceu, para o próximo diagnóstico valer mais.`,
     )
   }
 
@@ -357,7 +361,7 @@ export const INSIGHTS_SYSTEM_INSTRUCTION = `Você analisa a situação financeir
 FORMATO: texto corrido, e nada além disso.
 - Dois a cinco parágrafos curtos, separados por uma linha em branco.
 - Sem JSON, sem cerca de markdown, sem título, sem lista com marcadores, sem negrito. Só prosa, como alguém explicando por mensagem.
-- Não comece com saudação nem com "aqui está seu resumo". Comece pelo assunto.
+- Não comece com saudação nem com "aqui está seu diagnóstico". Comece pelo assunto.
 
 O QUE DIZER:
 - Abra pelo que mais importa: contas em atraso, saldo que vai ficar negativo, ou um gasto muito acima do padrão dos meses anteriores. Se nada disso existe, diga que está sob controle e explique por quê.
@@ -372,4 +376,4 @@ O QUE NÃO FAZER:
 - Nada de conselho de investimento, de produto financeiro ou de crédito.
 - Sem moralizar e sem elogio vazio. A pessoa quer saber onde está, não ser parabenizada.
 - Não repita a lista de lançamentos de volta. Ela já a tem; o que falta é o que você enxerga nela.
-- Se o período tiver pouca informação, diga isso em uma frase e sugira o que registrar para o próximo resumo valer mais.`
+- Se o período tiver pouca informação, diga isso em uma frase e sugira o que registrar para o próximo diagnóstico valer mais.`

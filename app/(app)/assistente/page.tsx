@@ -106,7 +106,9 @@ function History({ jobs }: { jobs: JobView[] }) {
 }
 
 function jobTitle(job: JobView): string {
-  if (job.kind === 'insights') return 'Resumo da situação financeira'
+  // As linhas antigas, de quando o diagnóstico ainda era um trabalho salvo. Não se cria
+  // mais nenhuma, mas o histórico continua mostrando as que existem.
+  if (job.kind === 'insights') return 'Diagnóstico'
   return job.input?.text?.trim() || 'Pedido sem texto'
 }
 

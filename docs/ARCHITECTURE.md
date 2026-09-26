@@ -259,9 +259,14 @@ outra pessoa, mas **não** barraria trocar "apague o lançamento do mercado" por
 salário" — as duas linhas são dela. Operação que apaga não tem campo para ajustar; o que se
 faz com ela é remover da proposta.
 
-### O resumo não é um trabalho (fase 7c)
+### O diagnóstico não é um trabalho (fase 7c)
 
-O resumo mora em `/projecao`, **não** passa por `ai_jobs` e **não é gravado**. Três decisões
+**Na tela ele se chama Diagnóstico; no código, `insights`.** O invariante 10 pede
+identificadores em inglês e interface em português, então `ai_insights_enabled`,
+`runInsights` e o enum `ai_job_kind` continuam como estão — só o texto que a pessoa lê
+mudou.
+
+O diagnóstico mora em `/projecao`, **não** passa por `ai_jobs` e **não é gravado**. Três decisões
 que vêm do mesmo lugar.
 
 **Texto livre, não formato fixo.** A primeira versão pedia `{summary, tips}`, mandava um
@@ -270,19 +275,25 @@ com o conteúdo certo na mão: um modelo devolve a mesma coisa em mil formas lig
 diferentes, e prever cada uma é uma corrida que não se ganha. Agora a validação inteira é "veio
 texto?". Some com isso uma classe de falha, e de lado some a dependência do `response_format`.
 
-**Nada gravado.** O resumo não era um registro, era uma leitura. Guardá-lo acumulava análises
+**Nada gravado.** O diagnóstico não era um registro, era uma leitura. Guardá-lo acumulava análises
 que ninguém ia reler, no mesmo histórico dos lançamentos que a pessoa de fato pediu. Ele roda
 dentro do pedido, por `runInsights`, e volta como texto na resposta da Server Action. Quem
 quiser guardar, copia — a tela tem o botão.
 
-A consequência está dita na tela e não escondida: **enquanto o resumo é gerado, a pessoa precisa
+A consequência está dita na tela e não escondida: **enquanto o diagnóstico é gerado, a pessoa precisa
 ficar ali.** Sem linha no banco não há varredura para retomar nem push para chamar de volta. Foi
-a troca aceita, porque refazer um resumo custa um toque e manter um histórico de coisas que
+a troca aceita, porque refazer um diagnóstico custa um toque e manter um histórico de coisas que
 ninguém consulta custa para sempre. É por isso também que `/projecao` declara `maxDuration = 60`:
 a action roda sob o orçamento da rota que a serve.
 
 O valor `insights` continua no enum `ai_job_kind` — migrations são imutáveis (invariante 16) —
 e as três linhas antigas seguem lá, terminais. Simplesmente não se cria mais nenhuma.
+
+**O aviso de privacidade mudou junto, e não por estilo.** `/ajustes/ia` dizia que o resumo
+enviava "totais já calculados". Deixou de ser verdade no instante em que o diagnóstico passou a
+ler os lançamentos do período, então a tela passou a dizer o que de fato sai: descrição, valor,
+data e categoria de cada lançamento pedido. Num app de dinheiro, um aviso de privacidade
+desatualizado é pior que nenhum — ele promete uma coisa e o código faz outra.
 
 **O histórico de verdade.** Antes o modelo recebia só agregados e nenhum lançamento; o prompt
 saía com 492 caracteres, e com tão pouco na mão ele tinha pouco a dizer. Agora ele lê os
@@ -407,8 +418,8 @@ npm run dev
 14. Com `GEMINI_MODELS` apontando para um modelo inexistente seguido de um válido, o trabalho cai
     no segundo e termina; `ai_jobs.model` registra qual respondeu.
 15. Enviar uma frase, fechar o app e reabrir: o trabalho aparece concluído em `/assistente`.
-16. Resumo desligado em `/ajustes/ia` → o botão "Ver resumo" não existe em `/projecao` (e o
-    resumo não fica acinzentado: ele não é renderizado).
+16. Diagnóstico desligado em `/ajustes/ia` → o botão "Ver diagnóstico" não existe em
+    `/projecao` (e não fica acinzentado: ele não é renderizado).
 17. Usuário A não vê trabalho nem inscrição de push do usuário B.
 
 **Cenários da conversa em dois tempos (fase 7b):**
@@ -427,11 +438,12 @@ npm run dev
 23. A espera é narrada pela IA: "Um instante…" na hora e a fala dos 15 segundos depois, as duas
     como balões. Ligar "Mostrar as etapas" não adianta a segunda.
 
-**Cenários do resumo (fase 7c):**
+**Cenários do diagnóstico (fase 7c):**
 
-24. O resumo aparece em `/projecao` e **não** no Início nem em `/assistente`.
-25. Pedir o resumo devolve **texto corrido** em português, sem lista de dicas.
-26. Nenhuma linha nova em `ai_jobs` com `kind = 'insights'` depois de pedir o resumo — a
+24. O diagnóstico aparece em `/projecao` e **não** no Início nem em `/assistente`, e em nenhum
+    lugar da interface ele é chamado de "resumo".
+25. Pedir o diagnóstico devolve **texto corrido** em português, sem lista de dicas.
+26. Nenhuma linha nova em `ai_jobs` com `kind = 'insights'` depois de pedir o diagnóstico — a
     consulta `select count(*) from ai_jobs where kind = 'insights'` não muda.
 27. Campo de período: 60 e 1 funcionam; 90 é recortado em 60; **campo vazio cai em 30, não em
     1** — `Number('')` é `0`, e sem o corte o piso daria um resumo de um dia só.

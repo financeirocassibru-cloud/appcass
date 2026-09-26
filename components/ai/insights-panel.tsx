@@ -8,7 +8,10 @@ import { Button } from '@/components/ui/button'
 import { useQuietFor } from './use-quiet-for'
 
 /**
- * Resumo da situação financeira. v1.2 — 2026-09-26.
+ * Diagnóstico da situação financeira. v1.2 — 2026-09-26.
+ *
+ * Na tela ele se chama **Diagnóstico**; no código, `insights`. O invariante 10 pede
+ * identificadores em inglês e interface em português, e esta é a costura entre os dois.
  *
  * **Só sob demanda**, por decisão de produto: nada é gerado ao abrir a tela. O
  * botão é o gatilho, e enquanto ninguém o toca não há chamada nenhuma à API.
@@ -54,7 +57,7 @@ export function InsightsPanel() {
     try {
       await navigator.clipboard.writeText(texto)
       setCopiado(true)
-      toast.success('Resumo copiado.')
+      toast.success('Diagnóstico copiado.')
       setTimeout(() => setCopiado(false), 2_000)
     } catch {
       // Área de transferência barrada (sem HTTPS, permissão negada, navegador antigo):
@@ -65,7 +68,7 @@ export function InsightsPanel() {
 
   return (
     <section className="flex flex-col gap-3 rounded-xl bg-[var(--surface)] p-5">
-      <h2 className="text-base font-semibold">Como estão suas finanças</h2>
+      <h2 className="text-base font-semibold">Diagnóstico</h2>
 
       <form action={formAction} className="flex flex-col gap-3">
         <label className="flex items-center gap-2 text-sm">
@@ -83,7 +86,7 @@ export function InsightsPanel() {
         </label>
 
         <Button type="submit" variant="outline" disabled={pending} className="min-h-11">
-          {pending ? 'Olhando suas contas…' : texto ? 'Refazer o resumo' : 'Ver resumo'}
+          {pending ? 'Olhando suas contas…' : texto ? 'Refazer o diagnóstico' : 'Ver diagnóstico'}
         </Button>
       </form>
 
@@ -96,7 +99,7 @@ export function InsightsPanel() {
       {demorando && (
         <p role="status" className="text-muted-foreground text-xs">
           Está demorando um pouco. Preciso que você fique nesta tela até eu terminar — o
-          resumo não fica guardado.
+          diagnóstico não fica guardado.
         </p>
       )}
 
