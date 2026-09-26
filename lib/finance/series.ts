@@ -134,6 +134,40 @@ export function niceTicks(maxCents: number, targetCount = 4): number[] {
   return ticks
 }
 
+/**
+ * Marcas de eixo para uma série que atravessa o zero.
+ *
+ * `niceTicks` assume que a escala começa em zero, o que serve a barras mas não
+ * ao saldo projetado: ele pode ficar negativo, e é justamente aí que a tela
+ * precisa ser lida com atenção. Aqui o passo é arredondado pela mesma regra, e
+ * as marcas cobrem o intervalo inteiro.
+ *
+ * O zero sempre cai numa marca quando o intervalo o atravessa — é a linha de
+ * referência do gráfico, e ela não pode ficar entre duas marcas.
+ */
+export function niceTicksRange(minCents: number, maxCents: number, targetCount = 4): number[] {
+  if (!Number.isFinite(minCents) || !Number.isFinite(maxCents)) return [0]
+  if (!Number.isInteger(targetCount) || targetCount < 1) {
+    throw new Error(`Número de marcas inválido: ${targetCount}`)
+  }
+
+  const low = Math.min(minCents, 0)
+  const high = Math.max(maxCents, 0)
+  if (low === high) return [0]
+
+  const step = niceStep((high - low) / targetCount)
+  const first = Math.floor(low / step) * step
+  const last = Math.ceil(high / step) * step
+
+  const ticks: number[] = []
+  for (let value = first; value <= last; value += step) {
+    // `Math.round` fecha o resíduo de ponto flutuante que a soma repetida
+    // acumularia: as marcas são centavos inteiros.
+    ticks.push(Math.round(value))
+  }
+  return ticks
+}
+
 export interface CategorySlice {
   categoryId: string | null
   name: string

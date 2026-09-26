@@ -12,6 +12,52 @@ import type {
 } from './types'
 
 /**
+ * Os lançamentos que a projeção deve considerar — e só eles.
+ *
+ * Esta função é o **complemento exato** de `computeBalance()`. As duas dividem
+ * os lançamentos em dois grupos que não se sobrepõem:
+ *
+ * - `computeBalance` soma os **liquidados até hoje**: é o saldo de onde a
+ *   projeção parte.
+ * - esta soma o que **ainda vai acontecer**: é o que a projeção acrescenta.
+ *
+ * Se as duas contassem o mesmo lançamento, ele entraria duas vezes no saldo
+ * projetado. O caso concreto: um gasto liquidado hoje já está descontado do
+ * saldo atual; se a projeção começa hoje e também o vê, o dia de hoje fecha com
+ * o valor descontado em dobro.
+ *
+ * Duas consequências do desenho:
+ *
+ * - **Pendente atrasado entra**, mesmo vencido antes de hoje. Ele não está no
+ *   saldo (não foi liquidado) e não desapareceu por vencer — continua devido.
+ *   Quem o coloca no primeiro dia da janela é `rollOverdueTo`, abaixo.
+ * - **Liquidado com data futura entra.** É raro, mas acontece: `computeBalance`
+ *   só olha até hoje, então esse lançamento ainda não está no saldo.
+ */
+export function entriesAheadOf(entries: readonly Entry[], today: ISODate): Entry[] {
+  return entries.filter((entry) => !(entry.isSettled && entry.occurredOn <= today))
+}
+
+/**
+ * Traz para `from` o que venceu antes dele.
+ *
+ * A janela da projeção começa hoje, mas uma conta vencida em março continua
+ * devida em setembro. Deixá-la fora da janela faria a projeção parecer melhor
+ * do que é — o erro mais perigoso que um app de finanças pode cometer, porque
+ * erra para o lado de gastar.
+ *
+ * Empurrar para o primeiro dia é uma suposição, não um fato, e a tela precisa
+ * dizer isso. Mas é a suposição menos enganosa das disponíveis: a alternativa é
+ * fingir que a dívida não existe.
+ */
+export function rollOverdueTo<T extends { occurredOn: ISODate }>(
+  items: readonly T[],
+  from: ISODate,
+): T[] {
+  return items.map((item) => (item.occurredOn < from ? { ...item, occurredOn: from } : item))
+}
+
+/**
  * Chave de rastreio de uma ocorrência gerada: `source:sourceId:occurrenceKey`.
  *
  * É a mesma tripla do índice `entries_generated_uniq` e a mesma que
