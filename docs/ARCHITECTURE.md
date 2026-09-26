@@ -211,6 +211,70 @@ inteiro gira em torno de uma frase: **a saída do modelo é dado, nunca comando.
 | `lib/ai/context.ts` | O retrato financeiro que vai no prompt, das queries que as telas já usam |
 | `lib/ai/jobs.ts` | O ciclo de vida do trabalho: enfileirar, avançar, cair para o próximo, fechar |
 | `lib/ai/apply.ts` | Executa a proposta confirmada **chamando as Server Actions**, sem escrever no banco |
+| `lib/ai/triage.ts` | **Puro.** O rascunho da conversa: Zod, a leitura em português e o bloco do prompt |
+| `lib/ai/briefing.ts` | A chamada da triagem — sem contexto, sem ferramentas, sem background |
+| `lib/ai/edits.ts` | **Puro.** A lista branca dos ajustes da tela de confirmação |
+| `lib/ai/json.ts` | **Puro.** Lê o JSON do modelo tolerando cerca de markdown e frase em volta |
+
+### Os dois tempos da conversa (fase 7b)
+
+Escrever uma frase não dispara mais o caminho pesado de uma vez. São dois tempos, e a
+diferença entre eles é o que a experiência pedia.
+
+**Primeiro tempo — a triagem.** Uma chamada curta, **sem nenhuma query ao banco, sem
+ferramenta e sem background**, que responde três coisas: isto é assunto deste app? o que
+dá para preencher? como dizer isso em português? Em um ou dois segundos a pessoa lê o que
+a IA entendeu e corrige ali mesmo se estiver errado. Nada foi gravado em lugar nenhum.
+
+**Segundo tempo — a proposta.** Só depois do "É isso" nasce a linha em `ai_jobs`, com o
+retrato financeiro, as 27 ferramentas e o rascunho já aprovado num bloco próprio do
+prompt. Esse bloco não é economia de tokens: é o que evita a proposta contradizer o que a
+pessoa acabou de confirmar.
+
+Por que a triagem **não** é um trabalho no banco: `ai_jobs` existe para o trabalho
+sobreviver ao app fechar, e isso vale quando perder o trabalho custaria a frase da pessoa.
+A triagem custa uma chamada de um segundo e é re-derivável. Somado a isso, a 0012 revoga
+`update` em `ai_jobs.input` de propósito — acrescentar falas a uma linha existente é
+impossível sem migration nova. As duas coisas apontam para o mesmo desenho: a conversa
+vive no cliente e entra no banco de uma vez, no `insert` da aprovação.
+
+A triagem **nunca pode ser um jeito novo de a tela travar**. Toda falha dela devolve
+`null` e o app segue pelo caminho que já tinha (`submitMessage`, agora caminho de
+reserva). Ela é uma gentileza, não uma dependência.
+
+### Ajustar a proposta sem abrir uma porta
+
+`confirmProposal` relia a proposta do banco e não confiava no corpo do formulário, e era
+isso que tornava verdadeira a frase "foi isto que a IA propôs". Deixar a pessoa corrigir um
+valor parece exigir jogar isso fora. Não exige, e a divisão é esta:
+
+- **a identidade continua vindo do banco.** Qual operação é, e em que linha ela mexe, sai
+  de `ai_jobs.result`. `op`, `id`, `rule_id`, `goal_id` e `scenario_id` não são editáveis;
+- **só o que uma pessoa digitaria muda** — valor, data, descrição, categoria, liquidado —
+  e a mesclagem inteira passa de novo pelo `operationSchema`.
+
+A lista branca está em `lib/ai/edits.ts`, e o motivo dela é específico: a RLS barra um id de
+outra pessoa, mas **não** barraria trocar "apague o lançamento do mercado" por "apague o
+salário" — as duas linhas são dela. Operação que apaga não tem campo para ajustar; o que se
+faz com ela é remover da proposta.
+
+### Dois bugs que este desenho fechou
+
+**O trabalho que ficava preso para sempre.** `advanceJob` só colhia o resultado com
+`status === 'completed'`, e `shouldFallback` listava os status "em andamento" pelo NOME —
+`undefined` e `'in_progress'`. Uma interação com ferramentas para em `requires_action`
+esperando o retorno das chamadas, e este app é o lado que **não** responde ferramenta: ele
+propõe a operação a uma pessoa. Fora da lista, o prazo nunca era avaliado, e nem o poll,
+nem o `after()`, nem a varredura conseguiam fechar a linha. Agora `shouldFallback` pergunta
+"o status é final?" — um backstop que nenhum status novo da API consegue furar — e
+`advanceJob` colhe pela presença da chamada, não pelo nome do status.
+
+**O resumo que voltava "em formato inesperado".** A instrução do sistema não pedia JSON:
+apostava tudo em o provedor honrar o `response_format`. E `parseInsights` fazia `JSON.parse`
+cru, então o mesmo objeto correto dentro de uma cerca ```json era descartado. O contrato
+agora está escrito no prompt e a leitura passa por `parseLooseJson`. O `response_format`
+segue com `type: 'text'` de propósito: o corpo atual é aceito, e um `type` que a API não
+reconheça derrubaria o corpo inteiro com 400 — que não é retentável.
 
 ### Por que nada disto abre um caminho de escrita novo
 
@@ -310,6 +374,22 @@ npm run dev
 16. Resumo desligado em `/ajustes/ia` → o botão "Ver resumo" não existe no Início nem em
     `/assistente`.
 17. Usuário A não vê trabalho nem inscrição de push do usuário B.
+
+**Cenários da conversa em dois tempos (fase 7b):**
+
+18. "Recebi dois mil ontem. fui ao mercado hoje e já gastei 200 reais" devolve o briefing em
+    segundos, com **dois** itens e as duas datas certas, e nenhum trabalho fica `em
+    andamento` além do prazo. Era a frase que travava para sempre.
+19. "que horas são?" recebe resposta de que não é assunto financeiro, e **nenhuma linha é
+    criada em `ai_jobs`**.
+20. Corrigir por frase ("na verdade foram 250 no mercado") gera novo briefing sem enfileirar
+    trabalho nenhum entre os dois.
+21. Ajustar um valor na tela de aprovação registra o valor **ajustado**, e o histórico marca
+    o pedido como editado.
+22. Tentar reapontar uma exclusão para outro lançamento não muda o alvo — a lista branca de
+    `lib/ai/edits.ts` ignora o campo.
+23. O aviso "pode fechar o app" não aparece nos primeiros 5 segundos, e ligar "Mostrar as
+    etapas" não o adianta.
 
 **Produção:** deploy na Vercel com preview por PR; `Site URL`/`Redirect URLs` do Supabase
 apontando para produção e para os previews; `supabase db push` no projeto remoto; conferir
