@@ -57,6 +57,10 @@ npx supabase db push        # aplica as migrations no projeto remoto
 npm run dev
 npm run typecheck
 npm run lint
+npm run verify:pwa          # checa o service worker num Chromium, contra um build
+                            # de produção servido em :3100 (subir antes com
+                            # npm run build && npx next start -p 3100)
+
 npm run test                # Vitest — lib/finance
 npm run test:rls            # dois usuários; cada um só enxerga o próprio dado
 npm run test:e2e            # Playwright

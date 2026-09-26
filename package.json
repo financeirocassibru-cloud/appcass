@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build && serwist build serwist.config.ts",
+    "build": "serwist build serwist.config.ts && next build",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.sw.json",
@@ -16,6 +16,7 @@
     "test:watch": "vitest",
     "test:rls": "vitest run --config vitest.rls.config.ts",
     "test:e2e": "playwright test",
+    "verify:pwa": "node scripts/pwa-check.mjs",
     "db:verify": "bash scripts/with-pg.sh bash scripts/run-rls-proof.sh",
     "db:types": "bash scripts/with-pg.sh bash scripts/gen-types.sh",
     "test:tz": "for tz in Asia/Tokyo Pacific/Honolulu UTC; do echo \"— TZ=$tz\"; TZ=$tz vitest run || exit 1; done"
