@@ -4,7 +4,12 @@ import { formatCents } from '@/lib/finance/money'
 
 /**
  * A proposta da IA: validação, texto de confirmação e tradução para FormData.
- * v1.0 — 2026-09-26.
+ * v1.1 — 2026-09-26.
+ *
+ * v1.1: acrescentada `hasFunctionCall`, que responde se a resposta do modelo já traz
+ * chamada de ferramenta. Quem precisa dela é `advanceJob`: uma interação que já
+ * emitiu as chamadas está pronta para este app, qualquer que seja o status dela do
+ * lado do provedor.
  *
  * Módulo **puro** — sem I/O, sem Supabase, sem relógio (invariante 9). É o que
  * fica entre o que o modelo respondeu e o que o app executa, e por isso é o que
@@ -226,6 +231,25 @@ export interface ParsedProposal {
   operations: Operation[]
   /** O que o modelo não conseguiu virar operação válida — vira aviso na tela. */
   rejected: { name: string; reason: string }[]
+}
+
+/**
+ * A resposta já traz chamada de ferramenta?
+ *
+ * Existe porque o status do provedor não é o sinal certo para saber se há o que
+ * colher. Uma interação com ferramentas para em `requires_action` esperando o
+ * resultado das chamadas — e este app nunca devolve resultado de ferramenta: ele
+ * propõe a operação a uma pessoa. Então, para nós, o passo com `function_call` É o
+ * fim da linha, e esperar `completed` é esperar por algo que não vem.
+ *
+ * Tolerante de propósito, no mesmo espírito de `parseFunctionCalls`: entrada torta
+ * devolve `false` em vez de estourar.
+ */
+export function hasFunctionCall(steps: unknown): boolean {
+  const parsed = z.array(stepSchema).safeParse(steps)
+  if (!parsed.success) return false
+
+  return parsed.data.some((step) => step.type === 'function_call' && Boolean(step.name))
 }
 
 /**

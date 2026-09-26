@@ -5,7 +5,13 @@ import { geminiApiKey } from './env'
 import type { ToolDeclaration } from './tools'
 
 /**
- * Cliente da Interactions API do Gemini. v1.1 — 2026-09-26.
+ * Cliente da Interactions API do Gemini. v1.2 — 2026-09-26.
+ *
+ * v1.2: `isTerminal` saiu daqui e passou a ser reexportada de `models.ts`. Ela
+ * definia os status finais neste arquivo, mas a única regra que precisava saber
+ * disso — `shouldFallback` — vive no módulo puro e não pode importar de um
+ * `server-only`. Resultado: a regra tinha a própria lista, incompleta, e um status
+ * não-final que ela não conhecia travava o trabalho para sempre. Agora a lista é uma.
  *
  * v1.1: removido o `tool_choice` da raiz do corpo, que fazia a API recusar toda
  * requisição com 400 `Unknown parameter`. O campo existe, mas dentro de
@@ -170,6 +176,19 @@ export async function startInteraction(
     // nada em relação ao padrão não vai.
   }
   if (input.responseSchema) {
+    // **`type: 'text'` fica como está, e isso é deliberado.**
+    //
+    // Este corpo é aceito: o resumo que voltou "em formato inesperado" voltou com
+    // 200, não com 400 — o que falhou foi a leitura, não o pedido. Trocar o `type`
+    // por um valor mais expressivo (`json_object`, `json_schema`) é tentador e está
+    // errado pelo mesmo motivo do `tool_choice` logo acima: um valor que a API não
+    // reconheça derruba o corpo INTEIRO com 400, e `isRetriableHttpStatus(400)` é
+    // `false`, então o resumo pararia de funcionar sempre em vez de às vezes.
+    //
+    // O que garante o JSON é o contrato escrito na instrução do sistema
+    // (`INSIGHTS_SYSTEM_INSTRUCTION`) mais a leitura tolerante de `parseLooseJson`.
+    // Os dois funcionam sem depender de o provedor honrar campo nenhum — e o schema
+    // segue indo, porque ajuda quando é honrado e não custa nada quando não é.
     body.response_format = {
       type: 'text',
       mime_type: 'application/json',
@@ -248,7 +267,11 @@ function mensagemDeErro(status: number, detalhe: string): string {
   return `A IA respondeu com um erro (${status}).${tecnico}`
 }
 
-/** Status terminais, como a API os nomeia. */
-export function isTerminal(status: string | undefined): boolean {
-  return status === 'completed' || status === 'failed' || status === 'cancelled'
-}
+/**
+ * Status terminais, como a API os nomeia.
+ *
+ * A definição mora em `models.ts` — módulo puro, que é onde `shouldFallback` a
+ * consulta. Aqui fica só a reexportação, para quem pensa neste arquivo como o dono
+ * do vocabulário da API continuar achando o que procura.
+ */
+export { isTerminal, TERMINAL_STATUSES } from './models'

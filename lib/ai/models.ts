@@ -1,5 +1,14 @@
 /**
- * A cadeia de modelos do Gemini e a regra de queda para o próximo. v1.0 — 2026-09-26.
+ * A cadeia de modelos do Gemini e a regra de queda para o próximo. v1.1 — 2026-09-26.
+ *
+ * v1.1: `shouldFallback` parou de reconhecer "em andamento" por NOME de status.
+ * Antes a lista era `undefined` e `'in_progress'`, e qualquer outro status não-final
+ * — `requires_action`, que é o normal quando o modelo emite chamadas de ferramenta —
+ * fazia o prazo NUNCA ser avaliado. O trabalho ficava `running` para sempre: nem o
+ * poll, nem o `after()`, nem a varredura conseguiam fechá-lo. Agora a pergunta é a
+ * inversa, e é a única que não envelhece: o status é final? Se não é, o prazo vale.
+ * A lista de status finais mudou de casa para cá junto — ela morava em `gemini.ts`,
+ * longe da única regra que a consultava.
  *
  * Módulo **puro**, no mesmo espírito do invariante 9: sem I/O, sem relógio
  * implícito — o tempo decorrido entra por parâmetro. É aqui que mora a regra
@@ -88,6 +97,19 @@ export function nextModel(chain: readonly string[], current: string): string | n
   return chain[index + 1] ?? null
 }
 
+/**
+ * Status finais, como a API os nomeia — `cancelled` com dois L, que é a grafia dela.
+ *
+ * Vive no módulo puro porque quem mais precisa dela é `shouldFallback`, e um módulo
+ * `server-only` não pode ser importado daqui (invariante 9). `gemini.ts` reexporta.
+ */
+export const TERMINAL_STATUSES = ['completed', 'failed', 'cancelled'] as const
+
+/** O trabalho acabou, de um jeito ou de outro? */
+export function isTerminal(status: string | undefined): boolean {
+  return status !== undefined && (TERMINAL_STATUSES as readonly string[]).includes(status)
+}
+
 export interface FallbackSignal {
   /** Status HTTP da última resposta do provedor, quando houve uma. */
   httpStatus?: number | undefined
@@ -124,7 +146,11 @@ export function shouldFallback(signal: FallbackSignal): boolean {
   }
   if (signal.status === 'failed') return true
 
-  const emAndamento = signal.status === undefined || signal.status === 'in_progress'
+  // A pergunta é "já terminou?", e não "está num dos andamentos que eu conheço".
+  // Listar os status em andamento pelo nome deixa de fora todo status que a API
+  // ainda não tinha quando este código foi escrito, e cada um deles seria um
+  // trabalho pendurado para sempre — sem erro, sem prazo, sem saída.
+  const emAndamento = !isTerminal(signal.status)
 
   return emAndamento && signal.elapsedMs >= signal.deadlineMs
 }
