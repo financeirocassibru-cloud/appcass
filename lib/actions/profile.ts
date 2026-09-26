@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { currentUserId } from '@/lib/db/current-user'
 import { todayISO } from '@/lib/finance/date'
 import { createClient } from '@/lib/supabase/server'
 import { updateBalanceAnchorSchema } from '@/lib/validation/profile'
@@ -47,8 +48,18 @@ export async function updateBalanceAnchor(
     return { error: 'A data do saldo não pode estar no futuro.' }
   }
 
+  const userId = await currentUserId()
   const supabase = await createClient()
 
+  // O `.eq('id', ...)` não é redundante com a RLS, e não tê-lo quebrava a tela:
+  // o PostgREST **recusa** UPDATE e DELETE sem filtro, com
+  // "UPDATE requires a WHERE clause". É uma proteção dele contra o update sem
+  // cláusula que atualiza a tabela inteira, e ela vem antes da RLS — não
+  // adianta a policy restringir a linha se o comando nem chega a ser montado.
+  //
+  // Ou seja: a RLS continua sendo quem autoriza (invariante 3), e o filtro aqui
+  // é o que faz o pedido ser aceito. As duas coisas, não uma no lugar da outra.
+  //
   // `.select()` e checagem do resultado (invariante 17): sem isso, um update que
   // não casa linha nenhuma volta como sucesso, e a tela diria "salvo" sem ter
   // salvado — o silêncio que deixou a primeira conta sem virar admin.
@@ -58,6 +69,7 @@ export async function updateBalanceAnchor(
       opening_balance_cents: cents,
       opening_balance_on: parsed.data.openingBalanceOn,
     })
+    .eq('id', userId)
     .select('id')
 
   if (error) return { error: `Não foi possível salvar: ${error.message}` }
