@@ -1,23 +1,95 @@
-import { todayISO } from '@/lib/finance/date'
+import Link from 'next/link'
+import { Plus } from 'lucide-react'
+import { getCurrentBalance } from '@/lib/db/queries/balance'
+import { listPendingEntries } from '@/lib/db/queries/entries'
+import { getCategoryBreakdown, getMonthlySeries, MONTHS_IN_CHART } from '@/lib/db/queries/summary'
+import { DEFAULT_HORIZON_DAYS, splitAgenda } from '@/lib/finance/agenda'
+import { addDays, todayISO } from '@/lib/finance/date'
+import { BalanceHero } from '@/components/finance/balance-hero'
+import { Upcoming } from '@/components/finance/upcoming'
+import { CategoryRanking } from '@/components/finance/charts/category-ranking'
+import { MonthlyBars } from '@/components/finance/charts/monthly-bars'
+
+export const metadata = { title: 'Início · Finanças' }
 
 /**
- * `force-dynamic` porque a página mostra a data de hoje: prerenderizada, ela
- * congelaria o dia do build. A fase 3b vai ler saldo e agenda do banco, e
- * precisaria disto de qualquer forma.
+ * `force-dynamic` porque tudo nesta tela depende de "hoje" e do banco.
+ * Prerenderizada, ela congelaria o dia do build — e o saldo junto.
  */
 export const dynamic = 'force-dynamic'
 
-export default function InicioPage() {
+export default async function InicioPage() {
+  // Uma única leitura do relógio para toda a página: duas chamadas a `todayISO()`
+  // na mesma renderização podem cair em dias diferentes na virada da meia-noite,
+  // e aí o saldo e a agenda falariam de dias distintos.
+  const today = todayISO()
+  const horizon = addDays(today, DEFAULT_HORIZON_DAYS)
+
+  const [balance, pending, breakdown, monthly] = await Promise.all([
+    getCurrentBalance(today),
+    listPendingEntries(horizon),
+    getCategoryBreakdown(today),
+    getMonthlySeries(today, MONTHS_IN_CHART),
+  ])
+
+  const agenda = splitAgenda(pending, today, DEFAULT_HORIZON_DAYS)
+
+  const isFirstUse =
+    balance.countedEntries === 0 &&
+    pending.length === 0 &&
+    breakdown.slices.length === 0 &&
+    !balance.isAnchorConfigured
+
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-4 px-6 py-8">
-      <h1 className="text-2xl font-bold tracking-tight">Início</h1>
-      <p className="text-muted-foreground text-sm">
-        O herói de saldo, a agenda de próximos eventos e os gráficos entram na fase 3b — ver{' '}
-        <code className="bg-muted rounded px-1.5 py-0.5 text-xs">docs/ROADMAP.md</code>.
-      </p>
-      <p className="text-muted-foreground text-xs">
-        Hoje é {todayISO()} no fuso de São Paulo.
-      </p>
+    <main className="mx-auto flex max-w-md flex-col gap-8 px-6 py-8">
+      <BalanceHero
+        cents={balance.currentCents}
+        anchorOn={balance.openingBalanceOn}
+        isAnchorConfigured={balance.isAnchorConfigured}
+        incomeCents={balance.settledIncomeCents}
+        expenseCents={balance.settledExpenseCents}
+      />
+
+      {/* Conta nova: em vez de três blocos vazios, um caminho. É o primeiro estado
+          que a pessoa vê, e ele tem de dizer o que fazer. */}
+      {isFirstUse ? (
+        <section className="flex flex-col gap-4 rounded-xl bg-[var(--surface)] p-5">
+          <h2 className="text-base font-semibold">Comece por aqui</h2>
+          <ol className="flex flex-col gap-2 text-sm text-[var(--foreground-muted)]">
+            <li>
+              1.{' '}
+              <Link href="/ajustes/saldo" className="text-[var(--brand)] underline">
+                Informe quanto você tem hoje
+              </Link>{' '}
+              — é a partir daí que o saldo é calculado.
+            </li>
+            <li>
+              2.{' '}
+              <Link href="/novo" className="text-[var(--brand)] underline">
+                Lance o primeiro gasto
+              </Link>
+              . Leva dois toques.
+            </li>
+          </ol>
+          <Link
+            href="/novo"
+            className="bg-primary text-primary-foreground flex min-h-12 items-center justify-center gap-2 rounded-xl text-base font-semibold"
+          >
+            <Plus className="size-5" aria-hidden />
+            Novo lançamento
+          </Link>
+        </section>
+      ) : (
+        <>
+          <Upcoming agenda={agenda} today={today} />
+          <CategoryRanking
+            slices={breakdown.slices}
+            totalCents={breakdown.totalCents}
+            month={breakdown.month}
+          />
+          <MonthlyBars data={monthly} today={today} />
+        </>
+      )}
     </main>
   )
 }

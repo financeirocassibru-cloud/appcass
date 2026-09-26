@@ -6,6 +6,7 @@ import type { Route } from 'next'
 
 const BASE_TABS = [
   { href: '/ajustes', label: 'Perfil' },
+  { href: '/ajustes/saldo', label: 'Saldo' },
   { href: '/ajustes/categorias', label: 'Categorias' },
 ] as const
 

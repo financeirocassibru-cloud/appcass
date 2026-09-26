@@ -45,6 +45,13 @@ próximos eventos e gráficos (ver [`DESIGN.md`](./DESIGN.md)).
 **Pronto quando:** dá para registrar um gasto no celular em dois toques e ele aparece
 imediatamente no saldo do mês, sem recarregar a página manualmente.
 
+Entregue em dois PRs: **3a** (shell de navegação, `/novo`, extrato, categorias) e **3b** (tela
+Início — herói de saldo, agenda de pendentes e gráficos). A 3b acrescentou uma peça que esta
+descrição não previa: **`/ajustes/saldo`**, onde a pessoa informa quanto tem hoje. Sem essa
+âncora o saldo do Início seria um número errado apresentado com confiança, que é pior que não
+mostrar nada. As colunas `profiles.opening_balance_cents` e `opening_balance_on` já existiam no
+schema para isso desde a migration 0003.
+
 ## Fase 4 — Recorrentes e parcelas
 
 CRUD de `recurring_rules` e `installment_plans`. Geração cent-exata das N parcelas no momento

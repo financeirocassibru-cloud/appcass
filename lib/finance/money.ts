@@ -127,6 +127,35 @@ export function formatCents(cents: number): string {
   return BRL.format(cents / 100)
 }
 
+const BRL_COMPACT = new Intl.NumberFormat('pt-BR', {
+  style: 'currency',
+  currency: 'BRL',
+  notation: 'compact',
+  maximumFractionDigits: 1,
+})
+
+const BRL_WHOLE = new Intl.NumberFormat('pt-BR', {
+  style: 'currency',
+  currency: 'BRL',
+  maximumFractionDigits: 0,
+})
+
+/**
+ * Valor abreviado para eixo de gráfico: `123456789` vira `R$ 1,2 mi`.
+ *
+ * Existe porque o eixo vertical de um gráfico em celular não tem largura para
+ * `R$ 1.234.567,89`. Até mil reais o número sai inteiro — `R$ 0` e não
+ * `R$ 0,0`, que é o que a notação compacta produz e lê como valor truncado.
+ *
+ * Só para eixo e rótulo de gráfico. Onde a pessoa confere um valor,
+ * `formatCents` mostra os centavos.
+ */
+export function formatCentsCompact(cents: number): string {
+  assertSafeCents(cents, 'cents')
+  const reais = cents / 100
+  return Math.abs(reais) < 1000 ? BRL_WHOLE.format(reais) : BRL_COMPACT.format(reais)
+}
+
 /**
  * Acumulador de dígitos do campo de valor, no estilo de app de banco.
  *
