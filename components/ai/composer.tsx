@@ -26,11 +26,11 @@ import { cn } from '@/lib/utils'
 import { useQuietFor } from './use-quiet-for'
 
 /**
- * A caixa que convida a contar o que aconteceu. v1.1 — 2026-09-26.
+ * A caixa que convida a pedir ajuda. v1.2 — 2026-09-26.
  *
  * **Sem ícone de IA.** Nada de estrelinha, robô ou faísca: o convite é a própria
  * caixa, com um exemplo dentro. Um ícone genérico exigiria que a pessoa já
- * soubesse o que ele significa; a frase "Conte o que aconteceu" não exige nada.
+ * soubesse o que ele significa; a pergunta "Ajuda para atualizar?" não exige nada.
  *
  * Três tamanhos do mesmo componente, que é como o pedido de "estar em toda
  * parte" se resolve sem repetir código:
@@ -54,17 +54,40 @@ import { useQuietFor } from './use-quiet-for'
  *     pesado, levando o rascunho já aprovado;
  *  4. **confirmação**, agora com ajuste campo a campo.
  *
- * O aviso de fechar o app passou a esperar cinco segundos de espera de verdade
- * (`useQuietFor`). No caminho normal ele nunca aparece.
+ * ## v1.2 — a espera virou fala, e o convite virou pergunta
+ *
+ * O aviso de demora era um parágrafo cinza fora dos balões, e aparecia em cinco
+ * segundos. Lido de fora não parecia alguém falando: parecia mensagem de erro. Agora são
+ * duas falas da IA, dentro da conversa — uma na hora, outra aos quinze segundos — e o
+ * convite pergunta "Ajuda para atualizar?" em vez de mandar contar algo.
  */
 
-const PLACEHOLDER = 'Ex.: paguei 87,50 no mercado hoje'
+/** O convite, em toda parte: no gatilho, no título da folha e na caixa sem foco. */
+const CONVITE = 'Ajuda para atualizar?'
+
+/** O que a caixa diz quando o cursor aparece nela. */
+const PLACEHOLDER_FOCADO = 'Digita o que aconteceu que lanço ou altero aqui'
+
+/** O exemplo que ensina sem atrapalhar, no subtítulo do gatilho. */
+const EXEMPLO = 'Ex.: paguei 87,50 no mercado hoje'
+
+/**
+ * As duas falas da espera.
+ *
+ * São balões da IA, não aviso de sistema — foi o que a versão anterior errava. E são
+ * **derivadas do estado da fase**, nunca empurradas para `turns`: se entrassem no
+ * histórico, viajariam de volta ao modelo na próxima correção, e "Um instante" não é
+ * informação sobre o dinheiro de ninguém.
+ */
+const ESPERA_IMEDIATA = 'Um instante. Estou vendo o que preciso alterar.'
+const ESPERA_LONGA =
+  'Está demorando um pouco. Se preferir, pode navegar pelo app ou até fechá-lo. Te aviso quando terminar.'
 
 /** De quanto em quanto tempo perguntar se o trabalho terminou. */
 const POLL_MS = 900
 
-/** Quanto silêncio na tela antes de admitir que a espera é longa. */
-const QUIET_MS = 5_000
+/** Quanto silêncio antes de admitir que a espera é longa. */
+const QUIET_MS = 15_000
 
 type Variant = 'hero' | 'bar' | 'page'
 
@@ -114,7 +137,7 @@ function ComposerTrigger({ variant, onOpen }: { variant: Variant; onOpen: () => 
             onClick={onOpen}
             className="bg-card text-muted-foreground pointer-events-auto flex min-h-11 w-full items-center rounded-full border px-4 text-left text-sm shadow-lg"
           >
-            Conte o que aconteceu…
+            {CONVITE}
           </button>
         </div>
       </div>
@@ -131,8 +154,8 @@ function ComposerTrigger({ variant, onOpen }: { variant: Variant; onOpen: () => 
           'hover:bg-[var(--surface)] focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
         )}
       >
-        <span className="text-base font-semibold">Conte o que aconteceu</span>
-        <span className="text-muted-foreground text-sm">{PLACEHOLDER}</span>
+        <span className="text-base font-semibold">{CONVITE}</span>
+        <span className="text-muted-foreground text-sm">{EXEMPLO}</span>
       </button>
     </section>
   )
@@ -155,6 +178,7 @@ function AssistantSheet({
   const [setup, setSetup] = useState<AssistantSetup | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const [triando, setTriando] = useState(false)
+  const [focada, setFocada] = useState(false)
   const [, iniciar] = useTransition()
 
   const textRef = useRef<HTMLTextAreaElement>(null)
@@ -218,7 +242,9 @@ function AssistantSheet({
 
   // Cada espera é um trecho novo: a triagem, de um ou dois segundos, nunca chega a
   // mostrar o aviso; a proposta, que pode levar vinte, mostra.
-  const avisoLongo = useQuietFor(QUIET_MS, esperando)
+  // Só a fase pesada narra a espera. A triagem responde em um ou dois segundos: ali os
+  // três pontinhos bastam, e uma frase seria substituída antes de ser lida.
+  const esperaLonga = useQuietFor(QUIET_MS, esperandoProposta)
 
   // Rolar para o fim a cada fala nova, senão a resposta nasce fora da tela.
   useEffect(() => {
@@ -336,6 +362,16 @@ function AssistantSheet({
     })
   }, [jobId])
 
+  /**
+   * O que a caixa diz.
+   *
+   * Sem foco ela repete o convite; com o cursor dentro, vira a instrução. Com o
+   * `autoFocus` a troca é imediata ao abrir a folha — o `onFocus`/`onBlur` existe para
+   * quem toca fora e volta, e para quem chega pelo teclado.
+   */
+  const placeholderDaCaixa =
+    turns.length > 0 ? 'Corrija ou acrescente algo…' : focada ? PLACEHOLDER_FOCADO : CONVITE
+
   const mostrarCaixa = !esperando && !jobId
   const propostaPronta = job?.status === 'completed' && itens.length > 0
 
@@ -343,7 +379,7 @@ function AssistantSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="bottom" className="max-h-[92dvh] overflow-y-auto">
         <SheetHeader>
-          <SheetTitle>Conte o que aconteceu</SheetTitle>
+          <SheetTitle>{CONVITE}</SheetTitle>
           <SheetDescription>
             Escreva como você falaria. Eu digo o que entendi antes de registrar qualquer coisa.
           </SheetDescription>
@@ -352,17 +388,22 @@ function AssistantSheet({
         <div className="flex flex-col gap-4 px-4 pb-6">
           <Conversa turns={turns} />
 
+          {/*
+            As falas da espera vêm ANTES dos pontinhos, e a ordem não é estética: os três
+            pontos significam "vem mais coisa". Depois de uma fala eles continuam fazendo
+            sentido; antes dela, pareceriam um segundo indicador solto.
+          */}
+          {esperandoProposta && <FalaDaIA texto={ESPERA_IMEDIATA} />}
+          {esperaLonga && <FalaDaIA texto={ESPERA_LONGA} aviso />}
+
           {esperando && <Digitando />}
 
           {setup?.showReasoning && esperando && (
-            <Etapas etapa={triando ? 'triagem' : 'proposta'} model={job?.model ?? null} attempts={job?.attempts ?? 0} />
-          )}
-
-          {avisoLongo && (
-            <p role="status" className="text-muted-foreground text-xs">
-              Está demorando mais que o normal. Pode fechar o app — eu continuo e aviso quando
-              terminar.
-            </p>
+            <Etapas
+              etapa={triando ? 'triagem' : 'proposta'}
+              model={job?.model ?? null}
+              attempts={job?.attempts ?? 0}
+            />
           )}
 
           {briefing && !briefing.pertinent && (
@@ -438,7 +479,9 @@ function AssistantSheet({
                 required
                 minLength={2}
                 maxLength={2000}
-                placeholder={turns.length > 0 ? 'Corrija ou acrescente algo…' : PLACEHOLDER}
+                onFocus={() => setFocada(true)}
+                onBlur={() => setFocada(false)}
+                placeholder={placeholderDaCaixa}
                 onKeyDown={(event) => {
                   // Enter envia, Shift+Enter quebra linha: é o que a pessoa espera de uma
                   // caixa de conversa, e uma frase de lançamento raramente tem parágrafo.
@@ -459,6 +502,30 @@ function AssistantSheet({
         </div>
       </SheetContent>
     </Sheet>
+  )
+}
+
+/**
+ * Uma fala da IA que não vem do modelo.
+ *
+ * Mesma forma dos outros balões dela, de propósito: para quem lê, é a mesma pessoa
+ * falando. A diferença está em onde o texto mora — estas não entram em `turns`, então
+ * não viajam de volta ao modelo como histórico da conversa.
+ *
+ * `aviso` deixa o segundo balão um pouco mais discreto que o primeiro: ele é uma
+ * cortesia sobre a espera, não parte do que se está resolvendo.
+ */
+function FalaDaIA({ texto, aviso = false }: { texto: string; aviso?: boolean }) {
+  return (
+    <p
+      role="status"
+      className={cn(
+        'max-w-[85%] self-start rounded-2xl rounded-bl-sm bg-[var(--surface)] px-3 py-2',
+        aviso ? 'text-muted-foreground text-xs' : 'text-sm',
+      )}
+    >
+      {texto}
+    </p>
   )
 }
 
