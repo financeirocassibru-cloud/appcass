@@ -12,6 +12,42 @@ import type {
 } from './types'
 
 /**
+ * Chave de rastreio de uma ocorrência gerada: `source:sourceId:occurrenceKey`.
+ *
+ * É a mesma tripla do índice `entries_generated_uniq` e a mesma que
+ * `expandRecurringRule` põe em `Occurrence.key`. Lançamento manual não tem
+ * ocorrência prevista para casar, então não entra no índice.
+ */
+function generatedKeyOf(entry: Entry): string | null {
+  if (entry.source === 'manual' || !entry.sourceId || !entry.occurrenceKey) return null
+  return `${entry.source}:${entry.sourceId}:${entry.occurrenceKey}`
+}
+
+/**
+ * Descarta as ocorrências previstas que já viraram lançamento real.
+ *
+ * É o passo que impede a contagem em dobro do app antigo: lá o custo fixo
+ * marcado como pago continuava aparecendo como previsto, e o mês fechava com o
+ * aluguel cobrado duas vezes.
+ *
+ * Exportada porque a agenda do Início faz exatamente a mesma junção que a
+ * projeção faz. Se a construção da chave existisse em duas cópias, elas
+ * divergiriam na primeira mudança e o bug voltaria pela porta dos fundos.
+ */
+export function dedupeAgainstEntries<T extends { key: string }>(
+  occurrences: readonly T[],
+  entries: readonly Entry[],
+): T[] {
+  const materialized = new Set<string>()
+  for (const entry of entries) {
+    const key = generatedKeyOf(entry)
+    if (key !== null) materialized.add(key)
+  }
+
+  return occurrences.filter((occurrence) => !materialized.has(occurrence.key))
+}
+
+/**
  * Projeção de saldo dia a dia.
  *
  * Substitui `calcularFluxoDiario` do app antigo. A diferença estrutural está no
@@ -33,13 +69,6 @@ export function projectRange(options: ProjectRangeOptions): DayProjection[] {
     .filter((entry) => isWithin(entry.occurredOn, from, to))
     .map(entryToOccurrence)
 
-  // Índice das ocorrências já materializadas, para o passo 3.
-  const materialized = new Set(
-    data.entries
-      .filter((entry) => entry.source !== 'manual' && entry.sourceId && entry.occurrenceKey)
-      .map((entry) => `${entry.source}:${entry.sourceId}:${entry.occurrenceKey}`),
-  )
-
   // 2. Expandir recorrências.
   const projected: Occurrence[] = []
   for (const rule of data.recurringRules) {
@@ -52,7 +81,7 @@ export function projectRange(options: ProjectRangeOptions): DayProjection[] {
   }
 
   // 3. Descartar o que já virou lançamento real.
-  const deduped = projected.filter((occurrence) => !materialized.has(occurrence.key))
+  const deduped = dedupeAgainstEntries(projected, data.entries)
 
   // 5. Aplicar o cenário, se houver.
   const all = scenario

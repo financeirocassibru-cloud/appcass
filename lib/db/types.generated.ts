@@ -587,6 +587,10 @@ export type Database = {
     };
     Functions: {
       is_admin: { Args: Record<PropertyKey, never>; Returns: boolean };
+      materialize_recurring_occurrence: {
+        Args: { p_occurs_on: string; p_rule_id: string; p_settled?: boolean };
+        Returns: string;
+      };
     };
     Enums: {
       app_role: "admin" | "member";

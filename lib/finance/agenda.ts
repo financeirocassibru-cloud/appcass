@@ -13,8 +13,52 @@ import { addDays, compareISO, parseISODate, type ISODate } from './date'
  * falharia amanhã.
  */
 
-export interface AgendaItem {
+/**
+ * Um item da agenda, venha ele de onde vier.
+ *
+ * A agenda mistura duas coisas que a pessoa lê igual mas o sistema trata
+ * diferente:
+ *
+ * - **`entry`** — lançamento que já existe como linha em `entries`. Liquidar é
+ *   um `update`.
+ * - **`recurring`** — ocorrência de uma conta fixa que ainda **não** virou
+ *   lançamento. Liquidar é materializar: cria a linha pela função
+ *   `materialize_recurring_occurrence` da migration 0009.
+ *
+ * O discriminante `source` existe para a tela escolher a ação certa. Tudo o que
+ * ela precisa para **desenhar** a linha está nos campos comuns, então o
+ * componente não ramifica para renderizar — só para agir.
+ *
+ * Parcelas não aparecem como um terceiro caso: as parcelas já são `entries`
+ * reais desde a criação do plano, então chegam aqui como `entry`.
+ */
+interface AgendaItemBase {
   occurredOn: ISODate
+  amountCents: number
+  kind: 'expense' | 'income'
+  description: string
+  categoryName: string | null
+}
+
+export interface AgendaEntryItem extends AgendaItemBase {
+  source: 'entry'
+  /** `entries.id` — o alvo do `toggleSettled`. */
+  id: string
+}
+
+export interface AgendaRecurringItem extends AgendaItemBase {
+  source: 'recurring'
+  /** `recurring_rules.id` — o alvo da materialização. */
+  ruleId: string
+  /** Estável entre renderizações; serve de React key. */
+  key: string
+}
+
+export type AgendaItem = AgendaEntryItem | AgendaRecurringItem
+
+/** A chave de React de um item, qualquer que seja a origem. */
+export function agendaItemKey(item: AgendaItem): string {
+  return item.source === 'entry' ? `entry:${item.id}` : item.key
 }
 
 export interface AgendaSplit<T> {
@@ -34,7 +78,7 @@ export const DEFAULT_HORIZON_DAYS = 30
  * O que vence depois do horizonte fica de fora: a agenda responde "o que exige
  * atenção agora", e uma lista de tudo o que existe não responde nada.
  */
-export function splitAgenda<T extends AgendaItem>(
+export function splitAgenda<T extends { occurredOn: ISODate }>(
   items: readonly T[],
   today: ISODate,
   horizonDays: number = DEFAULT_HORIZON_DAYS,

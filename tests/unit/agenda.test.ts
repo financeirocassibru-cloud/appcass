@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { DateError } from '@/lib/finance/date'
-import { daysOverdue, splitAgenda, sumAgendaCents } from '@/lib/finance/agenda'
+import {
+  agendaItemKey,
+  daysOverdue,
+  splitAgenda,
+  sumAgendaCents,
+  type AgendaItem,
+} from '@/lib/finance/agenda'
 
 /**
  * `today` entra por parâmetro em tudo aqui. Sem isso estes testes passariam hoje
@@ -111,5 +117,62 @@ describe('sumAgendaCents', () => {
 
   it('devolve zero para lista vazia', () => {
     expect(sumAgendaCents([])).toBe(0)
+  })
+})
+
+describe('agenda misturando lançamento real e conta fixa', () => {
+  const lancamento = (occurredOn: string, id: string): AgendaItem => ({
+    source: 'entry',
+    id,
+    occurredOn,
+    amountCents: 10_000,
+    kind: 'expense',
+    description: 'Mercado',
+    categoryName: 'Mercado',
+  })
+
+  const contaFixa = (occurredOn: string, mes: string): AgendaItem => ({
+    source: 'recurring',
+    ruleId: 'regra-1',
+    key: `recurring:regra-1:${mes}`,
+    occurredOn,
+    amountCents: 180_000,
+    kind: 'expense',
+    description: 'Aluguel',
+    categoryName: 'Moradia',
+  })
+
+  it('ordena as duas origens juntas, por data', () => {
+    const { overdue, upcoming } = splitAgenda(
+      [
+        contaFixa('2026-03-10', '2026-03'),
+        lancamento('2026-03-18', 'e1'),
+        contaFixa('2026-04-10', '2026-04'),
+        lancamento('2026-03-12', 'e2'),
+      ],
+      HOJE,
+    )
+
+    expect(overdue.map((i) => i.occurredOn)).toEqual(['2026-03-10', '2026-03-12'])
+    expect(upcoming.map((i) => i.occurredOn)).toEqual(['2026-03-18', '2026-04-10'])
+  })
+
+  it('a separação não olha a origem do item', () => {
+    // `splitAgenda` é genérica sobre `{ occurredOn }` de propósito: quem decide
+    // a ação é a tela, e a agenda não deve ganhar um ramo por origem nova.
+    const { overdue } = splitAgenda([contaFixa('2026-03-01', '2026-03')], HOJE)
+    expect(overdue).toHaveLength(1)
+    expect(overdue[0]?.source).toBe('recurring')
+  })
+
+  it('a chave de React distingue as duas origens', () => {
+    expect(agendaItemKey(lancamento('2026-03-18', 'e1'))).toBe('entry:e1')
+    expect(agendaItemKey(contaFixa('2026-03-10', '2026-03'))).toBe('recurring:regra-1:2026-03')
+  })
+
+  it('soma as duas origens no total em atraso', () => {
+    expect(
+      sumAgendaCents([contaFixa('2026-03-10', '2026-03'), lancamento('2026-03-12', 'e1')]),
+    ).toBe(190_000)
   })
 })

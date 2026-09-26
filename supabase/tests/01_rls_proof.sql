@@ -332,4 +332,121 @@ begin
   if n <> 1 then raise exception 'deveria existir exatamente 1 admin, existem %', n; end if;
 end $$;
 
+-- === Materialização de conta fixa (migration 0009) ===
+--
+-- É a invariante 8 provada no banco, e não só no teste de unidade: marcar a
+-- mesma ocorrência duas vezes não pode gerar dois lançamentos. No app antigo
+-- gerava, e o mês fechava com o aluguel cobrado em dobro.
+
+insert into public.recurring_rules
+  (id, user_id, kind, description, amount_cents, frequency, day_of_month, starts_on)
+values
+  ('aaaaaaaa-0000-0000-0000-000000000001',
+   '11111111-1111-1111-1111-111111111111',
+   'expense', 'Aluguel da Ana', 180000, 'monthly', 10, '2026-01-01'),
+  ('bbbbbbbb-0000-0000-0000-000000000002',
+   '22222222-2222-2222-2222-222222222222',
+   'expense', 'Aluguel do Bruno', 150000, 'monthly', 5, '2026-01-01');
+
+set role authenticated;
+set request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
+
+do $$
+declare id1 uuid; id2 uuid; n int;
+begin
+  -- Primeira materialização: cria a linha e devolve o id.
+  id1 := public.materialize_recurring_occurrence(
+    'aaaaaaaa-0000-0000-0000-000000000001', '2026-03-10', true);
+  if id1 is null then raise exception 'a primeira materialização deveria criar a linha'; end if;
+
+  -- Segunda, mesma ocorrência: não cria nada e devolve null.
+  id2 := public.materialize_recurring_occurrence(
+    'aaaaaaaa-0000-0000-0000-000000000001', '2026-03-10', true);
+  if id2 is not null then
+    raise exception 'materializar de novo deveria ser no-op, devolveu %', id2;
+  end if;
+
+  -- Outro dia do MESMO mês também é a mesma ocorrência: a chave é o mês.
+  id2 := public.materialize_recurring_occurrence(
+    'aaaaaaaa-0000-0000-0000-000000000001', '2026-03-25', true);
+  if id2 is not null then
+    raise exception 'outro dia do mesmo mês deveria ser a mesma ocorrência';
+  end if;
+
+  select count(*) into n from public.entries
+   where source = 'recurring' and source_id = 'aaaaaaaa-0000-0000-0000-000000000001';
+  if n <> 1 then raise exception 'deveria existir 1 ocorrência materializada, existem %', n; end if;
+
+  -- Mês seguinte é outra ocorrência, e essa entra.
+  id2 := public.materialize_recurring_occurrence(
+    'aaaaaaaa-0000-0000-0000-000000000001', '2026-04-10', true);
+  if id2 is null then raise exception 'abril deveria ser uma ocorrência nova'; end if;
+
+  -- A linha gerada tem de sair liquidada e com a data de competência.
+  select count(*) into n from public.entries
+   where source = 'recurring'
+     and source_id = 'aaaaaaaa-0000-0000-0000-000000000001'
+     and is_settled and settled_on = occurred_on;
+  if n <> 2 then raise exception 'as 2 ocorrências deveriam estar liquidadas, % estão', n; end if;
+end $$;
+
+-- Ana não materializa a conta fixa do Bruno: a função é `security invoker`, e a
+-- RLS de recurring_rules faz o select não achar a linha.
+do $$
+declare id1 uuid;
+begin
+  id1 := public.materialize_recurring_occurrence(
+    'bbbbbbbb-0000-0000-0000-000000000002', '2026-03-05', true);
+  raise exception 'VAZAMENTO: Ana materializou a conta fixa do Bruno';
+exception
+  when no_data_found then null;  -- esperado
+end $$;
+
+-- Fora da vigência não existe ocorrência.
+do $$
+declare id1 uuid;
+begin
+  id1 := public.materialize_recurring_occurrence(
+    'aaaaaaaa-0000-0000-0000-000000000001', '2025-12-10', true);
+  raise exception 'deveria recusar data anterior a starts_on';
+exception
+  when check_violation then null;  -- esperado
+end $$;
+
+-- Regra desativada não materializa.
+reset role;
+update public.recurring_rules set is_active = false
+ where id = 'aaaaaaaa-0000-0000-0000-000000000001';
+
+set role authenticated;
+set request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
+
+do $$
+declare id1 uuid;
+begin
+  id1 := public.materialize_recurring_occurrence(
+    'aaaaaaaa-0000-0000-0000-000000000001', '2026-05-10', true);
+  raise exception 'regra inativa não deveria materializar';
+exception
+  when check_violation then null;  -- esperado
+end $$;
+
+reset role;
+update public.recurring_rules set is_active = true
+ where id = 'aaaaaaaa-0000-0000-0000-000000000001';
+
+-- anon não executa a função.
+set role anon;
+do $$
+declare id1 uuid;
+begin
+  id1 := public.materialize_recurring_occurrence(
+    'aaaaaaaa-0000-0000-0000-000000000001', '2026-06-10', true);
+  raise exception 'ESCALADA: anon executou materialize_recurring_occurrence';
+exception
+  when insufficient_privilege then null;  -- esperado
+end $$;
+
+reset role;
+
 select 'TODAS AS ASSERÇÕES DE RLS E CONSTRAINTS PASSARAM' as resultado;
