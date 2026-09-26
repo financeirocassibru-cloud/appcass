@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { expandRecurringRule } from '@/lib/finance/recurrence'
+import { expandRecurringRule, recurrenceOccurrenceKey } from '@/lib/finance/recurrence'
 import type { RecurringRule } from '@/lib/finance/types'
 
 function rule(overrides: Partial<RecurringRule> = {}): RecurringRule {
@@ -130,5 +130,49 @@ describe('expandRecurringRule — semanal e anual', () => {
       '2026-01-10',
     )
     expect(first?.key).toBe('recurring:rule-1:2026-01-05')
+  })
+})
+
+describe('chave de ocorrência — contrato com a migration 0009', () => {
+  /**
+   * A mesma chave é construída em dois lugares: aqui, em TypeScript, e dentro de
+   * `materialize_recurring_occurrence` em SQL. Se as duas divergirem, a
+   * deduplicação para de casar e a conta fixa paga volta para a agenda — o bug
+   * de contagem em dobro do app antigo, de novo.
+   *
+   * O lado SQL está provado em `supabase/tests/01_rls_proof.sql`. Estes testes
+   * fixam o lado TypeScript, para que uma mudança de formato quebre aqui antes
+   * de chegar ao banco.
+   */
+  const regra = (frequency: 'monthly' | 'weekly' | 'yearly'): RecurringRule => ({
+    id: 'regra-1',
+    kind: 'expense',
+    description: 'Aluguel',
+    amountCents: 180_000,
+    categoryId: null,
+    frequency,
+    dayOfMonth: frequency === 'monthly' ? 10 : null,
+    startsOn: '2026-01-10',
+    endsOn: null,
+    isActive: true,
+  })
+
+  it('mensal usa o mês: YYYY-MM', () => {
+    expect(recurrenceOccurrenceKey(regra('monthly'), '2026-03-10')).toBe('2026-03')
+  })
+
+  it('mensal ignora o dia — qualquer dia do mês é a mesma ocorrência', () => {
+    expect(recurrenceOccurrenceKey(regra('monthly'), '2026-03-25')).toBe('2026-03')
+  })
+
+  it('semanal e anual usam a data inteira: YYYY-MM-DD', () => {
+    expect(recurrenceOccurrenceKey(regra('weekly'), '2026-03-10')).toBe('2026-03-10')
+    expect(recurrenceOccurrenceKey(regra('yearly'), '2026-03-10')).toBe('2026-03-10')
+  })
+
+  it('a chave da ocorrência expandida combina com a construída à parte', () => {
+    const rule = regra('monthly')
+    const [primeira] = expandRecurringRule(rule, '2026-03-01', '2026-03-31')
+    expect(primeira?.key).toBe(`recurring:${rule.id}:${recurrenceOccurrenceKey(rule, '2026-03-10')}`)
   })
 })

@@ -7,7 +7,8 @@ export const metadata = { title: 'Mais · Finanças' }
 const ITENS = [
   { href: '/ajustes', label: 'Ajustes', nota: null },
   { href: '/ajustes/categorias', label: 'Categorias', nota: null },
-  { href: '/compromissos', label: 'Contas fixas e parcelas', nota: 'fase 4' },
+  { href: '/compromissos', label: 'Contas fixas', nota: null },
+  { href: '/parcelas', label: 'Parcelas', nota: 'fase 4b' },
   { href: '/metas', label: 'Metas', nota: 'fase 6' },
 ] as const
 

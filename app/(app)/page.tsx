@@ -1,10 +1,10 @@
 import Link from 'next/link'
 import { Plus } from 'lucide-react'
 import { getCurrentBalance } from '@/lib/db/queries/balance'
-import { listPendingEntries } from '@/lib/db/queries/entries'
+import { getAgendaItems } from '@/lib/db/queries/agenda'
 import { getCategoryBreakdown, getMonthlySeries, MONTHS_IN_CHART } from '@/lib/db/queries/summary'
 import { DEFAULT_HORIZON_DAYS, splitAgenda } from '@/lib/finance/agenda'
-import { addDays, todayISO } from '@/lib/finance/date'
+import { todayISO } from '@/lib/finance/date'
 import { BalanceHero } from '@/components/finance/balance-hero'
 import { Upcoming } from '@/components/finance/upcoming'
 import { CategoryRanking } from '@/components/finance/charts/category-ranking'
@@ -23,20 +23,21 @@ export default async function InicioPage() {
   // na mesma renderização podem cair em dias diferentes na virada da meia-noite,
   // e aí o saldo e a agenda falariam de dias distintos.
   const today = todayISO()
-  const horizon = addDays(today, DEFAULT_HORIZON_DAYS)
 
-  const [balance, pending, breakdown, monthly] = await Promise.all([
+  const [balance, agendaItems, breakdown, monthly] = await Promise.all([
     getCurrentBalance(today),
-    listPendingEntries(horizon),
+    // Junta pendentes reais e ocorrências de contas fixas ainda não
+    // materializadas, já deduplicadas entre si.
+    getAgendaItems(today, DEFAULT_HORIZON_DAYS),
     getCategoryBreakdown(today),
     getMonthlySeries(today, MONTHS_IN_CHART),
   ])
 
-  const agenda = splitAgenda(pending, today, DEFAULT_HORIZON_DAYS)
+  const agenda = splitAgenda(agendaItems, today, DEFAULT_HORIZON_DAYS)
 
   const isFirstUse =
     balance.countedEntries === 0 &&
-    pending.length === 0 &&
+    agendaItems.length === 0 &&
     breakdown.slices.length === 0 &&
     !balance.isAnchorConfigured
 
