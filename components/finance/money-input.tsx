@@ -11,7 +11,12 @@ import {
 import { cn } from '@/lib/utils'
 
 /**
- * Campo de valor no estilo de app de banco.
+ * Campo de valor no estilo de app de banco. v1.1 — 2026-09-26.
+ *
+ * v1.1: ganhou `compact`, para caber num cartão de ajuste na tela de confirmação do
+ * assistente. É uma variante de tamanho e nada mais — a lógica de dígitos, que é a parte
+ * que o invariante 1 protege, continua sendo esta e só esta. Um segundo campo de dinheiro
+ * escrito à parte seria a ocasião perfeita para alguém reintroduzir um `parseFloat`.
  *
  * O estado **é** o número de centavos, não texto. Digitar `1`, `2`, `3`, `4` leva
  * a 1234 e mostra `R$ 12,34` — a vírgula anda da direita para a esquerda sozinha.
@@ -26,11 +31,14 @@ export function MoneyInput({
   initialCents,
   label,
   autoFocus = false,
+  compact = false,
 }: {
   name?: string
   initialCents?: number
   label: string
   autoFocus?: boolean
+  /** Versão miúda, para cartão de ajuste. Muda só o tamanho. */
+  compact?: boolean
 }) {
   const [cents, setCents] = useState(() => centsFromInitial(initialCents))
   const id = useId()
@@ -81,16 +89,19 @@ export function MoneyInput({
         // handler; a mudança real acontece em onKeyDown.
         onChange={() => undefined}
         autoFocus={autoFocus}
-        aria-describedby={`${id}-dica`}
+        aria-describedby={compact ? undefined : `${id}-dica`}
         className={cn(
           'tabular border-input bg-card focus-visible:border-primary focus-visible:ring-ring/25',
-          'min-h-16 rounded-xl border px-4 text-3xl font-bold outline-none focus-visible:ring-2',
+          'rounded-xl border outline-none focus-visible:ring-2',
+          compact ? 'min-h-11 px-3 text-base font-semibold' : 'min-h-16 px-4 text-3xl font-bold',
           cents === 0 && 'text-muted-foreground',
         )}
       />
-      <p id={`${id}-dica`} className="text-muted-foreground text-xs">
-        Digite os centavos — 1234 vira R$ 12,34.
-      </p>
+      {!compact && (
+        <p id={`${id}-dica`} className="text-muted-foreground text-xs">
+          Digite os centavos — 1234 vira R$ 12,34.
+        </p>
+      )}
       <input type="hidden" name={name} value={cents} />
     </div>
   )

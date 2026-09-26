@@ -2,10 +2,17 @@ import 'server-only'
 
 import { z } from 'zod'
 import { geminiApiKey } from './env'
+import { isTerminal } from './models'
 import type { ToolDeclaration } from './tools'
 
 /**
- * Cliente da Interactions API do Gemini. v1.2 — 2026-09-26.
+ * Cliente da Interactions API do Gemini. v1.3 — 2026-09-26.
+ *
+ * v1.3: `background` virou opcional (padrão `true`) e ganhou `runInteraction`, que
+ * resolve a interação na mesma viagem HTTP. É o que a triagem usa: ela é barata e
+ * re-derivável, ninguém precisa que ela sobreviva ao app fechar, e o que se quer dela
+ * é a resposta agora — esperar um poll para ler uma frase de confirmação seria trocar
+ * dois segundos por dez.
  *
  * v1.2: `isTerminal` saiu daqui e passou a ser reexportada de `models.ts`. Ela
  * definia os status finais neste arquivo, mas a única regra que precisava saber
@@ -81,6 +88,17 @@ export interface StartInteractionInput {
   tools?: readonly ToolDeclaration[]
   /** Esquema JSON da resposta, para o resumo voltar em formato fixo. */
   responseSchema?: Record<string, unknown>
+  /**
+   * Executar do lado do provedor, devolvendo só o `id`? Padrão `true`.
+   *
+   * `false` é a exceção da triagem, e vale explicar por que ela é exceção: o
+   * background existe para o trabalho sobreviver ao app fechar, e isso importa quando
+   * perder o trabalho custaria a frase da pessoa. A triagem não custa nada — é uma
+   * chamada curta, sem ferramentas e sem contexto, refeita em um segundo. O que ela
+   * precisa é do oposto: responder AGORA, na mesma viagem, para a conversa não
+   * engasgar.
+   */
+  background?: boolean
 }
 
 async function request(
@@ -153,7 +171,7 @@ export async function startInteraction(
   const body: Record<string, unknown> = {
     model: input.model,
     input: input.input,
-    background: true,
+    background: input.background ?? true,
   }
 
   if (input.systemInstruction) body.system_instruction = input.systemInstruction
@@ -209,6 +227,47 @@ export async function getInteraction(
     { method: 'GET' },
     doFetch,
   )
+}
+
+/** Quantas vezes reler a interação da triagem antes de desistir dela. */
+const FOREGROUND_RETRIES = 3
+
+/** Quanto esperar entre duas releituras da triagem. */
+const FOREGROUND_GAP_MS = 1_200
+
+/**
+ * Resolve uma interação **agora**, na mesma requisição.
+ *
+ * É o caminho da triagem. Cria sem background e, se o provedor ainda devolver algo
+ * não-final, relê no máximo três vezes — orçamento total de uns 4s, muito abaixo do
+ * `HTTP_TIMEOUT_MS` de 15s por chamada e do `maxDuration` de 60s do segmento.
+ *
+ * Devolve `null` quando não resolveu a tempo, e isso é degradação deliberada: quem
+ * chama segue pelo caminho pesado de sempre. O pior caso desta função é o
+ * comportamento que o app já tinha, nunca uma tela travada — a triagem é uma
+ * gentileza, não uma dependência.
+ */
+export async function runInteraction(
+  input: StartInteractionInput,
+  doFetch: FetchLike = globalThis.fetch,
+): Promise<Interaction | null> {
+  const criada = await startInteraction({ ...input, background: false }, doFetch)
+  if (isTerminal(criada.status) || criada.output_text) return criada
+
+  let atual = criada
+
+  for (let tentativa = 0; tentativa < FOREGROUND_RETRIES; tentativa += 1) {
+    await new Promise((resolve) => setTimeout(resolve, FOREGROUND_GAP_MS))
+
+    atual = await getInteraction(criada.id, doFetch)
+    if (isTerminal(atual.status) || atual.output_text) return atual
+  }
+
+  // Não resolveu: cancelar para não deixar cota queimando por uma resposta que já
+  // não tem para onde ir.
+  await cancelInteraction(criada.id, doFetch)
+
+  return null
 }
 
 /**

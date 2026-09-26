@@ -6,24 +6,47 @@ import { z } from 'zod'
 import { applyProposal } from '@/lib/ai/apply'
 import { buildContext } from '@/lib/ai/context'
 import { isAiConfigured } from '@/lib/ai/env'
+import { runTriage } from '@/lib/ai/briefing'
+import { applyEdits, editsPayloadSchema, revalidateOperations } from '@/lib/ai/edits'
 import { advanceJob, enqueueJob, getJob, getJobRow, trackJob, type JobView } from '@/lib/ai/jobs'
 import { operationSchema } from '@/lib/ai/proposal'
+import { draftSummary, type DraftItem, type Triage } from '@/lib/ai/triage'
+import { listActiveCategories, type Category } from '@/lib/db/queries/categories'
 import { createClient } from '@/lib/supabase/server'
-import { jobIdSchema, submitMessageSchema } from '@/lib/validation/assistant'
+import {
+  approveBriefingSchema,
+  briefingSchema,
+  jobIdSchema,
+  submitMessageSchema,
+} from '@/lib/validation/assistant'
 
 /**
- * O assistente, do lado do servidor. v1.0 — 2026-09-26.
+ * O assistente, do lado do servidor. v1.1 — 2026-09-26.
  *
- * O fluxo tem dois tempos, de propósito:
+ * O fluxo tem **três** tempos, e o primeiro é novo:
  *
- *   1. `submitMessage` manda a frase ao modelo e devolve na hora um `jobId`. A
- *      interação roda em background no Gemini, então fechar o app no meio não
- *      perde o trabalho.
- *   2. `confirmProposal` executa — e só depois de a pessoa ter lido, em
- *      português, o que a IA entendeu. É o "só pedir confirmação antes para ver
- *      se entendeu direito" do pedido.
+ *   1. `submitBriefing` — a triagem. Uma chamada curta, sem contexto financeiro e sem
+ *      ferramentas, que decide se o assunto é dinheiro, preenche um rascunho e devolve
+ *      na hora a leitura dele em português. **Não grava nada**: sem esta etapa, a
+ *      primeira coisa que a pessoa via era "pode fechar o app", antes de nada ter
+ *      acontecido, e um mal-entendido só aparecia no fim.
+ *   2. `approveBriefing` — o "aí sim". Só depois de a pessoa ler o que a IA entendeu é
+ *      que o trabalho pesado nasce: `enqueueJob` com o retrato financeiro e as 27
+ *      ferramentas, em background no Gemini, levando o rascunho já aprovado.
+ *   3. `confirmProposal` — executa, com os ajustes que a pessoa tenha feito na tela.
  *
- * Entre os dois, nada foi escrito em tabela nenhuma do domínio.
+ * Nos dois primeiros tempos, nada foi escrito em tabela nenhuma do domínio. No
+ * primeiro, nada foi escrito em tabela nenhuma, ponto: a triagem é efêmera de propósito.
+ *
+ * ## Por que a triagem não é um trabalho no banco
+ *
+ * `ai_jobs` existe para o trabalho sobreviver ao app fechar, e isso vale quando perder
+ * o trabalho custaria a frase da pessoa. A triagem custa uma chamada de um segundo e é
+ * re-derivável: fechar o app no meio dela não perde nada que não se refaça. Somado a
+ * isso, `supabase/migrations/0012_ai.sql` revoga `update` em `ai_jobs.input` de
+ * propósito — acrescentar falas a uma linha existente é impossível sem migration nova.
+ * As duas coisas apontam para o mesmo desenho: a conversa vive no cliente e entra no
+ * banco de uma vez, no `insert` da aprovação.
  */
 
 export interface AssistantActionState {
@@ -31,6 +54,19 @@ export interface AssistantActionState {
   success?: string
   /** O trabalho recém-criado, para a folha começar a acompanhar. */
   jobId?: string
+  /** O resultado da triagem, quando esta resposta vem do primeiro tempo. */
+  briefing?: BriefingView
+}
+
+/** O que a folha precisa exibir depois da triagem. */
+export interface BriefingView {
+  /** `false` encerra a conversa: não é assunto deste app. */
+  pertinent: boolean
+  /** A fala da IA, em português, lendo de volta o que ela entendeu. */
+  reply: string
+  items: DraftItem[]
+  /** O que ela precisa perguntar, quando faltou informação. */
+  question: string | null
 }
 
 /**
@@ -59,12 +95,124 @@ function revalidateEverything(): void {
 }
 
 /**
- * Manda a frase para a IA.
+ * A triagem: o primeiro tempo da conversa.
  *
- * O `after()` é o que faz o trabalho continuar com o app fechado sem depender
- * do cron: ele roda **depois** de a resposta já ter saído, no mesmo request do
- * servidor, e por isso não é interrompido quando o navegador fecha. Quando o
- * orçamento dele acaba, a varredura assume.
+ * Responde em uma ou duas viagens de segundo, **sem escrever uma linha em lugar
+ * nenhum**, e é isso que muda a experiência: a pessoa lê o que a IA entendeu antes de
+ * qualquer processamento pesado, e corrige ali mesmo se estiver errado.
+ *
+ * Quando a triagem não dá — provedor fora, resposta ilegível, cadeia curta —
+ * `runTriage` devolve `null` e aqui se cai direto para `submitMessage`, o caminho que o
+ * app já tinha. A conversa fica menos agradável e continua funcionando: a triagem é uma
+ * gentileza, não uma dependência.
+ */
+export async function submitBriefing(
+  _prev: AssistantActionState,
+  formData: FormData,
+): Promise<AssistantActionState> {
+  if (!isAiConfigured()) {
+    return { error: 'O assistente não está configurado. Falta a chave da API do Gemini.' }
+  }
+
+  const parsed = briefingSchema.safeParse({
+    text: formData.get('text'),
+    turns: formData.get('turns'),
+  })
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos' }
+  }
+
+  const triagem = await runTriage(parsed.data.text, parsed.data.turns)
+
+  // Sem triagem, o caminho antigo — e a pessoa nem percebe a diferença além da espera.
+  if (!triagem) return await submitMessage(_prev, formData)
+
+  return { briefing: toBriefingView(triagem) }
+}
+
+/**
+ * Traduz a triagem para o que a tela mostra.
+ *
+ * O `reply` de reserva é montado aqui, por `draftSummary`, para a tela nunca ficar muda
+ * depois de a pessoa escrever. Não é uma segunda interpretação — é a mesma informação
+ * do rascunho dita em português, como `describeOperation` faz para a proposta.
+ */
+function toBriefingView(triagem: Triage): BriefingView {
+  const reply =
+    triagem.reply ??
+    (triagem.pertinent
+      ? draftSummary(triagem.items)
+      : 'Eu cuido do seu dinheiro. Me conte o que você gastou, recebeu ou vai pagar.')
+
+  return {
+    pertinent: triagem.pertinent,
+    reply,
+    items: triagem.items,
+    question: triagem.question,
+  }
+}
+
+/**
+ * A aprovação do briefing: daqui para a frente é o caminho pesado.
+ *
+ * O "depois que o usuário aprovar, aí sim que começa o processo real". Só neste ponto
+ * nasce a linha em `ai_jobs`, com o retrato financeiro, as 27 ferramentas e o rascunho
+ * que a pessoa já leu e disse que estava certo.
+ */
+export async function approveBriefing(
+  _prev: AssistantActionState,
+  formData: FormData,
+): Promise<AssistantActionState> {
+  if (!isAiConfigured()) {
+    return { error: 'O assistente não está configurado. Falta a chave da API do Gemini.' }
+  }
+
+  const parsed = approveBriefingSchema.safeParse({
+    text: formData.get('text'),
+    draft: formData.get('draft'),
+    turns: formData.get('turns'),
+  })
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos' }
+  }
+
+  return await iniciarTrabalho(parsed.data.text, parsed.data.draft)
+}
+
+/**
+ * Enfileira a interpretação e devolve o `jobId` na hora.
+ *
+ * O `after()` é o que faz o trabalho continuar com o app fechado sem depender do cron:
+ * ele roda **depois** de a resposta já ter saído, no mesmo request do servidor, e por
+ * isso não é interrompido quando o navegador fecha. Quando o orçamento dele acaba, a
+ * varredura assume.
+ */
+async function iniciarTrabalho(
+  text: string,
+  draft: readonly DraftItem[],
+): Promise<AssistantActionState> {
+  let jobId: string
+  try {
+    jobId = await enqueueJob('interpret', text, draft)
+  } catch (cause) {
+    return { error: cause instanceof Error ? cause.message : 'Não foi possível falar com a IA.' }
+  }
+
+  after(async () => {
+    await trackJob(jobId)
+  })
+
+  revalidatePath('/assistente')
+
+  return { success: 'Estou montando a proposta.', jobId }
+}
+
+/**
+ * Manda a frase direto para o caminho pesado, sem triagem.
+ *
+ * Deixou de ser a porta de entrada e passou a ser o **caminho de reserva**: quem chama
+ * é `submitBriefing`, quando a triagem não responde. Continua existindo por isso —
+ * ninguém fica sem caminho porque a etapa opcional falhou.
  */
 export async function submitMessage(
   _prev: AssistantActionState,
@@ -79,20 +227,7 @@ export async function submitMessage(
     return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos' }
   }
 
-  let jobId: string
-  try {
-    jobId = await enqueueJob('interpret', parsed.data.text)
-  } catch (cause) {
-    return { error: cause instanceof Error ? cause.message : 'Não foi possível falar com a IA.' }
-  }
-
-  after(async () => {
-    await trackJob(jobId)
-  })
-
-  revalidatePath('/assistente')
-
-  return { success: 'Estou lendo o que você escreveu.', jobId }
+  return await iniciarTrabalho(parsed.data.text, [])
 }
 
 /** Pede o resumo e as dicas. Só acontece quando a pessoa toca no botão. */
@@ -153,11 +288,19 @@ export async function pollJob(jobId: string): Promise<JobView | null> {
 }
 
 /**
- * Executa a proposta confirmada.
+ * Executa a proposta confirmada, com os ajustes que a pessoa tenha feito.
  *
- * A proposta é relida do banco pelo `jobId` e revalidada inteira — não vem do
- * corpo do formulário. Isso mantém verdadeira a frase "foi isto que a IA
- * propôs", e o que se executa é o que a tela mostrou.
+ * A proposta continua sendo relida do banco pelo `jobId` e revalidada inteira. O que o
+ * formulário traz são **ajustes**, não operações: a identidade de cada operação — qual
+ * é, e em que linha ela mexe — sai do banco, e do corpo vem só o que uma pessoa
+ * digitaria. `lib/ai/edits.ts` guarda a lista branca e explica por que ela existe: a RLS
+ * barra um id de outra pessoa, mas não barraria reapontar a operação para outra linha da
+ * própria pessoa.
+ *
+ * Então a frase que este arquivo sempre sustentou muda de forma, não de força: era "foi
+ * isto que a IA propôs"; agora é "foi isto que a IA propôs, com os ajustes que você fez
+ * e leu" — e as duas continuam sendo verificáveis, porque a mesclagem inteira passa de
+ * novo pelo `operationSchema`.
  *
  * A autorização continua sendo da RLS: cada operação passa pela Server Action
  * correspondente, com o cliente normal. Um id que não é da pessoa não casa
@@ -186,6 +329,40 @@ export async function confirmProposal(
     return { error: 'Não há nada para confirmar neste pedido.' }
   }
 
+  // Os ajustes da tela. Corpo torto vira "nenhum ajuste": perder o ajuste é ruim, mas
+  // recusar a confirmação inteira por causa de um campo oculto malformado é pior.
+  const payload = editsPayloadSchema.safeParse({
+    edits: lerJson(formData.get('edits')),
+    removed: lerJson(formData.get('removed')),
+  })
+
+  // Contexto relido AGORA, e não o de quando a IA respondeu: entre uma coisa e outra a
+  // pessoa pode ter criado ou apagado uma categoria em outra aba. Sobe para cá porque a
+  // mesclagem precisa da lista de categorias válidas.
+  const context = await buildContext()
+
+  const ajustada = applyEdits(
+    operations.data,
+    payload.success ? payload.data.edits : [],
+    payload.success ? payload.data.removed : [],
+    context.validCategoryIds,
+  )
+
+  if (ajustada.operations.length === 0) {
+    return { error: 'Você removeu tudo. Não há nada para confirmar.' }
+  }
+
+  // A revalidação é o portão, e ela é intencionalmente inflexível: um valor que virou
+  // decimal ou uma data que virou texto solto recusa a confirmação, em vez de ser
+  // "corrigido" por conta própria. Arredondar um centavo em silêncio é o bug que o
+  // invariante 1 existe para impedir.
+  const revalidada = revalidateOperations(ajustada.operations)
+  if (!revalidada.success) {
+    return {
+      error: `Um dos ajustes não vale: ${revalidada.error.issues[0]?.message ?? 'confira os campos'}.`,
+    }
+  }
+
   // Marca o pedido como consumido ANTES de executar, e só segue se esta chamada
   // foi quem o marcou.
   //
@@ -203,6 +380,10 @@ export async function confirmProposal(
       status: 'canceled',
       result: {
         ...(job.result as Record<string, unknown>),
+        // As operações JÁ AJUSTADAS, na mesma escrita: o histórico tem de mostrar o que
+        // foi aplicado, não o que a IA havia proposto antes de a pessoa corrigir.
+        operations: revalidada.data,
+        edited: ajustada.changed,
         confirmedAt: new Date().toISOString(),
       } as never,
     })
@@ -214,10 +395,7 @@ export async function confirmProposal(
     return { error: 'Este pedido já foi confirmado.' }
   }
 
-  // Contexto relido agora, e não o de quando a IA respondeu: entre uma coisa e
-  // outra a pessoa pode ter criado uma categoria em outra aba.
-  const context = await buildContext()
-  const report = await applyProposal(operations.data, context.labels, context.validCategoryIds)
+  const report = await applyProposal(revalidada.data, context.labels, context.validCategoryIds)
 
   // Registra o que foi aplicado, para a tela do assistente mostrar depois o que
   // entrou e o que não entrou. Falhar aqui não desfaz nada nem muda a resposta:
@@ -246,6 +424,54 @@ export async function confirmProposal(
 
   return {
     success: `Registrei ${report.okCount} de ${report.applied.length}. Veja o que faltou em Assistente.`,
+  }
+}
+
+/**
+ * Lê um campo oculto que viaja como JSON.
+ *
+ * `null` quando não veio nada, para o Zod tratar como ausente em vez de como texto
+ * inválido — são coisas diferentes, e só uma delas merece mensagem.
+ */
+function lerJson(value: FormDataEntryValue | null): unknown {
+  if (typeof value !== 'string' || value.trim() === '') return null
+
+  try {
+    return JSON.parse(value)
+  } catch {
+    return null
+  }
+}
+
+/** O que a folha do assistente precisa saber para se montar. */
+export interface AssistantSetup {
+  /** As categorias reais, para o ajuste de categoria na confirmação. */
+  categories: { id: string; name: string; kind: Category['kind'] }[]
+  /** A pessoa pediu para ver as etapas do processamento? */
+  showReasoning: boolean
+}
+
+/**
+ * Lê o que a folha precisa, numa viagem só, quando ela abre.
+ *
+ * Existe para o componente não precisar receber isto por prop: a mesma folha é aberta de
+ * quatro lugares, e um deles (`assistant-bar.tsx`) é cliente e não tem como buscar nada.
+ * Passar por prop obrigaria a mudar os quatro pontos de montagem para servir um dado que
+ * só interessa depois de a folha abrir.
+ *
+ * Leitura, não mutação: nada aqui escreve, e a RLS continua sendo quem autoriza a linha.
+ */
+export async function getAssistantSetup(): Promise<AssistantSetup> {
+  const supabase = await createClient()
+
+  const [categories, profile] = await Promise.all([
+    listActiveCategories(),
+    supabase.from('profiles').select('ai_show_reasoning').maybeSingle(),
+  ])
+
+  return {
+    categories: categories.map((c) => ({ id: c.id, name: c.name, kind: c.kind })),
+    showReasoning: profile.data?.ai_show_reasoning ?? false,
   }
 }
 

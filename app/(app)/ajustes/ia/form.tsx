@@ -6,6 +6,7 @@ import {
   setAiModel,
   setInsightsEnabled,
   setNotificationsEnabled,
+  setShowReasoning,
   type AiSettingsActionState,
 } from '@/lib/actions/ai-settings'
 import { PushSetup } from '@/components/ai/push-setup'
@@ -17,9 +18,11 @@ import { cn } from '@/lib/utils'
 const initialState: AiSettingsActionState = {}
 
 /**
- * Os interruptores da IA. v1.0 — 2026-09-26.
+ * Os interruptores da IA. v1.1 — 2026-09-26.
  *
- * Três ajustes, e um aviso que não é opcional: a tela diz, com todas as letras,
+ * v1.1: acrescentado "Mostrar as etapas", que a conversa em dois tempos tornou útil.
+ *
+ * Quatro ajustes, e um aviso que não é opcional: a tela diz, com todas as letras,
  * quais dados saem daqui para o Gemini. Num app de dinheiro isso não é letra
  * miúda — e desligar o resumo não é desculpa para esconder a informação, já que
  * a caixa de lançar continua mandando o mesmo retrato.
@@ -27,6 +30,7 @@ const initialState: AiSettingsActionState = {}
 export function AiSettingsForm({
   insightsEnabled,
   notificationsEnabled,
+  showReasoning,
   model,
   models,
   aiConfigured,
@@ -35,6 +39,7 @@ export function AiSettingsForm({
 }: {
   insightsEnabled: boolean
   notificationsEnabled: boolean
+  showReasoning: boolean
   model: string
   models: string[]
   aiConfigured: boolean
@@ -71,6 +76,13 @@ export function AiSettingsForm({
             Os avisos não estão configurados neste ambiente: faltam as chaves VAPID.
           </p>
         ))}
+
+      <Toggle
+        titulo="Mostrar as etapas"
+        descricao="Enquanto a IA trabalha, mostra em que passo ela está. São as etapas do app e o que o próprio modelo escrever — não é o pensamento dela, e não adianta a resposta."
+        enabled={showReasoning}
+        action={setShowReasoning}
+      />
 
       <ModelPicker model={model} models={models} />
 

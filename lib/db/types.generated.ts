@@ -359,6 +359,7 @@ export type Database = {
           ai_insights_enabled: boolean;
           ai_model: string | null;
           ai_notifications_enabled: boolean;
+          ai_show_reasoning: boolean;
           created_at: string;
           display_name: string;
           id: string;
@@ -372,6 +373,7 @@ export type Database = {
           ai_insights_enabled?: boolean;
           ai_model?: string | null;
           ai_notifications_enabled?: boolean;
+          ai_show_reasoning?: boolean;
           created_at?: string;
           display_name?: string;
           id: string;
@@ -385,6 +387,7 @@ export type Database = {
           ai_insights_enabled?: boolean;
           ai_model?: string | null;
           ai_notifications_enabled?: boolean;
+          ai_show_reasoning?: boolean;
           created_at?: string;
           display_name?: string;
           id?: string;

@@ -948,12 +948,26 @@ begin
   if ligado then raise exception 'o dono deveria conseguir desligar o resumo'; end if;
 end $$;
 
--- Mas o grant novo não pode ter reaberto a escalada que a 0008 fechou.
+-- E a preferência que a 0013 acrescentou também. Coluna nova NÃO herda concessão: sem o
+-- grant da migration, isto falharia com insufficient_privilege — que é exatamente o que a
+-- 0012 anotou ao acrescentar as três anteriores.
+do $$
+declare etapas boolean;
+begin
+  update public.profiles set ai_show_reasoning = true
+   where id = '11111111-1111-1111-1111-111111111111';
+
+  select ai_show_reasoning into etapas from public.profiles
+   where id = '11111111-1111-1111-1111-111111111111';
+  if not etapas then raise exception 'o dono deveria conseguir ligar as etapas'; end if;
+end $$;
+
+-- Mas os grants novos não podem ter reaberto a escalada que a 0008 fechou.
 do $$
 begin
   update public.profiles set role = 'admin'
    where id = '11111111-1111-1111-1111-111111111111';
-  raise exception 'ESCALADA: o grant da 0012 reabriu a escrita em profiles.role';
+  raise exception 'ESCALADA: o grant da 0012 ou da 0013 reabriu a escrita em profiles.role';
 exception
   when insufficient_privilege then null;  -- esperado
 end $$;
