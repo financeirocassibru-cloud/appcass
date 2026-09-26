@@ -43,6 +43,19 @@ No painel do Supabase, em Authentication → URL Configuration, cadastrar a `Sit
 produção. Não há *Redirect URLs* a configurar enquanto o login for por senha: elas só passam
 a importar quando existir link por e-mail.
 
+## Build na Vercel
+
+O `vercel.json` declara só o framework e o `installCommand`. **Não declara `buildCommand` de
+propósito:** sem ele, o builder roda o script `build` do `package.json`
+(`serwist build && next build`); com ele preenchido, o script é ignorado. Quando havia
+`"buildCommand": "next build"` ali, o service worker nunca foi gerado em deploy nenhum e
+`/sw.js` respondeu 404 em produção sem nenhum build ficar vermelho.
+
+O mesmo vale para o campo *Build Command* nas configurações do projeto no painel da Vercel: se
+estiver preenchido, ele vence o `package.json`. Deve ficar vazio. O repositório não consegue
+ver esse campo, e é por isso que o `next.config.ts` falha o build quando `public/sw.js` não
+existe — é o único ponto que a Vercel roda de qualquer forma.
+
 ## Comandos
 
 ```bash
