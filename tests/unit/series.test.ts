@@ -6,6 +6,7 @@ import {
   lastMonthKeys,
   monthKeyOf,
   niceTicks,
+  niceTicksRange,
   topCategories,
   type MonthlyTotals,
 } from '@/lib/finance/series'
@@ -197,5 +198,48 @@ describe('niceTicks', () => {
 
   it('recusa contagem inválida', () => {
     expect(() => niceTicks(1000, 0)).toThrow()
+  })
+})
+
+describe('niceTicksRange', () => {
+  it('cobre um intervalo que atravessa o zero, com o zero numa marca', () => {
+    const ticks = niceTicksRange(-120_000, 340_000)
+    expect(ticks).toContain(0)
+    expect(ticks[0]).toBeLessThanOrEqual(-120_000)
+    expect(ticks[ticks.length - 1]).toBeGreaterThanOrEqual(340_000)
+  })
+
+  it('usa passos redondos', () => {
+    expect(niceTicksRange(-50_000, 150_000)).toEqual([-50_000, 0, 50_000, 100_000, 150_000])
+  })
+
+  it('inclui o zero mesmo quando a série é toda positiva', () => {
+    // O saldo começa no zero do eixo: uma área que flutua no meio do gráfico
+    // exagera a variação e mente sobre a proporção.
+    const ticks = niceTicksRange(80_000, 200_000)
+    expect(ticks[0]).toBe(0)
+  })
+
+  it('inclui o zero quando a série é toda negativa', () => {
+    const ticks = niceTicksRange(-200_000, -80_000)
+    expect(ticks[ticks.length - 1]).toBe(0)
+  })
+
+  it('as marcas são centavos inteiros, sem resíduo de ponto flutuante', () => {
+    for (const [min, max] of [
+      [-1, 1],
+      [-333_333, 777_777],
+      [-7, 9_999_999],
+    ] as const) {
+      expect(niceTicksRange(min, max).every(Number.isInteger)).toBe(true)
+    }
+  })
+
+  it('série constante em zero devolve só o zero', () => {
+    expect(niceTicksRange(0, 0)).toEqual([0])
+  })
+
+  it('recusa contagem inválida', () => {
+    expect(() => niceTicksRange(0, 100, 0)).toThrow()
   })
 })
