@@ -14,6 +14,9 @@ import { NetworkOnly, Serwist } from 'serwist'
  *
  * 1. **Nada de `/auth`, `/login` e `/entrar` no cache.** São respostas que
  *    carregam ou trocam sessão; guardá-las convida a servir uma sessão velha.
+ *    A consequência aparece ao testar e é intencional: abrir o app sem rede
+ *    **deslogado** mostra a página de offline, não a tela de entrar. Entrar
+ *    precisa de rede de qualquer forma.
  * 2. **O logout limpa os caches.** As páginas guardadas mostram saldo e
  *    lançamentos; sem a limpeza, quem usasse o mesmo aparelho depois veria os
  *    números da pessoa anterior a partir do cache, mesmo já deslogado. Quem

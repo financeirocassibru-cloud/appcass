@@ -72,17 +72,30 @@ Cada uma existe porque o app antigo errou exatamente ali. O catálogo dos bugs e
 - Não copie código de `legacy/`. Consulte para entender a regra, reimplemente conforme os
   documentos em `docs/`.
 - Antes de escrever qualquer gráfico, consulte a skill `dataviz`.
+- **O comando de build vive só no `package.json`.** O `vercel.json` não repete `buildCommand`:
+  com ele preenchido, a Vercel ignora o script `build` e roda o que está ali. Foi assim que o
+  `serwist build` deixou de rodar em todo deploy, `/sw.js` respondeu 404 em produção por três
+  deploys, e o PR que "corrigiu" a ordem dos comandos dentro do script não mudou nada — porque
+  o script não era chamado. `tests/unit/build-pipeline.test.ts` e o guarda no `next.config.ts`
+  existem para isso não voltar.
 
 ## Verificação antes de abrir PR
 
 ```bash
 npm run typecheck && npm run lint && npm run test && npm run build
-npm run db:verify   # se tocou em supabase/migrations/
+npm run db:verify    # se tocou em supabase/migrations/
+npm run verify:pwa   # se tocou no service worker, no serwist.config.ts ou no matcher do proxy.ts
 ```
 
 `db:verify` aplica as migrations num Postgres descartável e prova que a RLS isola usuários,
 que o privilégio de coluna barra a escalada e que a primeira conta nasce admin. Roda sem
 Docker e sem credencial — use sempre que mexer no schema.
+
+`verify:pwa` abre um Chromium contra um build de produção servido em `:3100` (`npm run build`
+e `npx next start -p 3100` antes) e confere o que só aparece rodando: que `/sw.js` responde
+200, que o worker registra na raiz e assume o controle, que a rota não visitada cai na página
+de offline e que nenhuma rota de sessão ficou em cache. Nada disso é visível no `typecheck`,
+no `lint` ou no `vitest` — e `/sw.js` já foi a produção com 404 por isso.
 
 As concessões de privilégio vivem em `supabase/tests/00_shim.sql`, **antes** das migrations,
 reproduzindo o que o Supabase concede por padrão. Não as reconceda em `01_rls_proof.sql`:
