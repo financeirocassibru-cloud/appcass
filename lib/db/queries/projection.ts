@@ -1,8 +1,9 @@
 import { getCurrentBalance } from '@/lib/db/queries/balance'
 import { listActiveRecurringRules } from '@/lib/db/queries/recurring'
+import { getScenario } from '@/lib/db/queries/scenarios'
 import { addDays, todayISO, type ISODate } from '@/lib/finance/date'
 import { entriesAheadOf, projectRange, rollOverdueTo } from '@/lib/finance/projection'
-import type { DayProjection, Entry } from '@/lib/finance/types'
+import type { DayProjection, Entry, Scenario } from '@/lib/finance/types'
 import { createClient } from '@/lib/supabase/server'
 
 /**
@@ -31,6 +32,8 @@ export interface Projection {
   firstNegativeDay: ISODate | null
   /** Quanto veio de contas já vencidas, empurradas para o primeiro dia. */
   overdueCents: number
+  /** O cenário aplicado, ou `null` quando a projeção é a real. */
+  scenario: Scenario | null
 }
 
 const PROJECTION_COLUMNS = `
@@ -42,13 +45,15 @@ const PROJECTION_COLUMNS = `
 export async function getProjection(
   horizonDays = 90,
   today: ISODate = todayISO(),
+  scenarioId?: string,
 ): Promise<Projection> {
   const to = addDays(today, horizonDays)
 
-  const [balance, rules, entries] = await Promise.all([
+  const [balance, rules, entries, scenario] = await Promise.all([
     getCurrentBalance(today),
     listActiveRecurringRules(),
     listEntriesForProjection(today, to),
+    scenarioId ? getScenario(scenarioId) : Promise.resolve(null),
   ])
 
   // Só o que ainda não está no saldo — a divisão exata contra `computeBalance`.
@@ -66,12 +71,20 @@ export async function getProjection(
   const days = projectRange({
     from: today,
     to,
-    openingBalanceCents: balance.currentCents,
+    // O cenário parte do mesmo saldo real. `scenarios.opening_balance_cents`
+    // existe para o caso "e se eu tivesse X", e só vale quando foi informado —
+    // zero significa "usa o saldo de verdade", pela mesma razão que a âncora do
+    // saldo trata zero como não configurada.
+    openingBalanceCents:
+      scenario && scenario.openingBalanceCents !== 0
+        ? scenario.openingBalanceCents
+        : balance.currentCents,
     data: {
       entries: rollOverdueTo(ahead, today),
       recurringRules: rules,
       goals: [],
     },
+    scenario: scenario ?? undefined,
   })
 
   const firstNegative = days.find((day) => day.balanceCents < 0)
@@ -83,6 +96,7 @@ export async function getProjection(
     openingBalanceCents: balance.currentCents,
     firstNegativeDay: firstNegative?.date ?? null,
     overdueCents,
+    scenario,
   }
 }
 

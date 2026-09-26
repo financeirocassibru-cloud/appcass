@@ -1,12 +1,17 @@
 import Link from 'next/link'
 import { AlertTriangle, TrendingUp } from 'lucide-react'
 import { getProjection } from '@/lib/db/queries/projection'
+import { getActiveScenarioId, listScenarios } from '@/lib/db/queries/scenarios'
+import { overrideTargetOf } from '@/lib/finance/projection'
 import { formatDayLabel } from '@/lib/finance/grouping'
 import { formatCents } from '@/lib/finance/money'
 import { todayISO } from '@/lib/finance/date'
 import { BalanceArea } from '@/components/finance/charts/balance-area'
 import { Balance, Money } from '@/components/finance/money'
 import { HorizonTabs } from './horizon-tabs'
+import { OccurrenceActions } from './occurrence-actions'
+import { ScenarioPicker } from './scenario-picker'
+import { ScenarioEntries } from './scenario-entries'
 
 export const metadata = { title: 'Projeção · Finanças' }
 /** Depende de "hoje" e do banco: prerenderizada, congelaria os dois. */
@@ -24,13 +29,30 @@ export default async function ProjecaoPage({
   searchParams,
 }: {
   // Next 16: `searchParams` é assíncrono (invariante 12).
-  searchParams: Promise<{ dias?: string }>
+  searchParams: Promise<{ dias?: string; cenario?: string }>
 }) {
   const params = await searchParams
   const horizon = parseHorizon(params.dias)
   const today = todayISO()
 
-  const projection = await getProjection(horizon, today)
+  const [scenarios, activeId] = await Promise.all([listScenarios(), getActiveScenarioId()])
+
+  // `cenario=real` é a escolha explícita de ver a projeção sem cenário; sem o
+  // parâmetro, abre o cenário marcado como padrão. Sem essa distinção não
+  // haveria como voltar à projeção real depois de marcar um padrão.
+  const selectedId =
+    params.cenario === 'real'
+      ? undefined
+      : (params.cenario ?? activeId ?? undefined)
+
+  const projection = await getProjection(horizon, today, selectedId)
+
+  // Os alvos que já têm ajuste, para a linha mostrar o desfazer.
+  const adjusted = new Set(
+    (projection.scenario?.overrides ?? []).map(
+      (o) => `${o.targetType}:${o.targetId}:${o.occurrenceKey ?? ''}`,
+    ),
+  )
 
   // Só os dias com movimento: uma lista de 90 dias em que 70 estão vazios não é
   // um fluxo, é um rolo. O gráfico já mostra a continuidade.
@@ -45,6 +67,12 @@ export default async function ProjecaoPage({
           Parte do seu saldo de hoje e soma o que está por vir.
         </p>
       </div>
+
+      <ScenarioPicker
+        scenarios={scenarios}
+        selectedId={projection.scenario?.id ?? null}
+        horizon={horizon}
+      />
 
       <HorizonTabs current={horizon} options={HORIZONS} />
 
@@ -134,24 +162,46 @@ export default async function ProjecaoPage({
                 </div>
 
                 <ul className="flex flex-col gap-1">
-                  {day.occurrences.map((occurrence) => (
-                    <li
-                      key={occurrence.key}
-                      className="flex items-center justify-between gap-3 text-sm"
-                    >
-                      <span className="text-muted-foreground min-w-0 flex-1 truncate">
-                        {occurrence.description}
-                        {/* Previsto e realizado não são a mesma coisa, e a
-                            diferença muda o que a pessoa faz com a informação. */}
-                        {occurrence.isRealized ? '' : ' · previsto'}
-                      </span>
-                      <Money
-                        cents={occurrence.amountCents}
-                        kind={occurrence.kind}
-                        className="shrink-0 text-sm"
-                      />
-                    </li>
-                  ))}
+                  {day.occurrences.map((occurrence) => {
+                    // O mesmo alvo que a action grava e o motor lê de volta.
+                    const target = overrideTargetOf(occurrence)
+                    const isAdjusted = adjusted.has(
+                      `${target.targetType}:${target.targetId}:${target.occurrenceKey ?? ''}`,
+                    )
+                    const isHypothetical = occurrence.origin === 'scenario'
+
+                    return (
+                      <li key={occurrence.key} className="flex flex-wrap items-center gap-x-3 text-sm">
+                        <span className="text-muted-foreground min-w-0 flex-1 truncate">
+                          {occurrence.description}
+                          {/* Previsto, realizado e hipotético são três coisas
+                              diferentes, e a diferença muda o que a pessoa faz
+                              com a informação. */}
+                          {isHypothetical
+                            ? ' · hipotético'
+                            : occurrence.isRealized
+                              ? ''
+                              : ' · previsto'}
+                          {isAdjusted ? ' · ajustado' : ''}
+                        </span>
+                        <Money
+                          cents={occurrence.amountCents}
+                          kind={occurrence.kind}
+                          className="shrink-0 text-sm"
+                        />
+                        {projection.scenario && !isHypothetical ? (
+                          <OccurrenceActions
+                            scenarioId={projection.scenario.id}
+                            target={target}
+                            description={occurrence.description}
+                            currentAmountCents={occurrence.amountCents}
+                            currentDate={occurrence.date}
+                            isAdjusted={isAdjusted}
+                          />
+                        ) : null}
+                      </li>
+                    )
+                  })}
                 </ul>
               </li>
             ))}
@@ -159,9 +209,18 @@ export default async function ProjecaoPage({
         )}
       </section>
 
-      <p className="text-xs text-[var(--foreground-muted)]">
-        Cenários — simular um gasto a mais, adiar uma conta — entram na fase 5b.
-      </p>
+      {projection.scenario ? (
+        <ScenarioEntries scenario={projection.scenario} today={today} />
+      ) : (
+        <p className="text-xs text-[var(--foreground-muted)]">
+          Quer simular? Crie um{' '}
+          <Link href="/cenarios" className="text-[var(--brand)] underline">
+            cenário
+          </Link>{' '}
+          para adiar uma conta, mudar um valor ou somar um gasto que ainda não existe — sem mexer
+          nos seus lançamentos.
+        </p>
+      )}
     </main>
   )
 }

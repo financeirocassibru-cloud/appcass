@@ -158,39 +158,54 @@ function entryToOccurrence(entry: Entry): Occurrence {
   }
 }
 
-/** Mapeia a origem de uma ocorrência para o tipo de alvo de override. */
-function targetTypeOf(occurrence: Occurrence): OverrideTarget {
-  switch (occurrence.origin) {
-    case 'recurring':
-      return 'recurring_rule'
-    case 'goal':
-      return 'goal'
-    default:
-      return 'entry'
-  }
+/**
+ * O alvo de override de uma ocorrência: como o cenário se refere a ela.
+ *
+ * **Exportada de propósito.** A tela grava o override e o motor o lê de volta;
+ * se as duas montassem o alvo por conta própria, divergiriam na primeira
+ * mudança e o override deixaria de casar — silenciosamente, porque um override
+ * que não casa simplesmente não faz nada. A pessoa clicaria em "excluir este
+ * gasto do cenário" e veria o gasto continuar ali.
+ *
+ * Então existe uma função só, e os dois lados a chamam.
+ *
+ * Um detalhe que parece estranho e é deliberado: uma ocorrência **já
+ * materializada** de conta fixa tem `origin: 'entry'` (é uma linha de
+ * `entries`), mas seu `targetId` é o id da **regra**, não o da linha. É o que
+ * mantém o override válido para aquela ocorrência quer ela já tenha virado
+ * lançamento ou não — que é como a pessoa pensa sobre "o aluguel de junho".
+ */
+export interface OverrideTargetRef {
+  targetType: OverrideTarget
+  targetId: string
+  /** `null` quando o override vale para todas as ocorrências do alvo. */
+  occurrenceKey: string | null
 }
 
-/** Id que um override referencia: a regra geradora, ou o próprio lançamento. */
-function targetIdOf(occurrence: Occurrence): string {
-  if (occurrence.origin === 'entry') {
-    return occurrence.key.startsWith('entry:') ? occurrence.key.slice('entry:'.length) : (occurrence.sourceId ?? '')
-  }
-  return occurrence.sourceId ?? ''
-}
-
-/** A parte final da chave, usada para casar override de uma ocorrência específica. */
-function occurrenceKeyOf(occurrence: Occurrence): string | null {
+export function overrideTargetOf(occurrence: Occurrence): OverrideTargetRef {
   const parts = occurrence.key.split(':')
-  return parts.length >= 3 ? (parts[2] ?? null) : null
+  const occurrenceKey = parts.length >= 3 ? (parts[2] ?? null) : null
+
+  const targetType: OverrideTarget =
+    occurrence.origin === 'recurring'
+      ? 'recurring_rule'
+      : occurrence.origin === 'goal'
+        ? 'goal'
+        : 'entry'
+
+  const targetId =
+    occurrence.origin === 'entry' && occurrence.key.startsWith('entry:')
+      ? occurrence.key.slice('entry:'.length)
+      : (occurrence.sourceId ?? '')
+
+  return { targetType, targetId, occurrenceKey }
 }
 
 function findOverride(
   overrides: readonly ScenarioOverride[],
   occurrence: Occurrence,
 ): ScenarioOverride | undefined {
-  const targetType = targetTypeOf(occurrence)
-  const targetId = targetIdOf(occurrence)
-  const key = occurrenceKeyOf(occurrence)
+  const { targetType, targetId, occurrenceKey: key } = overrideTargetOf(occurrence)
 
   // Override de uma ocorrência específica vence o que vale para todas.
   return (
