@@ -64,7 +64,7 @@ export default async function InicioPage() {
       {/* A caixa vem logo abaixo do saldo: é o caminho mais curto entre "isso
           acabou de acontecer" e o registro, e não exige saber em qual tela cada
           tipo de lançamento mora. */}
-      {/* v1.3 — 2026-09-27: "Importar extrato" logo abaixo da caixa, discreto como o "Ver
+      {/* v1.4 — 2026-09-27: "Importar extrato" logo abaixo da caixa, discreto como o "Ver
           tudo" da agenda. Fica de fora do `assistenteLigado` porque importar não depende da
           IA — ela só sugere categorias quando está ligada. O `div` junta os dois para o
           link não ganhar o espaçamento de seção do `main`. */}
