@@ -1,7 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { LogoutButton } from './logout-button'
 
-export const metadata = { title: 'Ajustes · Finanças' }
+// v1.1 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
+export const metadata = { title: 'Ajustes' }
 
 export default async function PerfilPage() {
   const supabase = await createClient()

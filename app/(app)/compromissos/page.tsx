@@ -7,7 +7,8 @@ import { RuleList } from './rule-list'
  * `RuleList`, que as duas compartilham.
  */
 
-export const metadata = { title: 'Contas fixas · Finanças' }
+// v1.2 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
+export const metadata = { title: 'Contas fixas' }
 /** Lê o banco e calcula o próximo vencimento a partir de hoje. */
 export const dynamic = 'force-dynamic'
 

@@ -5,11 +5,14 @@ import './globals.css'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'swap' })
 
+// v1.1 — 27/09/2026: o app passa a se chamar Cass. O `template` acrescenta "· Cass" ao título
+// de cada página, que agora declara só o próprio nome ('Início', 'Metas'…) em vez de repetir a
+// marca em 26 arquivos. O ícone SVG também mudou (logo Cass), no mesmo caminho de antes.
 export const metadata: Metadata = {
-  title: 'Finanças',
+  title: { default: 'Cass', template: '%s · Cass' },
   description:
     'Controle de finanças pessoais: lançamentos, contas fixas, parcelas, metas e projeção de saldo.',
-  applicationName: 'Finanças',
+  applicationName: 'Cass',
   icons: {
     icon: [
       { url: '/icons/icon.svg', type: 'image/svg+xml' },
@@ -19,7 +22,7 @@ export const metadata: Metadata = {
   },
   appleWebApp: {
     capable: true,
-    title: 'Finanças',
+    title: 'Cass',
     // `default` mantém a barra de status legível nos dois temas; `black-translucent`
     // deixaria o conteúdo passar por baixo dela.
     statusBarStyle: 'default',

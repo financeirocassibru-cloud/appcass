@@ -14,7 +14,8 @@ import { LaunchScreen } from './launch-screen'
  * para "Ver lançamentos".
  */
 
-export const metadata = { title: 'Novo lançamento · Finanças' }
+// v1.2 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
+export const metadata = { title: 'Novo lançamento' }
 export const dynamic = 'force-dynamic'
 
 const MODES: Record<string, LaunchMode> = {

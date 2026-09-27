@@ -26,7 +26,8 @@ import { FeedList } from './feed-list'
  * na linha, como "para 05/10".
  */
 
-export const metadata = { title: 'Todos os lançamentos · Finanças' }
+// v1.3 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
+export const metadata = { title: 'Todos os lançamentos' }
 export const dynamic = 'force-dynamic'
 
 const PAGE_SIZE = 40

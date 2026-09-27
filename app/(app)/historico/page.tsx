@@ -18,7 +18,8 @@ import { Balance, Money } from '@/components/finance/money'
 import { EntryRow } from './entry-row'
 import { Filters } from './filters'
 
-export const metadata = { title: 'Histórico · Finanças' }
+// v1.2 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
+export const metadata = { title: 'Histórico' }
 export const dynamic = 'force-dynamic'
 
 const MONTH_LABEL = new Intl.DateTimeFormat('pt-BR', {

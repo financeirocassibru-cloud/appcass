@@ -5,7 +5,8 @@ import { monthlyContributionCents } from '@/lib/finance/goals'
 import { formatCents } from '@/lib/finance/money'
 import { todayISO } from '@/lib/finance/date'
 
-export const metadata = { title: 'Metas · Finanças' }
+// v1.1 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
+export const metadata = { title: 'Metas' }
 export const dynamic = 'force-dynamic'
 
 export default async function MetasPage() {

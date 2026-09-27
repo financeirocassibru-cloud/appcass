@@ -3,7 +3,8 @@ import { ChevronLeft } from 'lucide-react'
 import { todayISO } from '@/lib/finance/date'
 import { GoalForm } from '../form'
 
-export const metadata = { title: 'Nova meta · Finanças' }
+// v1.1 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
+export const metadata = { title: 'Nova meta' }
 export const dynamic = 'force-dynamic'
 
 export default function NovaMetaPage() {

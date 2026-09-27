@@ -3,7 +3,8 @@ import { todayISO } from '@/lib/finance/date'
 import { Balance } from '@/components/finance/money'
 import { BalanceAnchorForm } from './form'
 
-export const metadata = { title: 'Saldo · Finanças' }
+// v1.1 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
+export const metadata = { title: 'Saldo' }
 /** Lê "hoje" e o saldo do banco: prerenderizar congelaria os dois no build. */
 export const dynamic = 'force-dynamic'
 

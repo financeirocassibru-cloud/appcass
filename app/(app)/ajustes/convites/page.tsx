@@ -2,7 +2,8 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { CreateInviteForm, RevokeInviteButton } from './forms'
 
-export const metadata = { title: 'Convites · Finanças' }
+// v1.1 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
+export const metadata = { title: 'Convites' }
 
 export const dynamic = 'force-dynamic'
 
