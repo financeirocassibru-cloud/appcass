@@ -50,8 +50,9 @@ export default async function InicioPage() {
   return (
     <main className="mx-auto flex max-w-md flex-col gap-8 px-6 py-8">
       {/* v1.6 — 27/09/2026: logo e nome do app no canto superior esquerdo, acima do saldo. */}
+      {/* v1.7 — 27/09/2026: o logo é o destino da animação de abertura do PWA (`LaunchSplash`). */}
       <header>
-        <Logo withName />
+        <Logo target />
       </header>
 
       <BalanceHero

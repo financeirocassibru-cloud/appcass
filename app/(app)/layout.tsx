@@ -1,5 +1,6 @@
 import { AssistantBar } from '@/components/ai/assistant-bar'
 import { BottomNav } from '@/components/app/bottom-nav'
+import { LaunchSplash } from '@/components/app/launch-splash'
 import { Toaster } from '@/components/ui/sonner'
 
 /**
@@ -31,6 +32,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         assistente. Sem isso o último item de qualquer lista fica embaixo delas,
         inalcançável. Era `pb-24` antes da fase 7.
       */}
+      {/* v1.2 — 27/09/2026: abertura do PWA. Fica antes de `children` para chegar no primeiro
+          pedaço do HTML, junto com o esqueleto, e não só quando o Início termina de carregar. */}
+      <LaunchSplash />
       <div className="min-h-dvh pb-36">{children}</div>
       <AssistantBar />
       <BottomNav />
