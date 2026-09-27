@@ -162,4 +162,15 @@ describe('escritas de lançamento conferem o resultado (invariante 17)', () => {
     expect(corpo).toMatch(/\.in\('import_batch_id', importBatchIds\)/)
     expect(corpo, 'deleteEntries não recusa o caso de zero linhas').toMatch(/deleted === 0/)
   })
+
+  // v1.3 — 2026-09-27: o "Categorizar" da seleção grava em lote por `.in('id')`, com asserção
+  // própria pelo mesmo motivo de `deleteEntries`.
+  it('applyCategories confere o resultado e só alcança lançamento manual', () => {
+    const corpo = corpoDe('applyCategories')
+
+    expect(corpo.match(/\.update\(/g) ?? []).toHaveLength(1)
+    expect(corpo).toMatch(/\.update\(\{ category_id: categoryId \}\)\s*\.eq\('source', 'manual'\)\s*\.in\('id'/)
+    expect(corpo).toMatch(/\.select\('id'\)/)
+    expect(corpo, 'applyCategories não recusa o caso de zero linhas').toMatch(/updated === 0/)
+  })
 })
