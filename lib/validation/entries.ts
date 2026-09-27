@@ -61,7 +61,7 @@ export const entryIdSchema = z.object({
  * pode passar de uma página. Os tetos são de sanidade, não de regra: a página mostra 40
  * linhas e uma importação tem no máximo 1000.
  */
-export const deleteEntriesSchema = z
+export const entrySelectionSchema = z
   .object({
     ids: z.array(z.string().uuid('Lançamento inválido')).max(500, 'Seleção grande demais').default([]),
     importBatchIds: z
@@ -70,6 +70,28 @@ export const deleteEntriesSchema = z
       .default([]),
   })
   .refine((v) => v.ids.length + v.importBatchIds.length > 0, 'Nada selecionado')
+
+/** v1.1 — 2026-09-27: a seleção virou `entrySelectionSchema`, que "Categorizar" também usa. */
+export const deleteEntriesSchema = entrySelectionSchema
+
+/** Quantos lançamentos, no máximo, uma recategorização lê e grava de uma vez. */
+export const MAX_RECATEGORIZE = 2_000
+
+/**
+ * O que a prévia de "Categorizar" confirmou: um par lançamento → categoria por linha.
+ * v1.0 — 2026-09-27.
+ */
+export const applyCategoriesSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        id: z.string().uuid('Lançamento inválido'),
+        categoryId: z.string().uuid('Categoria inválida'),
+      }),
+    )
+    .min(1, 'Nada para aplicar')
+    .max(MAX_RECATEGORIZE, 'Lançamentos demais de uma vez'),
+})
 
 export const toggleSettledSchema = z.object({
   id: z.string().uuid('Lançamento inválido'),

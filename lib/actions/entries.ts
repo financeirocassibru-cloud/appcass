@@ -1,15 +1,30 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { isAiConfigured } from '@/lib/ai/env'
 import { currentUserId } from '@/lib/db/current-user'
+import { listActiveCategories } from '@/lib/db/queries/categories'
+import type { EntryKind } from '@/lib/db/types'
+import type { RecategorizeTarget } from '@/lib/import/recategorize'
+import type { CategoryOption } from '@/lib/import/suggest'
 import { createClient } from '@/lib/supabase/server'
 import {
+  applyCategoriesSchema,
   createEntrySchema,
   deleteEntriesSchema,
   entryIdSchema,
+  entrySelectionSchema,
+  MAX_RECATEGORIZE,
   toggleSettledSchema,
   updateEntrySchema,
 } from '@/lib/validation/entries'
+
+/*
+ * Escrita de lançamentos. v1.3 — 2026-09-27.
+ *
+ * v1.3: `prepareRecategorize` e `applyCategories`, o "Categorizar" da seleção de "Todos os
+ * lançamentos" — palavra-chave e IA aplicadas a lançamentos que já existem.
+ */
 
 export interface EntryActionState {
   error?: string
@@ -249,5 +264,150 @@ export async function deleteEntries(input: unknown): Promise<DeleteEntriesState>
   return {
     deleted,
     success: deleted === 1 ? '1 lançamento excluído.' : `${deleted} lançamentos excluídos.`,
+  }
+}
+
+export interface RecategorizeSetup {
+  error?: string
+  targets: RecategorizeTarget[]
+  categories: CategoryOption[]
+  aiAvailable: boolean
+}
+
+/**
+ * O que "Categorizar" precisa para montar a prévia. v1.0 — 2026-09-27.
+ *
+ * Lê do banco a seleção inteira — os marcados e as importações inteiras, inclusive as linhas
+ * que não estão na página —, com a categoria atual de cada um, e as categorias ativas com as
+ * palavras-chave. Não grava nada: a proposta é calculada no aparelho
+ * (`lib/import/recategorize.ts`) e só vira escrita em `applyCategories`, depois da prévia.
+ *
+ * Só `source = 'manual'`, como a exclusão em lote: parcela e ocorrência de conta fixa herdam
+ * a categoria do cadastro delas.
+ */
+export async function prepareRecategorize(input: unknown): Promise<RecategorizeSetup> {
+  const empty: RecategorizeSetup = { targets: [], categories: [], aiAvailable: false }
+  const parsed = entrySelectionSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ...empty, error: parsed.error.issues[0]?.message ?? 'Seleção inválida' }
+  }
+
+  const { ids, importBatchIds } = parsed.data
+  const supabase = await createClient()
+  type Row = { id: string; description: string; kind: EntryKind; category_id: string | null }
+  const rows = new Map<string, Row>()
+
+  if (ids.length > 0) {
+    const { data, error } = await supabase
+      .from('entries')
+      .select('id, description, kind, category_id')
+      .eq('source', 'manual')
+      .in('id', ids)
+    if (error) return { ...empty, error: `Não consegui ler os lançamentos: ${error.message}` }
+    for (const row of data) rows.set(row.id, row)
+  }
+
+  // O Supabase devolve no máximo 1000 linhas por pedido; importações inteiras passam disso.
+  if (importBatchIds.length > 0) {
+    for (let page = 0; page * 1000 < MAX_RECATEGORIZE + 1000; page += 1) {
+      const { data, error } = await supabase
+        .from('entries')
+        .select('id, description, kind, category_id')
+        .eq('source', 'manual')
+        .in('import_batch_id', importBatchIds)
+        .order('id')
+        .range(page * 1000, page * 1000 + 999)
+      if (error) return { ...empty, error: `Não consegui ler os lançamentos: ${error.message}` }
+      for (const row of data) rows.set(row.id, row)
+      if (data.length < 1000) break
+    }
+  }
+
+  if (rows.size === 0) return { ...empty, error: 'Nenhum lançamento encontrado na seleção.' }
+  if (rows.size > MAX_RECATEGORIZE) {
+    return { ...empty, error: `Selecione no máximo ${MAX_RECATEGORIZE} lançamentos para categorizar.` }
+  }
+
+  const categories = await listActiveCategories()
+  return {
+    targets: [...rows.values()].map((row) => ({
+      id: row.id,
+      description: row.description,
+      kind: row.kind,
+      categoryId: row.category_id,
+    })),
+    categories: categories.map((c) => ({ id: c.id, name: c.name, kind: c.kind, keywords: c.keywords })),
+    aiAvailable: isAiConfigured(),
+  }
+}
+
+export interface ApplyCategoriesState {
+  error?: string
+  success?: string
+  updated?: number
+}
+
+/**
+ * Grava o que a prévia de "Categorizar" confirmou. v1.0 — 2026-09-27.
+ *
+ * A FK de `category_id` não passa pela RLS — um id de categoria alheia seria aceito pelo
+ * banco —, então só fica categoria ativa da própria pessoa **e do mesmo tipo** do lançamento,
+ * o mesmo guarda de `commitImport`. O tipo vem do banco, relido aqui, e não do cliente.
+ *
+ * Uma escrita por categoria, com filtro (invariante 3) e `.select('id')`; nada atualizado é
+ * erro (invariante 17).
+ */
+export async function applyCategories(input: unknown): Promise<ApplyCategoriesState> {
+  const parsed = applyCategoriesSchema.safeParse(input)
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Categorias inválidas' }
+  }
+
+  const supabase = await createClient()
+  const ids = [...new Set(parsed.data.items.map((item) => item.id))]
+
+  const kindOfEntry = new Map<string, EntryKind>()
+  for (let start = 0; start < ids.length; start += 500) {
+    const { data, error } = await supabase
+      .from('entries')
+      .select('id, kind')
+      .eq('source', 'manual')
+      .in('id', ids.slice(start, start + 500))
+    if (error) return { error: `Não consegui ler os lançamentos: ${error.message}` }
+    for (const row of data) kindOfEntry.set(row.id, row.kind)
+  }
+
+  const categories = await listActiveCategories()
+  const kindOfCategory = new Map(categories.map((c) => [c.id, c.kind]))
+
+  const byCategory = new Map<string, string[]>()
+  for (const item of parsed.data.items) {
+    const kind = kindOfEntry.get(item.id)
+    if (!kind || kindOfCategory.get(item.categoryId) !== kind) continue
+    const list = byCategory.get(item.categoryId) ?? []
+    list.push(item.id)
+    byCategory.set(item.categoryId, list)
+  }
+
+  let updated = 0
+  for (const [categoryId, entryIds] of byCategory) {
+    for (let start = 0; start < entryIds.length; start += 500) {
+      const { data, error } = await supabase
+        .from('entries')
+        .update({ category_id: categoryId })
+        .eq('source', 'manual')
+        .in('id', entryIds.slice(start, start + 500))
+        .select('id')
+      if (error) return { error: `Não foi possível categorizar: ${error.message}` }
+      updated += data?.length ?? 0
+    }
+  }
+
+  if (updated === 0) return { error: 'Nenhum lançamento foi categorizado.' }
+
+  revalidateEntryViews()
+  return {
+    updated,
+    success: updated === 1 ? '1 lançamento categorizado.' : `${updated} lançamentos categorizados.`,
   }
 }
