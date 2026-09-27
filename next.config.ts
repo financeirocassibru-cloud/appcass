@@ -45,6 +45,15 @@ if (process.argv[1]?.endsWith('next') && process.argv[2] === 'build') {
  */
 const nextConfig: NextConfig = {
   typedRoutes: true,
+  /**
+   * v1.2 — 2026-09-27: a importação de extrato manda até 1000 lançamentos, cada um com o
+   * texto original do banco (até 500 caracteres) em Observação, numa Server Action só. No
+   * pior caso isso passa de 1 MB, o limite padrão. O arquivo em si nunca viaja — ele é lido
+   * no navegador —, então 2 MB é folga para as linhas, não para PDF.
+   */
+  experimental: {
+    serverActions: { bodySizeLimit: '2mb' },
+  },
   async redirects() {
     return [
       { source: '/lancamentos', destination: '/historico', permanent: true },

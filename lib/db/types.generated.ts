@@ -107,6 +107,7 @@ export type Database = {
           created_at: string;
           description: string;
           id: string;
+          import_key: string | null;
           installment_number: number | null;
           installment_total: number | null;
           is_settled: boolean;
@@ -126,6 +127,7 @@ export type Database = {
           created_at?: string;
           description: string;
           id?: string;
+          import_key?: string | null;
           installment_number?: number | null;
           installment_total?: number | null;
           is_settled?: boolean;
@@ -145,6 +147,7 @@ export type Database = {
           created_at?: string;
           description?: string;
           id?: string;
+          import_key?: string | null;
           installment_number?: number | null;
           installment_total?: number | null;
           is_settled?: boolean;

@@ -12,6 +12,7 @@ import { Upcoming } from '@/components/finance/upcoming'
 import { CategoryRanking } from '@/components/finance/charts/category-ranking'
 import { MonthlyBars } from '@/components/finance/charts/monthly-bars'
 import { AssistantComposer } from '@/components/ai/composer'
+import { ImportStatementLink } from '@/components/import/import-sheet'
 
 export const metadata = { title: 'Início · Finanças' }
 
@@ -63,7 +64,14 @@ export default async function InicioPage() {
       {/* A caixa vem logo abaixo do saldo: é o caminho mais curto entre "isso
           acabou de acontecer" e o registro, e não exige saber em qual tela cada
           tipo de lançamento mora. */}
-      {assistenteLigado && <AssistantComposer variant="hero" />}
+      {/* v1.4 — 2026-09-27: "Importar extrato" logo abaixo da caixa, discreto como o "Ver
+          tudo" da agenda. Fica de fora do `assistenteLigado` porque importar não depende da
+          IA — ela só sugere categorias quando está ligada. O `div` junta os dois para o
+          link não ganhar o espaçamento de seção do `main`. */}
+      <div className="flex flex-col gap-2">
+        {assistenteLigado && <AssistantComposer variant="hero" />}
+        <ImportStatementLink />
+      </div>
 
       {/* Conta nova: em vez de três blocos vazios, um caminho. É o primeiro estado
           que a pessoa vê, e ele tem de dizer o que fazer. */}
