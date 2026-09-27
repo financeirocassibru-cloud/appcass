@@ -63,7 +63,7 @@ a soma das parcelas geradas bate exatamente com o valor total da compra, centavo
 
 ## Fase 5 — Projeção e cenários
 
-Tela `/projecao` com fluxo diário, gráfico de saldo projetado e destaque visual dos dias em
+Tela da Análise (então `/projecao`) com fluxo diário, gráfico de saldo projetado e destaque visual dos dias em
 que o saldo fica negativo. CRUD de cenários com overrides (incluir/excluir item, mudar valor,
 mudar data) e itens hipotéticos (`scenario_entries`).
 
@@ -231,3 +231,60 @@ Quatro decisões que explicam o desenho:
 Um bug encontrado por um teste que eu escrevi para isso: `Number('')` é `0`, então limpar o
 campo de período dava um resumo de **um dia** em vez do padrão de 30 — silenciosamente, sem
 ninguém ter pedido.
+
+---
+
+## Fase 8 — Histórico que edita, Análise que atravessa o tempo
+
+As duas telas do meio não faziam o que o nome prometia. O **Extrato** só listava e alternava
+pago/pendente: `updateEntry` e `deleteEntry` existiam em `lib/actions/entries.ts` desde a fase 3,
+com Zod e o guarda do invariante 17, **sem nenhuma interface que os chamasse** — corrigir um valor
+errado não era possível, nem excluindo e lançando de novo, porque excluir também não tinha botão.
+E a **Projeção** só olhava para frente, em janelas de 30/90/180 dias a partir de hoje, num gráfico
+de largura fixa, `aria-hidden`, sem clique e sem arrasto: a única forma de ler um valor era passar
+o cursor, que em celular não existe.
+
+Extrato virou **Histórico** e Projeção virou **Análise**, com as rotas acompanhando os nomes e as
+antigas redirecionando em 308 — elas estão nos atalhos do PWA já instalado.
+
+**Pronto quando:** o ponto de hoje na Análise mostra o mesmo saldo que o herói do Início; arrastar
+para trás revela o passado e para na data da âncora; trocar de escala mantém período e cenário; e
+uma semana que fecha positiva depois de um dia negativo mostra o piso, com o alerta nomeando **o
+dia**.
+
+Cinco decisões que explicam o desenho:
+
+- **A janela nunca começa antes da âncora, e a de cálculo sempre alcança hoje.** Antes da âncora,
+  `getCurrentBalance` devolve o próprio valor dela — que já embute os liquidados anteriores —, e
+  acumular em cima disso os contaria duas vezes. Começar depois de hoje ignoraria todo pendente no
+  caminho, e a projeção pareceria melhor do que é. Os dois cortes são o mesmo cuidado que a fase 5
+  já tinha, aplicado a uma janela que agora se move.
+- **`projectRange` ficou intocada, e `projectWindow` nasceu ao lado.** Não são a mesma função com
+  um parâmetro a mais: `projectRange` exige que o chamador já tenha feito a partição, e um booleano
+  que ligasse e desligasse a prevenção de contagem em dobro teria a forma exata do bug que ela
+  previne. Um teste prova que, com `from = hoje`, as duas devolvem a mesma série.
+- **O ponto do bucket é o fechamento, nunca a média, e o piso viaja junto.** A média de um período
+  que foi de 5.000 a −200 é 2.400, número que não existiu em momento nenhum. O domínio do eixo vem
+  do piso: com os fechamentos, o mergulho sai da escala e o gráfico afirma o contrário do dado.
+- **As análises de "como foi" trabalham em meses fechados**, e não na janela do gráfico. Comparar
+  17 dias de setembro com a média de meses cheios acusaria queda em tudo, e somar previsão ao
+  "onde gastei" responderia a pergunta com o próprio palpite.
+- **A tela cheia em paisagem é em três camadas independentes**, porque `requestFullscreen` não
+  existe no iPhone e `orientation.lock` não existe em nenhum Safari. Onde as duas faltam, a rotação
+  é por CSS — e ela é desligada enquanto um formulário está aberto, porque num conteúdo girado 90°
+  o teclado sobe pelo lado físico e cobre o campo.
+
+Três problemas que as ferramentas pegaram antes de virarem tela:
+
+- O `next build` recusou `app/(app)/analise/params.ts` importando constantes da camada de query:
+  isso arrastava `lib/supabase/server` para o bundle do **cliente**, contra o invariante 4.
+  `MAX_WINDOW_DAYS` e `ANALYSIS_MONTHS` mudaram para `lib/finance/`, que é puro.
+- O lint (`react-hooks/refs`) revelou que `requestFullscreen()` era chamado antes de a camada
+  existir — a tela cheia nunca funcionaria. `flushSync` monta a camada ainda dentro do gesto.
+- A decisão de layout usava a variante `landscape:`, que lê a orientação do **aparelho** — que
+  está em retrato exatamente quando a rotação é por CSS, porque foi isso que sobrou. A media query
+  respondia o oposto do que estava na tela.
+
+Migration **0014**, com `v_source_breakdown`, para o comprometimento da renda. A prova de RLS
+afirma o isolamento da view nova e que repartir o mês por origem não muda o total dele — se
+discordassem, a tela mostraria uma sobra que não fecha com o mês.

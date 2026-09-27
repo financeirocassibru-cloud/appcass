@@ -103,3 +103,50 @@ describe('escritas do supabase-js têm cláusula WHERE', () => {
     expect(descricao).toEqual([])
   })
 })
+
+/**
+ * v1.1 — 2026-09-27: o invariante 17, nas actions que a interface passou a alcançar.
+ *
+ * `updateEntry`, `deleteEntry` e `toggleSettled` existiam desde a fase 3 **sem nenhuma tela que
+ * as chamasse**. Com o Histórico editando e a Análise lançando de dentro do gráfico, elas viraram
+ * o caminho normal — e é aí que o silêncio do supabase-js passa a custar: um `update` que não casa
+ * nenhuma linha devolve **sucesso**, com `data` vazio. Foi esse silêncio que deixou a primeira
+ * conta sem virar admin em produção, sem nenhum erro aparecer.
+ *
+ * O teste não tenta cobrir toda `lib/actions/`: três escritas de lá são best-effort de propósito
+ * (`auth.ts` gravando `accepted_by`, `releaseInvite`, e o `delete` de override que varre por
+ * alvo), e uma varredura cega exigiria uma lista de exceções que envelheceria sozinha. Aqui a
+ * afirmação é estreita e verdadeira: estas três precisam conferir o resultado.
+ */
+describe('escritas de lançamento conferem o resultado (invariante 17)', () => {
+  const conteudo = readFileSync(join(ACTIONS_DIR, 'entries.ts'), 'utf8')
+
+  /** O corpo de uma action exportada, até a próxima declaração no topo do arquivo. */
+  function corpoDe(nome: string): string {
+    const inicio = conteudo.indexOf(`export async function ${nome}(`)
+    expect(inicio, `${nome} deveria existir em lib/actions/entries.ts`).toBeGreaterThan(-1)
+    const depois = conteudo.indexOf('\nexport ', inicio + 1)
+    return depois > 0 ? conteudo.slice(inicio, depois) : conteudo.slice(inicio)
+  }
+
+  for (const nome of ['updateEntry', 'deleteEntry', 'toggleSettled']) {
+    it(`${nome} pede o resultado de volta e recusa o caso de zero linhas`, () => {
+      const corpo = corpoDe(nome)
+
+      // `.select()` é o que faz o PostgREST devolver as linhas afetadas.
+      expect(corpo, `${nome} sem .select() não tem como saber se casou alguma linha`).toMatch(
+        /\.select\(/,
+      )
+      // E a conferência: sem ela o `.select()` não serve para nada.
+      expect(corpo, `${nome} não confere se o resultado veio vazio`).toMatch(
+        /length === 0|length !== 1|!data\b/,
+      )
+    })
+  }
+
+  it('as três continuam filtrando por id', () => {
+    for (const nome of ['updateEntry', 'deleteEntry', 'toggleSettled']) {
+      expect(corpoDe(nome), `${nome} sem .eq('id', ...)`).toMatch(/\.eq\('id'/)
+    }
+  })
+})
