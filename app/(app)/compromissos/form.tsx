@@ -3,13 +3,8 @@
 import { useActionState, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import {
-  createRecurring,
-  updateRecurring,
-  type RecurringActionState,
-} from '@/lib/actions/recurring'
+import { updateRecurring, type RecurringActionState } from '@/lib/actions/recurring'
 import type { Category } from '@/lib/db/queries/categories'
-import type { EntryKind } from '@/lib/db/types'
 import type { RecurrenceFrequency, RecurringRule } from '@/lib/finance/types'
 import { MoneyInput } from '@/components/finance/money-input'
 import { Button } from '@/components/ui/button'
@@ -27,87 +22,53 @@ const FREQUENCIES: { value: RecurrenceFrequency; label: string }[] = [
 ]
 
 /**
- * Formulário de conta fixa, para criar e para editar.
+ * Formulário de edição de conta fixa ou renda fixa.
+ *
+ * v1.1 — 2026-09-27: só edita. Criar passou para o [+] (`components/finance/launch-form.tsx`),
+ * e o tipo deixou de ser trocável aqui: conta fixa e renda fixa são listas separadas, e virar
+ * o salário em despesa por um toque errado no meio da edição não é uma operação que alguém
+ * queira. Quem errou o tipo exclui e cadastra de novo.
  *
  * O dia do vencimento só aparece quando a frequência é mensal — numa semanal ou
  * anual o vencimento sai da data de início, e um campo que não governa nada só
  * confunde. A validação no servidor recusa a combinação de qualquer forma.
  */
 export function RecurringForm({
-  expenseCategories,
-  incomeCategories,
-  today,
+  categories,
   rule,
 }: {
-  expenseCategories: Category[]
-  incomeCategories: Category[]
-  today: string
-  /** Ausente ao criar. */
-  rule?: RecurringRule
+  /** As categorias do tipo da regra. */
+  categories: Category[]
+  rule: RecurringRule
 }) {
   const router = useRouter()
-  const isEditing = rule !== undefined
+  const kind = rule.kind
 
-  const [kind, setKind] = useState<EntryKind>(rule?.kind ?? 'expense')
-  const [categoryId, setCategoryId] = useState<string>(rule?.categoryId ?? '')
-  const [frequency, setFrequency] = useState<RecurrenceFrequency>(rule?.frequency ?? 'monthly')
+  const [categoryId, setCategoryId] = useState<string>(rule.categoryId ?? '')
+  const [frequency, setFrequency] = useState<RecurrenceFrequency>(rule.frequency)
 
   const [state, formAction, pending] = useActionState(
     async (prev: RecurringActionState, formData: FormData) => {
-      const result = isEditing
-        ? await updateRecurring(prev, formData)
-        : await createRecurring(prev, formData)
+      const result = await updateRecurring(prev, formData)
       if (result.success) {
-        toast.success(result.success)
-        router.push('/compromissos')
+        toast.success(kind === 'income' ? 'Renda fixa atualizada.' : result.success)
+        router.push(kind === 'income' ? '/rendas' : '/compromissos')
       }
       return result
     },
     initialState,
   )
 
-  const categories = kind === 'expense' ? expenseCategories : incomeCategories
-
   return (
     <form action={formAction} className="flex flex-col gap-6">
-      {isEditing ? <input type="hidden" name="id" value={rule.id} /> : null}
+      <input type="hidden" name="id" value={rule.id} />
       <input type="hidden" name="kind" value={kind} />
       <input type="hidden" name="categoryId" value={categoryId} />
       <input type="hidden" name="frequency" value={frequency} />
 
-      <div
-        role="radiogroup"
-        aria-label="Tipo"
-        className="bg-muted grid grid-cols-2 gap-1 rounded-lg p-1"
-      >
-        {(['expense', 'income'] as const).map((option) => (
-          <button
-            key={option}
-            type="button"
-            role="radio"
-            aria-checked={kind === option}
-            onClick={() => {
-              setKind(option)
-              setCategoryId('')
-            }}
-            className={cn(
-              'min-h-11 rounded-md text-sm font-semibold transition-colors',
-              kind === option
-                ? option === 'expense'
-                  ? 'bg-card text-[var(--expense)] shadow-sm'
-                  : 'bg-card text-[var(--income)] shadow-sm'
-                : 'text-muted-foreground',
-            )}
-          >
-            {option === 'expense' ? 'Conta a pagar' : 'Renda fixa'}
-          </button>
-        ))}
-      </div>
-
       <MoneyInput
         label="Valor de cada ocorrência"
-        initialCents={rule?.amountCents}
-        autoFocus={!isEditing}
+        initialCents={rule.amountCents}
       />
 
       <div className="flex flex-col gap-1.5">
@@ -117,7 +78,7 @@ export function RecurringForm({
           name="description"
           required
           maxLength={120}
-          defaultValue={rule?.description}
+          defaultValue={rule.description}
           placeholder={kind === 'expense' ? 'Aluguel' : 'Salário'}
           className="min-h-11 text-base"
         />
@@ -180,7 +141,7 @@ export function RecurringForm({
             min={1}
             max={31}
             inputMode="numeric"
-            defaultValue={rule?.dayOfMonth ?? ''}
+            defaultValue={rule.dayOfMonth ?? ''}
             placeholder="10"
             className="min-h-11 text-base"
           />
@@ -201,7 +162,7 @@ export function RecurringForm({
           name="startsOn"
           type="date"
           required
-          defaultValue={rule?.startsOn ?? today}
+          defaultValue={rule.startsOn}
           className="min-h-11 text-base"
         />
       </div>
@@ -212,7 +173,7 @@ export function RecurringForm({
           id="campo-fim"
           name="endsOn"
           type="date"
-          defaultValue={rule?.endsOn ?? ''}
+          defaultValue={rule.endsOn ?? ''}
           className="min-h-11 text-base"
         />
         <p className="text-muted-foreground text-xs">
@@ -220,17 +181,16 @@ export function RecurringForm({
         </p>
       </div>
 
-      {isEditing ? (
-        <p className="text-muted-foreground bg-muted rounded-lg p-3 text-xs">
-          Mudar o valor vale da próxima ocorrência em diante. O que você já marcou como pago fica
-          como está — é histórico, e mexer nele mudaria o saldo de meses fechados.
-        </p>
-      ) : null}
+      <p className="text-muted-foreground bg-muted rounded-lg p-3 text-xs">
+        Mudar o valor vale da próxima ocorrência em diante. O que você já marcou como{' '}
+        {kind === 'income' ? 'recebido' : 'pago'} fica como está — é histórico, e mexer nele
+        mudaria o saldo de meses fechados.
+      </p>
 
       <FormMessage error={state.error} />
 
       <Button type="submit" disabled={pending} className="min-h-12 text-base">
-        {pending ? 'Salvando…' : isEditing ? 'Salvar alterações' : 'Criar conta fixa'}
+        {pending ? 'Salvando…' : 'Salvar alterações'}
       </Button>
     </form>
   )

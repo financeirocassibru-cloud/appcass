@@ -3,6 +3,13 @@ import { ChevronRight, Plus } from 'lucide-react'
 import { listInstallmentPlans } from '@/lib/db/queries/installments'
 import { formatCents } from '@/lib/finance/money'
 
+/**
+ * Parcelamentos. v1.1 — 2026-09-27.
+ *
+ * v1.1: "Nova" leva ao [+] no modo Parcelado, onde o parcelamento é cadastrado agora —
+ * inclusive um que já está em andamento.
+ */
+
 export const metadata = { title: 'Parcelas · Finanças' }
 export const dynamic = 'force-dynamic'
 
@@ -13,7 +20,7 @@ export default async function ParcelasPage() {
     <main className="mx-auto flex max-w-md flex-col gap-6 px-6 py-8">
       <div className="flex items-baseline justify-between gap-3">
         <h1 className="text-2xl font-bold tracking-tight">Parcelas</h1>
-        <Link href="/parcelas/nova" className="text-sm font-medium text-[var(--brand)]">
+        <Link href="/novo?modo=parcelado" className="text-sm font-medium text-[var(--brand)]">
           Nova
         </Link>
       </div>
@@ -26,7 +33,7 @@ export default async function ParcelasPage() {
             marcar como paga.
           </p>
           <Link
-            href="/parcelas/nova"
+            href="/novo?modo=parcelado"
             className="bg-primary text-primary-foreground flex min-h-12 items-center justify-center gap-2 rounded-xl text-base font-semibold"
           >
             <Plus className="size-5" aria-hidden />

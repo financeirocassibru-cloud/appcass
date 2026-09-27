@@ -24,6 +24,10 @@ const initialState: EntryActionState = {}
 /**
  * Lançamento: criar e editar, o mesmo formulário.
  *
+ * v1.1 — 2026-09-27: o [+] passou a usar `LaunchForm`, que cadastra também conta fixa, renda
+ * fixa e parcelamento; este segue na edição (Histórico, Análise, "Ver lançamentos"). A nota de
+ * lançamento gerado aponta renda fixa para `/rendas`.
+ *
  * v1.0 — 2026-09-26: extraído de `app/(app)/novo/form.tsx`, que era o único formulário de
  * lançamento do app e só sabia criar — sem valores iniciais e com o destino da navegação
  * escrito dentro dele. `updateEntry` e `deleteEntry` existiam em `lib/actions/entries.ts` desde
@@ -266,12 +270,20 @@ function GeneratedNote({ entry }: { entry: EntryWithCategory }) {
               : 'Mudar o valor aqui faz a soma das parcelas deixar de bater com o total da compra.',
         }
       : entry.source === 'recurring'
-        ? {
-            label: 'conta fixa',
-            href: '/compromissos' as const,
-            explanation:
-              'Excluir só apaga esta ocorrência: a regra continua ativa e vai gerar a próxima. Para parar de vez, altere a conta fixa.',
-          }
+        ? // v1.1 — 2026-09-27: renda fixa tem lista própria desde a fase 10.
+          entry.kind === 'income'
+          ? {
+              label: 'renda fixa',
+              href: '/rendas' as const,
+              explanation:
+                'Excluir só apaga esta ocorrência: a regra continua ativa e vai gerar a próxima. Para parar de vez, altere a renda fixa.',
+            }
+          : {
+              label: 'conta fixa',
+              href: '/compromissos' as const,
+              explanation:
+                'Excluir só apaga esta ocorrência: a regra continua ativa e vai gerar a próxima. Para parar de vez, altere a conta fixa.',
+            }
         : {
             label: 'meta',
             href: '/metas' as const,
@@ -280,7 +292,7 @@ function GeneratedNote({ entry }: { entry: EntryWithCategory }) {
 
   return (
     <p className="bg-muted text-muted-foreground rounded-xl p-4 text-sm">
-      Este lançamento veio de uma{' '}
+      Este lançamento veio de {label === 'parcelamento' ? 'um' : 'uma'}{' '}
       <Link href={href} className="text-[var(--brand)] underline">
         {label}
       </Link>

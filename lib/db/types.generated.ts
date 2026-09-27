@@ -704,6 +704,7 @@ export type Database = {
           p_first_due_on: string;
           p_installments: Json;
           p_installments_count: number;
+          p_paid_count?: number;
           p_total_amount_cents: number;
         };
         Returns: string;

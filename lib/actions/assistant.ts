@@ -22,7 +22,7 @@ import {
 } from '@/lib/validation/assistant'
 
 /**
- * O assistente, do lado do servidor. v1.2 — 2026-09-26.
+ * O assistente, do lado do servidor. v1.3 — 2026-09-27 (antes v1.2 — 2026-09-26).
  *
  * v1.2: `requestInsights` passou a levar o período do histórico que a pessoa escolhe na
  * Projeção, e `enqueueJob` recebe as opções num objeto.
@@ -84,10 +84,14 @@ export interface BriefingView {
  * "não atualiza depois de salvar" do app antigo.
  */
 function revalidateEverything(): void {
+  // v1.3 — 2026-09-27: `/rendas`, `/novo` e `/novo/lancamentos` entraram com a fase 10.
   for (const path of [
     '/',
     '/historico',
     '/compromissos',
+    '/rendas',
+    '/novo',
+    '/novo/lancamentos',
     '/parcelas',
     '/metas',
     '/analise',

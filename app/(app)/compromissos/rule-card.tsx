@@ -12,6 +12,9 @@ import { cn } from '@/lib/utils'
  * O próximo vencimento sai do mesmo motor que a agenda usa
  * (`expandRecurringRule`), e não de uma conta paralela — duas fórmulas para a
  * mesma data divergiriam, e a lista diria uma coisa enquanto a agenda diz outra.
+ *
+ * v1.1 — 2026-09-27: renda fixa abre em `/rendas/[id]`, e o texto diz "recebe" em vez de
+ * "vence".
  */
 
 const FREQUENCY_LABEL: Record<string, string> = {
@@ -36,7 +39,11 @@ export function RuleCard({
   return (
     <li>
       <Link
-        href={{ pathname: '/compromissos/[id]', query: { id: rule.id } }}
+        href={
+          rule.kind === 'income'
+            ? { pathname: '/rendas/[id]', query: { id: rule.id } }
+            : { pathname: '/compromissos/[id]', query: { id: rule.id } }
+        }
         className={cn(
           'flex items-center gap-3 rounded-xl bg-[var(--surface)] p-4',
           !rule.isActive && 'opacity-60',
@@ -49,7 +56,7 @@ export function RuleCard({
             {rule.categoryName ? ` · ${rule.categoryName}` : ''}
             {rule.isActive
               ? next
-                ? ` · vence ${formatShort(next)}`
+                ? ` · ${rule.kind === 'income' ? 'recebe' : 'vence'} ${formatShort(next)}`
                 : ' · sem próxima ocorrência'
               : ' · desativada'}
           </p>

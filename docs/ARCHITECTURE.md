@@ -164,8 +164,10 @@ app/
   (app)/layout.tsx            # header com saldo + bottom nav
   (app)/page.tsx              # Início: saldo, próximos eventos, gráficos
   (app)/historico/            # histórico: filtros por mês, categoria, pago/pendente; editar e excluir
-  (app)/novo/                 # lançamento rápido
-  (app)/recorrentes/          # custos fixos + rendas recorrentes
+  (app)/novo/                 # [+]: avulso, conta fixa, renda fixa, parcelado (v1.1 — 2026-09-27)
+  (app)/novo/lancamentos/     # "Ver lançamentos": pela data de criação
+  (app)/compromissos/         # contas fixas (recurring_rules, kind = expense)
+  (app)/rendas/               # renda fixa (recurring_rules, kind = income)
   (app)/parcelas/
   (app)/metas/
   (app)/analise/              # janela passado+futuro, escala dia/semana/mês, cenários, análises mensais
@@ -518,6 +520,20 @@ npm run dev
     gráfico atualiza sem fechar; `Escape` e o botão voltar do Android fecham e devolvem o retrato.
 36. Com um cenário escolhido aparecem as duas curvas — com e sem ele. Um ajuste só afeta de hoje
     para frente e **não** altera nenhum lançamento real (é o cenário 8, por outro caminho).
+
+**Lançar pelo [+], ver pela criação, duplicar hábitos (v1.0 — 2026-09-27):**
+
+37. No [+], Saída → Parcelado → 12x de R$ 100 "em andamento" com 3 pagas: a prévia marca 1–3
+    como pagas e soma R$ 1.200; `/parcelas` mostra "3 de 12"; as três pagas estão no Histórico
+    na data de cada uma, e não hoje.
+38. Entrada → Renda fixa aparece em `/rendas` e **não** em `/compromissos`; abrir o endereço de
+    uma renda em `/compromissos/[id]` leva a `/rendas/[id]`.
+39. "Ver lançamentos" mostra o parcelamento uma vez, e não as 12 parcelas; um lançamento feito
+    hoje para o mês que vem aparece no topo; "Mais antigos" não pula nem repete linhas de uma
+    importação de extrato (todas com o mesmo `created_at`).
+40. Cenário de hoje até dezembro, "Duplicar hábitos" de agosto, "Só saídas": o gasto do 2º
+    sábado de agosto aparece no 2º sábado de cada mês, nenhum item antes de hoje, nenhuma conta
+    fixa ou parcela duplicada; editar um item muda a curva do cenário e não toca em `entries`.
 
 **Produção:** deploy na Vercel com preview por PR; `Site URL`/`Redirect URLs` do Supabase
 apontando para produção e para os previews; `supabase db push` no projeto remoto; conferir

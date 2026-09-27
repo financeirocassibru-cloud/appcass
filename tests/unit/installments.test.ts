@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { planInstallments } from '@/lib/finance/installments'
+import { firstDueFromNext, planInstallments } from '@/lib/finance/installments'
 import { sumCents } from '@/lib/finance/money'
 
 describe('planInstallments', () => {
@@ -152,5 +152,30 @@ describe('contrato com a migration 0010', () => {
     for (const parcela of plano(10_000, 14)) {
       expect(parcela.dueOn).toMatch(/^\d{4}-\d{2}-\d{2}$/)
     }
+  })
+})
+
+/** Parcelamento em andamento (v1.1 — 2026-09-27). */
+describe('firstDueFromNext', () => {
+  it('recua a primeira parcela pelo número de pagas', () => {
+    expect(firstDueFromNext('2026-10-10', 3)).toEqual({ firstDueOn: '2026-07-10', anchorDay: 10 })
+    expect(firstDueFromNext('2026-10-10', 0)).toEqual({ firstDueOn: '2026-10-10', anchorDay: 10 })
+  })
+
+  it('a próxima parcela da prévia é a data informada, mesmo no dia 31', () => {
+    // Próxima em 31/10 com 1 paga: a primeira cai em 30/09, e sem o `anchorDay` todas
+    // passariam a vencer no dia 30.
+    const schedule = firstDueFromNext('2026-10-31', 1)
+    const parcelas = planInstallments({
+      id: 'p',
+      description: 'Geladeira',
+      categoryId: null,
+      totalAmountCents: 40_000,
+      installmentsCount: 4,
+      ...schedule,
+    })
+    expect(parcelas.map((p) => p.dueOn)).toEqual(['2026-09-30', '2026-10-31', '2026-11-30', '2026-12-31'])
+    expect(parcelas[1]?.dueOn).toBe('2026-10-31')
+    expect(sumCents(parcelas.map((p) => p.amountCents))).toBe(40_000)
   })
 })

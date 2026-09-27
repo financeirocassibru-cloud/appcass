@@ -11,7 +11,7 @@ import {
 import { cn } from '@/lib/utils'
 
 /**
- * Campo de valor no estilo de app de banco. v1.1 — 2026-09-26.
+ * Campo de valor no estilo de app de banco. v1.2 — 2026-09-27.
  *
  * v1.1: ganhou `compact`, para caber num cartão de ajuste na tela de confirmação do
  * assistente. É uma variante de tamanho e nada mais — a lógica de dígitos, que é a parte
@@ -25,6 +25,11 @@ import { cn } from '@/lib/utils'
  *
  * O valor vai para a Server Action num `input hidden` já em centavos, então o
  * servidor recebe o inteiro e não precisa reinterpretar nada.
+ *
+ * v1.2 — 2026-09-27: `onCentsChange`, para o formulário do [+] mostrar a prévia do
+ * parcelamento enquanto a pessoa digita; e `name={null}`, para quando o valor enviado não é o
+ * digitado (no parcelamento por "valor da parcela", vai o total). Continua sendo o único campo
+ * de dinheiro do app.
  */
 export function MoneyInput({
   name = 'amountCents',
@@ -32,26 +37,35 @@ export function MoneyInput({
   label,
   autoFocus = false,
   compact = false,
+  onCentsChange,
 }: {
-  name?: string
+  /** `null`: sem `input hidden` — quem usa envia o valor por conta própria. */
+  name?: string | null
   initialCents?: number
   label: string
   autoFocus?: boolean
   /** Versão miúda, para cartão de ajuste. Muda só o tamanho. */
   compact?: boolean
+  /** Chamado a cada mudança, com o novo valor em centavos. */
+  onCentsChange?: (cents: number) => void
 }) {
-  const [cents, setCents] = useState(() => centsFromInitial(initialCents))
+  const [cents, setCentsState] = useState(() => centsFromInitial(initialCents))
   const id = useId()
+
+  function setCents(next: number) {
+    setCentsState(next)
+    onCentsChange?.(next)
+  }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key === 'Backspace') {
       event.preventDefault()
-      setCents(popCentsDigit)
+      setCents(popCentsDigit(cents))
       return
     }
     if (/^[0-9]$/.test(event.key)) {
       event.preventDefault()
-      setCents((current) => pushCentsDigit(current, event.key))
+      setCents(pushCentsDigit(cents, event.key))
       return
     }
     // Deixa passar navegação e atalhos; barra o resto para o campo nunca conter
@@ -102,7 +116,7 @@ export function MoneyInput({
           Digite os centavos — 1234 vira R$ 12,34.
         </p>
       )}
-      <input type="hidden" name={name} value={cents} />
+      {name === null ? null : <input type="hidden" name={name} value={cents} />}
     </div>
   )
 }

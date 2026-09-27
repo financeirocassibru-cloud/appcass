@@ -1,5 +1,6 @@
 -- Prova de isolamento por RLS com dois usuários reais.
 -- v1.1 — 2026-09-27: asserções da import_key (migration 0016) no fim.
+-- v1.2 — 2026-09-27: parcelamento em andamento (migration 0017) no fim.
 -- Roda como um papel sem BYPASSRLS, alternando o "usuário logado" via GUC,
 -- que é o que a função auth.uid() do shim lê.
 
@@ -1130,6 +1131,73 @@ begin
 
   select count(*) into n from public.entries where import_key = chave;
   if n <> 1 then raise exception 'a chave de Ana impediu a importação de Bruno (% linhas)', n; end if;
+end $$;
+
+reset role;
+
+-- === Parcelamento em andamento (migration 0017) ===
+--
+-- `p_paid_count` marca as primeiras parcelas como liquidadas NA DATA DE CADA UMA, na mesma
+-- transação que cria o plano. E um valor fora de 0..N-1 é recusado sem gravar nada.
+
+set role authenticated;
+set request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
+
+do $$
+declare plano uuid; pagas int; datas_certas int; soma bigint; planos_antes int; planos_depois int;
+begin
+  plano := public.create_installment_plan(
+    p_description => 'TV', p_total_amount_cents => 40000,
+    p_installments_count => 4::smallint, p_first_due_on => '2026-05-15',
+    p_installments =>
+    '[{"number":"1","amount_cents":10000,"due_on":"2026-05-15","description":"TV (1/4)"},
+      {"number":"2","amount_cents":10000,"due_on":"2026-06-15","description":"TV (2/4)"},
+      {"number":"3","amount_cents":10000,"due_on":"2026-07-15","description":"TV (3/4)"},
+      {"number":"4","amount_cents":10000,"due_on":"2026-08-15","description":"TV (4/4)"}]'::jsonb,
+    p_paid_count => 2::smallint
+  );
+
+  select count(*) into pagas from public.entries
+   where source_id = plano and is_settled;
+  if pagas <> 2 then raise exception 'deveriam nascer 2 parcelas pagas, nasceram %', pagas; end if;
+
+  select count(*) into datas_certas from public.entries
+   where source_id = plano and is_settled and settled_on = occurred_on and installment_number <= 2;
+  if datas_certas <> 2 then
+    raise exception 'as pagas deveriam ser as 1 e 2, liquidadas na própria data (%)', datas_certas;
+  end if;
+
+  select sum(amount_cents) into soma from public.entries where source_id = plano;
+  if soma <> 40000 then raise exception 'a soma deveria continuar 40000, é %', soma; end if;
+
+  -- Sem o parâmetro, o comportamento da 0010: todas pendentes.
+  plano := public.create_installment_plan(
+    p_description => 'Rádio', p_total_amount_cents => 2000,
+    p_installments_count => 2::smallint, p_first_due_on => '2026-05-15',
+    p_installments =>
+    '[{"number":"1","amount_cents":1000,"due_on":"2026-05-15","description":"Rádio (1/2)"},
+      {"number":"2","amount_cents":1000,"due_on":"2026-06-15","description":"Rádio (2/2)"}]'::jsonb
+  );
+  select count(*) into pagas from public.entries where source_id = plano and is_settled;
+  if pagas <> 0 then raise exception 'sem p_paid_count nenhuma deveria nascer paga (%)', pagas; end if;
+
+  -- Todas pagas é recusado, e o plano não sobra.
+  select count(*) into planos_antes from public.installment_plans;
+  begin
+    plano := public.create_installment_plan(
+      p_description => 'Tudo pago', p_total_amount_cents => 2000,
+      p_installments_count => 2::smallint, p_first_due_on => '2026-05-15',
+      p_installments =>
+      '[{"number":"1","amount_cents":1000,"due_on":"2026-05-15","description":"a"},
+        {"number":"2","amount_cents":1000,"due_on":"2026-06-15","description":"b"}]'::jsonb,
+      p_paid_count => 2::smallint
+    );
+    raise exception 'p_paid_count igual ao total deveria ser recusado';
+  exception
+    when check_violation then null;  -- esperado
+  end;
+  select count(*) into planos_depois from public.installment_plans;
+  if planos_depois <> planos_antes then raise exception 'plano gravado apesar da recusa'; end if;
 end $$;
 
 reset role;
