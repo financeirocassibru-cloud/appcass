@@ -460,3 +460,58 @@ Decisões:
   descarta o previsto quando o real acontece. Resgate continua na tela da meta, sem saída.
 - **Metas saiu da aba Mais.** A lista mora no rodapé do [+] quando Saída está escolhida, como
   Contas fixas; `/metas/nova` redireciona para `/novo?modo=meta`.
+
+## Fase 13 — Cartões e empréstimos como forma de pagamento
+
+v1.0 — 2026-09-27. `entries.occurred_on` era ao mesmo tempo a data do gasto, a do vencimento e
+a do caixa. Um gasto no cartão só tinha duas saídas ruins: lançar cada compra com a data futura
+da fatura (perdendo a data real) ou lançar só "Cartão" genérico (perdendo a categoria). Agora o
+lançamento pode vir de um **cartão** ou de um **empréstimo**, e passa a ter duas leituras:
+competência (o que foi gasto, em quê, quando) e caixa (quando sai do saldo).
+
+**Pronto quando:** um Uber de R$ 30 hoje "Pago com" um cartão que fecha dia 3 e vence dia 10 não
+mexe no saldo, conta R$ 30 em Transporte hoje e sai do saldo no dia 10 como parte da fatura;
+pagar a fatura pelo extrato casa a linha com a fatura, e nunca com as compras; o saldo cai uma
+vez só e o total de saídas por categoria não soma a fatura por cima das compras; pagar parte da
+fatura rola o restante para a seguinte; parcelar o restante cria as parcelas nas faturas
+seguintes; o dinheiro de um empréstimo entra no saldo hoje e sai nos vencimentos, sem virar
+"renda"; e os juros aparecem em "Juros e encargos".
+
+Decisões:
+
+- **Duas leituras, uma regra só** (`lib/finance/credit.ts`, espelhada nas views da 0021).
+  Competência: a compra no cartão conta na categoria, na data do gasto; o pagamento da fatura
+  (`credit_bill`) e o parcelamento da fatura (`credit_carry`) não contam de novo; o dinheiro que
+  veio de cartão ou empréstimo não é renda; `interest_cents` conta sempre, como "Juros e
+  encargos" (categoria virtual, `v_interest_by_month`). Caixa: a saída no cartão não sai do
+  saldo; sai a fatura no vencimento, e de verdade quando é paga.
+- **A fatura não existe no banco.** Cobranças e faturas são derivadas (`chargesOf`,
+  `buildBills`) de três leituras — lançamentos financiados, pagamentos e contas fixas no cartão —
+  por `getCreditLedger`, a única porta. Nenhum total gravado (invariante 7). O pagamento é um
+  lançamento real (`credit_bill`, chave = vencimento, `:2` para o segundo pagamento, como o
+  aporte de meta).
+- **A compra no cartão nunca é liquidada pelo próprio lançamento** (constraint
+  `entries_credit_expense_open`). O "paga" dela é a fatura resolvida, derivado
+  (`entryCreditStatus`). É isso que a deixa fora do saldo, da agenda e da conexão do extrato — e
+  o extrato é barrado em três lugares: o candidato não é carregado, a reserva por valor é só do
+  avulso, e `reconcile_import_row` recusa.
+- **Cartão: fechamento + vencimento.** Compra até o fechamento cai na fatura daquele mês; depois,
+  na seguinte. "Será pago em" vem sugerido e pode ser trocado. A regra está em TS e em SQL
+  (`credit_first_due`), com os mesmos casos testados nos dois lados — a conta fixa no cartão é
+  materializada pelo banco e precisa cair na mesma fatura que a tela mostra.
+- **Empréstimo: vencimento único, dia fixo mensal, ou escolhido a cada uso**, pago à vista ou
+  em N parcelas (`charge_count`, rateio por `splitCents`). "Valor a pagar" (padrão: o mesmo
+  valor) vira `interest_cents`.
+- **Mínimo e parcelamento da fatura.** Pagar menos que o restante é aceito; vencida, a fatura
+  paga em parte rola o restante para a seguinte (rotativo). O juro do rotativo aparece quando a
+  seguinte é paga: o que passa do total calculado é gravado como `interest_cents` do pagamento.
+  "Parcelar restante" cria um `credit_carry` com N cobranças nas faturas seguintes.
+- **Parcelamento e conta fixa no cartão.** No parcelamento, cada parcela pendente cai na fatura
+  do mês dela; "Quantas já foram pagas?" some (quem paga é a fatura). A conta fixa no cartão sai
+  da agenda e da projeção de caixa, entra na fatura como prevista e vira lançamento quando a
+  fatura é paga.
+- **Cadastro na hora.** "+ Cartão" e "+ Empréstimo" no "Pago com" abrem o cadastro numa folha e
+  já selecionam a conta. Limite é opcional; passar dele avisa e não bloqueia.
+- **Fora desta fase:** ferramentas do assistente para cartão (o `create_entry` da IA segue
+  funcionando sem os campos novos), cenário sobre fatura, e informar o valor que o banco cobrou
+  antes de pagar.
