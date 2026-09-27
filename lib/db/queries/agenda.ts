@@ -1,6 +1,8 @@
+import { getCreditLedger } from '@/lib/db/queries/credit'
 import { listPendingEntries, type EntryWithCategory } from '@/lib/db/queries/entries'
 import { listActiveRecurringRules } from '@/lib/db/queries/recurring'
 import type { AgendaItem } from '@/lib/finance/agenda'
+import { billLabel, isBillDue } from '@/lib/finance/credit'
 import { addDays, todayISO, type ISODate } from '@/lib/finance/date'
 import { dedupeAgainstEntries } from '@/lib/finance/projection'
 import { expandRecurringRule } from '@/lib/finance/recurrence'
@@ -22,6 +24,10 @@ import { createClient } from '@/lib/supabase/server'
  * `dedupeAgainstEntries`, a mesma função que a projeção usa — se a chave fosse
  * montada em dois lugares, divergiriam e o aluguel apareceria duas vezes, que é
  * exatamente o bug do app antigo.
+ *
+ * v1.1 — 2026-09-27 (Fase 13): e uma terceira, as **faturas** de cartão e empréstimo ainda
+ * devidas. A compra no cartão e a conta fixa no cartão ficam de fora — quem vence é a fatura
+ * que as soma, e mostrar as duas seria cobrar o mesmo gasto duas vezes.
  *
  * A expansão acontece **sempre**, e não só quando existe cenário ativo. O
  * `getUpcomingEvents()` antigo dependia de haver ciclo; sem ciclo a lista sumia
@@ -50,11 +56,14 @@ export async function getAgendaItems(
   const horizon = addDays(today, horizonDays)
   const expandFrom = addDays(today, -LOOKBACK_DAYS)
 
-  const [pending, rules, materialized] = await Promise.all([
+  const [pending, allRules, materialized, ledger] = await Promise.all([
     listPendingEntries(horizon),
     listActiveRecurringRules(),
     listMaterializedRecurring(expandFrom, horizon),
+    getCreditLedger(today),
   ])
+  // v1.1 — 2026-09-27: a conta fixa no cartão é cobrada na fatura.
+  const rules = allRules.filter((rule) => !rule.creditAccountId)
 
   const projected = rules.flatMap((rule) =>
     expandRecurringRule(rule, expandFrom, horizon).map((occurrence) => ({
@@ -82,6 +91,19 @@ export async function getAgendaItems(
       description: occurrence.description,
       categoryName,
     })),
+    ...ledger.bills
+      .filter((bill) => isBillDue(bill) && bill.dueOn <= horizon)
+      .map((bill) => ({
+        source: 'credit_bill' as const,
+        accountId: bill.accountId,
+        dueOn: bill.dueOn,
+        key: `bill:${bill.accountId}:${bill.dueOn}`,
+        occurredOn: bill.dueOn,
+        amountCents: bill.remainingCents,
+        kind: 'expense' as const,
+        description: billLabel(bill),
+        categoryName: null,
+      })),
   ]
 }
 

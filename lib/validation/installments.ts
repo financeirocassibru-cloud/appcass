@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { isISODate } from '@/lib/finance/date'
 import { parseKeywords } from '@/lib/finance/keywords'
+import { creditFieldsShape } from '@/lib/validation/credit'
 import { keywordsField } from '@/lib/validation/keywords'
 
 /**
@@ -18,6 +19,9 @@ import { keywordsField } from '@/lib/validation/keywords'
  *
  * v1.3 — 2026-09-27: `keywords` no plano (as parcelas não copiam — invariante 6), e
  * `updateInstallmentKeywordsSchema` para editá-las depois (migration 0019).
+ *
+ * v1.4 — 2026-09-27 (Fase 13): `creditAccountId` — parcelamento no cartão (migration 0021) — e
+ * `setPlanCreditSchema`, para pôr ou tirar do cartão um parcelamento já cadastrado.
  */
 
 /** `''` ou ausente vira `fallback`; o resto precisa ser inteiro. */
@@ -65,6 +69,8 @@ export const createInstallmentSchema = z
       'Dia de vencimento inválido',
     ),
     keywords: keywordsField,
+    // v1.4 — 2026-09-27: as parcelas pendentes vão para as faturas deste cartão.
+    creditAccountId: creditFieldsShape.creditAccountId,
   })
   .refine((data) => (data.paidCount ?? 0) < data.installmentsCount, {
     message: 'Ao menos uma parcela precisa estar por pagar — se já pagou todas, não há o que parcelar',
@@ -97,4 +103,14 @@ export const updateInstallmentKeywordsSchema = z.object({
     .string()
     .max(2_000, 'Palavras-chave demais')
     .transform((raw) => parseKeywords(raw)),
+})
+
+/** v1.4 — 2026-09-27: pôr (id) ou tirar (`''`) um parcelamento existente do cartão. */
+export const setPlanCreditSchema = z.object({
+  id: z.string().uuid('Parcelamento inválido'),
+  creditAccountId: z
+    .string()
+    .trim()
+    .transform((value) => (value === '' ? null : value))
+    .refine((value) => value === null || z.string().uuid().safeParse(value).success, 'Cartão inválido'),
 })

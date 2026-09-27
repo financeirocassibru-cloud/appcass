@@ -1,3 +1,4 @@
+import { competenceCents } from '@/lib/finance/credit'
 import { endOfMonth, startOfMonth, type ISODate } from '@/lib/finance/date'
 import { normalizeText } from '@/lib/finance/keywords'
 import type { EntryKind, EntrySource } from '@/lib/db/types'
@@ -14,12 +15,17 @@ import { createClient } from '@/lib/supabase/server'
  *
  * v1.2 — 2026-09-27: `keywords` na linha (a edição do Histórico mostra as palavras que ligam o
  * lançamento ao extrato) e `listImportedDescriptions`, que alimenta as sugestões do campo.
+ *
+ * v1.3 — 2026-09-27 (Fase 13): de onde veio o dinheiro (`credit_account_id` e a dívida) na
+ * linha; `monthTotals` soma pela competência (`competenceCents`) — a fatura não conta por cima
+ * das compras; e `listPendingEntries` deixa de fora a compra no cartão, que é paga pela fatura.
  */
 
 const COLUMNS = `
   id, kind, occurred_on, description, amount_cents, notes,
   is_settled, settled_on, source, source_id, occurrence_key,
   installment_number, installment_total, keywords,
+  credit_account_id, charge_first_due_on, charge_count, interest_cents,
   category_id, categories ( id, name, color, icon )
 ` as const
 
@@ -40,6 +46,11 @@ export interface EntryWithCategory {
   installmentTotal: number | null
   /** v1.2 — 2026-09-27: palavras que ligam este lançamento ao extrato (migration 0019). */
   keywords: string[]
+  /** v1.3 — 2026-09-27: cartão/empréstimo de onde veio; `null` = do saldo. */
+  creditAccountId: string | null
+  chargeFirstDueOn: ISODate | null
+  chargeCount: number
+  interestCents: number
   category: { id: string; name: string; color: string; icon: string | null } | null
 }
 
@@ -58,6 +69,10 @@ interface JoinedRow {
   installment_number: number | null
   installment_total: number | null
   keywords: string[]
+  credit_account_id: string | null
+  charge_first_due_on: string | null
+  charge_count: number
+  interest_cents: number
   category_id: string | null
   categories: { id: string; name: string; color: string; icon: string | null } | null
 }
@@ -78,6 +93,10 @@ function toEntry(row: JoinedRow): EntryWithCategory {
     installmentNumber: row.installment_number,
     installmentTotal: row.installment_total,
     keywords: row.keywords ?? [],
+    creditAccountId: row.credit_account_id,
+    chargeFirstDueOn: row.charge_first_due_on,
+    chargeCount: row.charge_count,
+    interestCents: Number(row.interest_cents),
     category: row.categories,
   }
 }
@@ -140,9 +159,14 @@ export function monthTotals(entries: readonly EntryWithCategory[]): MonthTotals 
   let incomeCents = 0
   let expenseCents = 0
 
+  // v1.3 — 2026-09-27: pela competência, a mesma regra das views (migration 0021). A compra no
+  // cartão conta; o pagamento da fatura não conta por cima; o dinheiro do empréstimo não é
+  // renda; os juros sempre saem.
   for (const entry of entries) {
-    if (entry.kind === 'income') incomeCents += entry.amountCents
-    else expenseCents += entry.amountCents
+    const { principalCents, interestCents } = competenceCents(entry)
+    if (entry.kind === 'income') incomeCents += principalCents
+    else expenseCents += principalCents
+    expenseCents += interestCents
   }
 
   return { incomeCents, expenseCents, netCents: incomeCents - expenseCents }
@@ -247,6 +271,9 @@ export async function listPendingEntries(
     .from('entries')
     .select(COLUMNS)
     .eq('is_settled', false)
+    // v1.3 — 2026-09-27: a compra no cartão não é pendência — quem cobra é a fatura, e a agenda
+    // mostra a fatura.
+    .is('credit_account_id', null)
     .lte('occurred_on', horizon)
     .order('occurred_on', { ascending: true })
     .limit(limit)

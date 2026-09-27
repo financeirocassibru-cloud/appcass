@@ -426,10 +426,14 @@ export function availableLimitCents(account: CreditAccount, bills: readonly Cred
   return account.limitCents - usedLimitCents(bills)
 }
 
-/** A parte de um pagamento que passa do restante da fatura: juros e encargos. */
+/**
+ * A parte de um pagamento que passa do restante da fatura: juros e encargos. Sem fatura
+ * calculada para o vencimento (nada foi lançado nele), não há com o que comparar — nada é
+ * chamado de juro, e o pagamento abate o que vier depois.
+ */
 export function excessInterestCents(bill: Pick<CreditBill, 'remainingCents'> | null, paidCents: number): number {
-  const remaining = bill ? Math.max(0, bill.remainingCents) : 0
-  return Math.max(0, paidCents - remaining)
+  if (!bill) return 0
+  return Math.max(0, paidCents - Math.max(0, bill.remainingCents))
 }
 
 /** A próxima fatura que ainda cobra alguma coisa — a do topo do cartão. */
@@ -474,4 +478,54 @@ export function entryCreditStatus(entryId: string, bills: readonly CreditBill[])
   const nextDue = open.length > 0 ? open.sort(compareISO)[0]! : null
   const lastDue = all.sort(compareISO)[all.length - 1]!
   return { total, settled, dueOn: nextDue ?? lastDue, isPaid: settled === total }
+}
+
+// ---------------------------------------------------------------------------------------
+// O que a tela de lançamento precisa saber de cada conta
+
+/** Uma conta como opção do "Pago com": o cadastro e o limite disponível agora. */
+export interface CreditOption extends CreditAccount {
+  /** `null` = sem limite. */
+  availableCents: number | null
+}
+
+/**
+ * As contas com o disponível de cada uma, para o seletor do [+] e da edição. A edição pede as
+ * arquivadas também: o lançamento antigo de um cartão arquivado continua mostrando de onde veio
+ * (o seletor só exibe a arquivada quando é a escolhida).
+ */
+export function toCreditOptions(
+  accounts: readonly CreditAccount[],
+  bills: readonly CreditBill[],
+  includeArchived = false,
+): CreditOption[] {
+  return accounts
+    .filter((account) => includeArchived || account.archivedAt === null)
+    .map((account) => ({
+      ...account,
+      availableCents: availableLimitCents(
+        account,
+        bills.filter((bill) => bill.accountId === account.id),
+      ),
+    }))
+}
+
+/** Como a tela chama cada estado da fatura. */
+export function billStatusLabel(status: CreditBillStatus, kind: CreditAccountKind): string {
+  switch (status) {
+    case 'open':
+      return kind === 'card' ? 'Aberta' : 'A vencer'
+    case 'closed':
+      return 'Fechada'
+    case 'overdue':
+      return 'Vencida'
+    case 'partial':
+      return 'Paga em parte'
+    case 'paid':
+      return 'Paga'
+    case 'rolled':
+      return 'Restante na seguinte'
+    case 'carried':
+      return 'Parcelada'
+  }
 }

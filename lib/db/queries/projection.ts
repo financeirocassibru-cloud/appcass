@@ -3,6 +3,8 @@ import { computeBalance, type BalanceEntry } from '@/lib/finance/balance'
 import { listActiveRecurringRules } from '@/lib/db/queries/recurring'
 import { listGoalsForProjection } from '@/lib/db/queries/goals'
 import { getScenario } from '@/lib/db/queries/scenarios'
+import { getCreditLedger } from '@/lib/db/queries/credit'
+import { isBillDue, isCashEntry, type CreditBill } from '@/lib/finance/credit'
 import { addDays, todayISO, type ISODate } from '@/lib/finance/date'
 import { MAX_WINDOW_DAYS } from '@/lib/finance/buckets'
 import {
@@ -45,11 +47,28 @@ export interface Projection {
   scenario: Scenario | null
 }
 
+// v1.2 — 2026-09-27 (Fase 13): de onde veio o dinheiro — a saída no cartão sai da projeção de
+// caixa, e a fatura (de `getCreditLedger`) entra no lugar.
 const PROJECTION_COLUMNS = `
   id, kind, occurred_on, description, amount_cents, category_id,
   is_settled, source, source_id, occurrence_key,
-  installment_number, installment_total
+  installment_number, installment_total,
+  credit_account_id, charge_first_due_on, charge_count, interest_cents
 ` as const
+
+/**
+ * v1.2 — 2026-09-27 (Fase 13): quanto já venceu e não foi pago, em caixa: os pendentes do saldo
+ * (a compra no cartão não — quem vence é a fatura) e o restante das faturas vencidas.
+ */
+function overdueCashCents(entries: readonly Entry[], bills: readonly CreditBill[], today: ISODate): number {
+  const fromEntries = entries
+    .filter((entry) => !entry.isSettled && entry.occurredOn < today && isCashEntry(entry))
+    .reduce((total, entry) => total + (entry.kind === 'expense' ? entry.amountCents : -entry.amountCents), 0)
+  const fromBills = bills
+    .filter((bill) => isBillDue(bill) && bill.dueOn < today)
+    .reduce((total, bill) => total + bill.remainingCents, 0)
+  return fromEntries + fromBills
+}
 
 export async function getProjection(
   horizonDays = 90,
@@ -58,12 +77,13 @@ export async function getProjection(
 ): Promise<Projection> {
   const to = addDays(today, horizonDays)
 
-  const [balance, rules, entries, goals, scenario] = await Promise.all([
+  const [balance, rules, entries, goals, scenario, ledger] = await Promise.all([
     getCurrentBalance(today),
     listActiveRecurringRules(),
     listEntriesForProjection(today, to),
     listGoalsForProjection(),
     scenarioId ? getScenario(scenarioId) : Promise.resolve(null),
+    getCreditLedger(today),
   ])
 
   // Só o que ainda não está no saldo — a divisão exata contra `computeBalance`.
@@ -72,11 +92,7 @@ export async function getProjection(
   // O que venceu e não foi pago continua devido. Empurrar para o primeiro dia é
   // uma suposição, e a tela diz isso; deixar de fora seria pior, porque a
   // projeção pareceria melhor do que é.
-  const overdue = ahead.filter((entry) => entry.occurredOn < today)
-  const overdueCents = overdue.reduce(
-    (total, entry) => total + (entry.kind === 'expense' ? entry.amountCents : -entry.amountCents),
-    0,
-  )
+  const overdueCents = overdueCashCents(ahead, ledger.bills, today)
 
   const days = projectRange({
     from: today,
@@ -93,6 +109,7 @@ export async function getProjection(
       entries: rollOverdueTo(ahead, today),
       recurringRules: rules,
       goals,
+      creditBills: ledger.bills,
     },
     scenario: scenario ?? undefined,
   })
@@ -154,6 +171,10 @@ function toProjectionEntry(row: {
   occurrence_key: string | null
   installment_number: number | null
   installment_total: number | null
+  credit_account_id: string | null
+  charge_first_due_on: string | null
+  charge_count: number
+  interest_cents: number
 }): Entry {
   return {
     id: row.id,
@@ -170,6 +191,10 @@ function toProjectionEntry(row: {
     occurrenceKey: row.occurrence_key,
     installmentNumber: row.installment_number,
     installmentTotal: row.installment_total,
+    creditAccountId: row.credit_account_id,
+    chargeFirstDueOn: row.charge_first_due_on,
+    chargeCount: row.charge_count,
+    interestCents: Number(row.interest_cents),
   }
 }
 
@@ -257,14 +282,16 @@ export async function getWindow(options: {
 
   const reachesFuture = to >= today
 
-  const [settledSoFar, windowEntries, overduePending, rules, goals, scenario] = await Promise.all([
-    listSettledUpTo(historyStartsOn, today),
-    listEntriesInWindow(from, to),
-    reachesFuture ? listOverduePending(today) : Promise.resolve([]),
-    listActiveRecurringRules(),
-    listGoalsForProjection(),
-    options.scenarioId ? getScenario(options.scenarioId) : Promise.resolve(null),
-  ])
+  const [settledSoFar, windowEntries, overduePending, rules, goals, scenario, ledger] =
+    await Promise.all([
+      listSettledUpTo(historyStartsOn, today),
+      listEntriesInWindow(from, to),
+      reachesFuture ? listOverduePending(today) : Promise.resolve([]),
+      listActiveRecurringRules(),
+      listGoalsForProjection(),
+      options.scenarioId ? getScenario(options.scenarioId) : Promise.resolve(null),
+      getCreditLedger(today),
+    ])
 
   // Os dois saldos saem da **mesma** leitura, variando só a data de corte: o do dia anterior a
   // `from`, que é de onde a curva parte, e o de hoje, que é o número que a tela mostra. Com
@@ -286,7 +313,7 @@ export async function getWindow(options: {
   for (const entry of [...windowEntries, ...overduePending]) byId.set(entry.id, entry)
   const entries = [...byId.values()]
 
-  const data = { entries, recurringRules: rules, goals }
+  const data = { entries, recurringRules: rules, goals, creditBills: ledger.bills }
   const common = { from, to, today, openingBalanceCents, data }
 
   const days = projectWindow({
@@ -301,11 +328,7 @@ export async function getWindow(options: {
   })
   const realDays = scenario ? projectWindow(common) : null
 
-  const overdue = entries.filter((entry) => !entry.isSettled && entry.occurredOn < today)
-  const overdueCents = overdue.reduce(
-    (total, entry) => total + (entry.kind === 'expense' ? entry.amountCents : -entry.amountCents),
-    0,
-  )
+  const overdueCents = overdueCashCents(entries, ledger.bills, today)
 
   return {
     days,

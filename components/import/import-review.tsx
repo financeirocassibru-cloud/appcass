@@ -9,7 +9,10 @@ import { MoneyInput } from '@/components/finance/money-input'
 import { cn } from '@/lib/utils'
 
 /**
- * A conferência do extrato. v1.2 — 2026-09-27.
+ * A conferência do extrato. v1.3 — 2026-09-27.
+ *
+ * v1.3 (Fase 13): a linha também pode pagar a fatura de um cartão ou empréstimo ("pagamento
+ * da fatura"). As compras no cartão nunca são conectadas: quem as conclui é a fatura.
  *
  * v1.2: a linha conectada a um item cadastrado diz o que vai marcar como pago ("Salário ·
  * renda fixa · vence 05/10"), pela palavra-chave de quem, e com que diferença de valor. Um
@@ -264,6 +267,8 @@ const ORIGIN_LABEL: Record<ReconcileLink['origin'], string> = {
   'conta fixa': 'conta fixa',
   'renda fixa': 'renda fixa',
   meta: 'aporte na meta',
+  // v1.3 — 2026-09-27 (Fase 13): a linha paga a fatura; as compras dela não são tocadas.
+  fatura: 'pagamento da fatura',
 }
 
 /**
@@ -284,7 +289,12 @@ function LinkNote({
 }) {
   const active = row.link !== null
   const diff = link.amountDiffCents
-  const verb = link.origin === 'meta' ? 'Registra' : row.kind === 'income' ? 'Marca como recebida' : 'Marca como paga'
+  const verb =
+    link.origin === 'meta' || link.origin === 'fatura'
+      ? 'Registra'
+      : row.kind === 'income'
+        ? 'Marca como recebida'
+        : 'Marca como paga'
 
   return (
     <div

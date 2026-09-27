@@ -348,13 +348,28 @@ export interface CommitmentMonth {
   leftoverCents: number
 }
 
-/** Uma linha de `v_source_breakdown`, como a camada de query a entrega. */
+/**
+ * Uma linha de `v_source_breakdown`, como a camada de query a entrega.
+ *
+ * v1.2 — 2026-09-27 (Fase 13): `credit_bill`/`credit_carry` existem no enum, mas a view da 0021
+ * não os devolve — o principal da fatura não conta por cima das compras. Os juros chegam como
+ * `interest`, e contam como gasto do mês (`variableCents`): é o custo do crédito, decidido
+ * quando se escolheu parcelar ou rolar.
+ */
 export interface SourceTotal {
   month: MonthKey
   kind: 'expense' | 'income'
-  source: 'manual' | 'recurring' | 'installment' | 'goal'
+  source: 'manual' | 'recurring' | 'installment' | 'goal' | 'credit_bill' | 'credit_carry' | 'interest'
   totalCents: number
 }
+
+/**
+ * v1.2 — 2026-09-27 (Fase 13): a categoria virtual dos juros e encargos de cartão e empréstimo
+ * (`v_interest_by_month`). Não é uma linha de `categories`: é o que se pagou acima das compras.
+ */
+export const INTEREST_CATEGORY_ID = 'juros-e-encargos'
+export const INTEREST_CATEGORY_NAME = 'Juros e encargos'
+export const INTEREST_CATEGORY_COLOR = '#a16207'
 
 /**
  * Quanto de cada mês já estava comprometido antes de a pessoa decidir.

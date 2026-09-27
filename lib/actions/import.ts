@@ -4,15 +4,22 @@ import { revalidatePath } from 'next/cache'
 import { suggestCategoriesWithAi } from '@/lib/ai/categorize'
 import { isAiConfigured } from '@/lib/ai/env'
 import { currentUserId } from '@/lib/db/current-user'
+import { payBill } from '@/lib/credit/pay-bill'
 import { listActiveCategories } from '@/lib/db/queries/categories'
+import { getCreditLedger } from '@/lib/db/queries/credit'
 import { listReconcileCandidates } from '@/lib/db/queries/reconcile'
+import { todayISO } from '@/lib/finance/date'
 import type { ReconcileCandidate } from '@/lib/finance/reconcile'
 import { suggestFromHistory, type CategoryOption, type HistoryEntry } from '@/lib/import/suggest'
 import { createClient } from '@/lib/supabase/server'
 import { commitImportSchema, prepareImportSchema, suggestGroupsSchema } from '@/lib/validation/import'
 
 /**
- * Importação de extrato, do lado do servidor. v1.2 — 2026-09-27.
+ * Importação de extrato, do lado do servidor. v1.3 — 2026-09-27.
+ *
+ * v1.3 (Fase 13): a linha pode pagar a fatura de um cartão/empréstimo (`link.target =
+ * 'credit_bill'`, por `payBill`, o mesmo caminho do botão "Pagar"). A compra no cartão nunca é
+ * conectada nem desmarca linha como "já lançada" — ela não passa pela conta corrente.
  *
  * v1.2: a importação **conecta** a linha do extrato ao que já foi cadastrado. `prepareImport`
  * devolve os itens pendentes com palavra-chave (`candidates`), o navegador casa com
@@ -74,11 +81,17 @@ export async function prepareImport(input: unknown): Promise<ImportSetup> {
 
   // Tudo que já existe no período do extrato. Sem filtro de usuário: quem restringe é a RLS
   // (invariante 3) — leitura não precisa de WHERE para ser aceita.
-  const existing: { import_key: string | null; occurred_on: string; kind: string; amount_cents: number }[] = []
+  const existing: {
+    import_key: string | null
+    occurred_on: string
+    kind: string
+    amount_cents: number
+    credit_account_id: string | null
+  }[] = []
   for (let page = 0; page < MAX_PAGES; page += 1) {
     const { data, error } = await supabase
       .from('entries')
-      .select('import_key, occurred_on, kind, amount_cents')
+      .select('import_key, occurred_on, kind, amount_cents, credit_account_id')
       .gte('occurred_on', from)
       .lte('occurred_on', to)
       .order('id')
@@ -95,6 +108,9 @@ export async function prepareImport(input: unknown): Promise<ImportSetup> {
   const manual = new Map<string, number>()
   for (const e of existing) {
     if (e.import_key) continue
+    // v1.3 — 2026-09-27: a compra no cartão não sai da conta corrente; uma linha do extrato de
+    // mesmo dia e valor é outra coisa, e desmarcá-la esconderia um gasto real.
+    if (e.credit_account_id) continue
     const k = `${e.occurred_on}|${e.kind}|${e.amount_cents}`
     manual.set(k, (manual.get(k) ?? 0) + 1)
   }
@@ -196,9 +212,29 @@ export async function commitImport(input: unknown): Promise<CommitImportState> {
   // lista de lançamentos novos: a linha do extrato nunca se perde.
   let linked = 0
   const plain: typeof unique = []
+  // v1.3 — 2026-09-27 (Fase 13): as faturas, lidas uma vez, só se alguma linha paga fatura.
+  const ledger = unique.some((row) => row.link?.target === 'credit_bill')
+    ? await getCreditLedger(todayISO())
+    : null
   for (const row of unique) {
     if (!row.link) {
       plain.push(row)
+      continue
+    }
+    // v1.3 — 2026-09-27: a linha paga a fatura — pelo mesmo caminho do botão "Pagar", com o
+    // valor e a data do extrato. O que passar do restante vira juros.
+    if (row.link.target === 'credit_bill' && ledger) {
+      const paid = await payBill({
+        ledger,
+        accountId: row.link.id,
+        dueOn: row.link.dueOn ?? row.occurredOn,
+        amountCents: row.amountCents,
+        paidOn: row.occurredOn,
+        importKey: row.importKey,
+        importBatchId: batchId,
+      })
+      if (!paid.error && paid.id) linked += 1
+      else plain.push(row)
       continue
     }
     const { data: connected, error: linkError } = await supabase.rpc('reconcile_import_row', {

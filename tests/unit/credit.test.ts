@@ -273,6 +273,7 @@ describe('buildBills — as faturas derivadas', () => {
     expect(bills[0]!.status).toBe('paid')
     expect(excessInterestCents({ remainingCents: 100_000 }, 108_000)).toBe(8_000)
     expect(excessInterestCents({ remainingCents: 100_000 }, 30_000)).toBe(0)
+    expect(excessInterestCents(null, 30_000)).toBe(0)
   })
 
   it('limite disponível: tudo o que ainda é devido, desta fatura em diante', () => {

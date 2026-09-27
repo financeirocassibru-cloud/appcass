@@ -12,6 +12,8 @@ import {
 import type { Category } from '@/lib/db/queries/categories'
 import type { EntryWithCategory } from '@/lib/db/queries/entries'
 import type { EntryKind } from '@/lib/db/types'
+import type { CreditOption } from '@/lib/finance/credit'
+import { CreditSourceField } from '@/components/finance/credit-source'
 import { KeywordField } from '@/components/finance/keyword-field'
 import { MoneyInput } from '@/components/finance/money-input'
 import { Button } from '@/components/ui/button'
@@ -24,6 +26,12 @@ const initialState: EntryActionState = {}
 
 /**
  * Lançamento: criar e editar, o mesmo formulário.
+ *
+ * v1.3 — 2026-09-27 (Fase 13): "Pago com" cartão/empréstimo, quando a tela passa
+ * `creditAccounts`. Sem a prop o campo nem vai no formulário, e a action não mexe em de onde
+ * veio o dinheiro — é o que protege quem edita pela Análise ou pelo assistente. Na saída no
+ * cartão o "Já paguei" some: quem conclui é a fatura. O pagamento e o parcelamento de fatura
+ * não mudam de conta por aqui.
  *
  * v1.2 — 2026-09-27: "Conectar ao extrato" — as palavras-chave com que a importação reconhece
  * este lançamento pendente e o marca como pago (migration 0019). Só no lançamento avulso: a
@@ -58,6 +66,7 @@ export function EntryForm({
   today,
   onDone,
   suggestions,
+  creditAccounts,
 }: {
   mode: 'create' | 'edit'
   /** Obrigatório em `edit`. */
@@ -69,11 +78,17 @@ export function EntryForm({
   onDone?: (result: 'saved' | 'deleted') => void
   /** Descrições já importadas, por tipo, para sugerir palavra-chave. */
   suggestions?: Record<EntryKind, string[]>
+  /** v1.3 — 2026-09-27: cartões e empréstimos (inclusive arquivados) para o "Pago com". */
+  creditAccounts?: CreditOption[]
 }) {
   const [kind, setKind] = useState<EntryKind>(entry?.kind ?? 'expense')
   const [showKeywords, setShowKeywords] = useState((entry?.keywords.length ?? 0) > 0)
   const [categoryId, setCategoryId] = useState<string>(entry?.category?.id ?? '')
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  // v1.3 — 2026-09-27: o "Pago com" precisa do valor e da data enquanto a pessoa digita.
+  const [amountCents, setAmountCents] = useState(entry?.amountCents ?? 0)
+  const [date, setDate] = useState(entry?.occurredOn ?? today)
+  const [creditAccountId, setCreditAccountId] = useState(entry?.creditAccountId ?? '')
 
   const [state, formAction, pending] = useActionState(
     async (previous: EntryActionState, formData: FormData) => {
@@ -96,6 +111,10 @@ export function EntryForm({
 
   const categories = kind === 'expense' ? expenseCategories : incomeCategories
   const generated = entry && entry.source !== 'manual' ? entry : null
+  // O pagamento e o parcelamento da fatura são da fatura: nem conta, nem "pago", por aqui.
+  const billEntry = entry?.source === 'credit_bill' || entry?.source === 'credit_carry'
+  const showCredit = creditAccounts !== undefined && !billEntry
+  const fundedExpense = kind === 'expense' && (showCredit ? creditAccountId !== '' : Boolean(entry?.creditAccountId))
 
   return (
     <div className="flex flex-col gap-6">
@@ -142,6 +161,7 @@ export function EntryForm({
           label="Valor"
           initialCents={entry?.amountCents}
           autoFocus={mode === 'create'}
+          onCentsChange={setAmountCents}
         />
 
         {categories.length > 0 ? (
@@ -183,26 +203,51 @@ export function EntryForm({
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="campo-data">Data</Label>
+          <Label htmlFor="campo-data">{fundedExpense ? 'Data do gasto' : 'Data'}</Label>
           <Input
             id="campo-data"
             name="occurredOn"
             type="date"
             required
-            defaultValue={entry?.occurredOn ?? today}
+            value={date}
+            onChange={(event) => setDate(event.target.value)}
             className="min-h-11 text-base"
           />
         </div>
 
-        <label className="flex min-h-11 items-center gap-3">
-          <input
-            type="checkbox"
-            name="isSettled"
-            defaultChecked={entry ? entry.isSettled : true}
-            className="accent-primary size-5"
+        {showCredit ? (
+          <CreditSourceField
+            key={kind}
+            accounts={creditAccounts ?? []}
+            kind={kind}
+            occurredOn={date}
+            amountCents={amountCents}
+            value={creditAccountId}
+            onChange={setCreditAccountId}
+            initialFirstDue={entry?.chargeFirstDueOn ?? null}
+            initialCount={entry?.chargeCount ?? 1}
+            initialTotalCents={
+              entry && entry.interestCents > 0 ? entry.amountCents + entry.interestCents : null
+            }
+            allowLoan={!generated}
+            allowCount={!generated}
+            suggestions={suggestions?.expense ?? []}
           />
-          <span className="text-sm">{kind === 'expense' ? 'Já paguei' : 'Já recebi'}</span>
-        </label>
+        ) : null}
+
+        {billEntry ? (
+          <input type="hidden" name="isSettled" value="on" />
+        ) : fundedExpense ? null : (
+          <label className="flex min-h-11 items-center gap-3">
+            <input
+              type="checkbox"
+              name="isSettled"
+              defaultChecked={entry ? entry.isSettled : true}
+              className="accent-primary size-5"
+            />
+            <span className="text-sm">{kind === 'expense' ? 'Já paguei' : 'Já recebi'}</span>
+          </label>
+        )}
 
         {generated ? null : showKeywords ? (
           <div className="flex flex-col gap-2 rounded-xl bg-[var(--surface)] p-4">

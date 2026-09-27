@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Check, ChevronLeft, Clock } from 'lucide-react'
+import { listCreditAccounts } from '@/lib/db/queries/credit'
 import { listImportedDescriptions } from '@/lib/db/queries/entries'
 import {
   getInstallmentKeywords,
@@ -9,7 +10,7 @@ import {
 } from '@/lib/db/queries/installments'
 import { formatCents } from '@/lib/finance/money'
 import { todayISO } from '@/lib/finance/date'
-import { PaidCountForm, PlanActions, PlanKeywordsForm } from './actions'
+import { PaidCountForm, PlanActions, PlanCreditForm, PlanKeywordsForm } from './actions'
 import { cn } from '@/lib/utils'
 
 /**
@@ -20,6 +21,10 @@ import { cn } from '@/lib/utils'
  *
  * v1.2 — 2026-09-27: "Palavras-chave do extrato" (`PlanKeywordsForm`) — a linha importada que
  * contém uma delas marca como paga a parcela pendente mais perto da data (migration 0019).
+ *
+ * v1.3 — 2026-09-27 (Fase 13): parcelamento no cartão (`PlanCreditForm`). Ali cada parcela
+ * mostra a fatura em que cai, "paga" é a fatura paga, e "Quantas já foram pagas?" some — quem
+ * paga é a fatura.
  */
 
 // v1.2 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
@@ -34,16 +39,19 @@ export default async function ParcelamentoPage({
 }) {
   const { id } = await params
 
-  const [plan, parcels, keywords, imported] = await Promise.all([
+  const [plan, parcels, keywords, imported, accounts] = await Promise.all([
     getInstallmentPlan(id),
     listPlanInstallments(id),
     getInstallmentKeywords(id),
     listImportedDescriptions(),
+    listCreditAccounts(),
   ])
   if (!plan) notFound()
 
   const today = todayISO()
   const paidCents = plan.totalAmountCents - plan.remainingCents
+  const cards = accounts.filter((a) => a.kind === 'card')
+  const card = accounts.find((a) => a.id === plan.creditAccountId) ?? null
 
   return (
     <main className="mx-auto flex max-w-md flex-col gap-6 px-6 py-8">
@@ -56,6 +64,7 @@ export default async function ParcelamentoPage({
           Parcelas
         </Link>
         <h1 className="text-2xl font-bold tracking-tight">{plan.description}</h1>
+        {card ? <p className="text-muted-foreground text-sm">No cartão {card.name}</p> : null}
       </div>
 
       <dl className="grid grid-cols-2 gap-4 rounded-xl bg-[var(--surface)] p-4">
@@ -108,11 +117,16 @@ export default async function ParcelamentoPage({
                 </p>
                 <p className="text-muted-foreground text-xs">
                   {formatDue(parcel.dueOn)}
+                  {plan.creditAccountId && parcel.billDueOn && !parcel.isSettled
+                    ? ` · fatura ${formatDue(parcel.billDueOn)}`
+                    : ''}
                   {parcel.isSettled
                     ? ' · paga'
-                    : parcel.dueOn < today
-                      ? ' · em atraso'
-                      : ' · pendente'}
+                    : plan.creditAccountId
+                      ? ''
+                      : parcel.dueOn < today
+                        ? ' · em atraso'
+                        : ' · pendente'}
                 </p>
               </div>
 
@@ -130,12 +144,23 @@ export default async function ParcelamentoPage({
         </p>
       </section>
 
-      <PaidCountForm
-        key={plan.paidCount}
-        id={plan.planId}
-        paidCount={plan.paidCount}
-        installmentsCount={plan.installmentsCount}
-      />
+      {plan.creditAccountId ? null : (
+        <PaidCountForm
+          key={plan.paidCount}
+          id={plan.planId}
+          paidCount={plan.paidCount}
+          installmentsCount={plan.installmentsCount}
+        />
+      )}
+
+      {cards.length > 0 || plan.creditAccountId ? (
+        <PlanCreditForm
+          key={plan.creditAccountId ?? 'saldo'}
+          id={plan.planId}
+          creditAccountId={plan.creditAccountId}
+          cards={cards.map((c) => ({ id: c.id, name: c.name }))}
+        />
+      ) : null}
 
       <PlanKeywordsForm
         key={keywords.join('|')}

@@ -167,3 +167,33 @@ describe('matchStatementRows', () => {
     expect(matchStatementRows([row(3, '2026-10-01', 'Compra', 501)], [cafe])).toEqual({})
   })
 })
+
+// v1.1 — 2026-09-27 (Fase 13): a fatura do cartão é o que o extrato paga.
+describe('matchStatementRows — fatura de cartão', () => {
+  const fatura: ReconcileCandidate = {
+    target: 'credit_bill',
+    id: 'nubank',
+    kind: 'expense',
+    dueOn: '2026-10-10',
+    amountCents: 123_456,
+    keywords: ['pagamento fatura'],
+    label: 'Fatura Nubank',
+    origin: 'fatura',
+  }
+
+  it('a linha "pagamento fatura" paga a fatura, com o valor do extrato', () => {
+    const links = matchStatementRows([row(1, '2026-10-09', 'PAGAMENTO FATURA NUBANK', 130_000)], [fatura])
+    expect(links[key(1)]).toMatchObject({
+      target: 'credit_bill',
+      id: 'nubank',
+      dueOn: '2026-10-10',
+      keepsAmount: false,
+      amountDiffCents: 130_000 - 123_456,
+    })
+  })
+
+  it('sem a palavra-chave, mesmo valor e dia não bastam: a reserva por valor é só do avulso', () => {
+    const links = matchStatementRows([row(1, '2026-10-10', 'PIX QUALQUER', 123_456)], [fatura])
+    expect(links).toEqual({})
+  })
+})

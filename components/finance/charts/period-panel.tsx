@@ -225,7 +225,9 @@ export function OccurrenceRow({
   const marker =
     occurrence.origin === 'scenario'
       ? 'hipotético'
-      : occurrence.isRealized
+      : occurrence.origin === 'credit_bill'
+        ? 'fatura a pagar' // v1.1 — 2026-09-27 (Fase 13): a soma das compras no cartão
+        : occurrence.isRealized
         ? occurrence.isSettled
           ? null
           : 'pendente'

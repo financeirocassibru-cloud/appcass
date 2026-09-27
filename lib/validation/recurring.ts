@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { isISODate } from '@/lib/finance/date'
+import { creditFieldsShape } from '@/lib/validation/credit'
 import { keywordsField } from '@/lib/validation/keywords'
 
 /**
@@ -54,6 +55,8 @@ const baseRecurringSchema = z.object({
   startsOn: isoDateSchema,
   endsOn: optionalIsoDate,
   keywords: keywordsField,
+  // v1.1 — 2026-09-27 (Fase 13): conta fixa no cartão. Ausente não mexe; `''` tira do cartão.
+  creditAccountId: creditFieldsShape.creditAccountId,
 })
 
 /**

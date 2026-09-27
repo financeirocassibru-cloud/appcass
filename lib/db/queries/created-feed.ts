@@ -15,6 +15,9 @@ import type { EntryWithCategory } from './entries'
  *
  * v1.2 — 2026-09-27: o lançamento traz `keywords` (migration 0019), que a edição mostra.
  *
+ * v1.3 — 2026-09-27 (Fase 13): e de onde veio o dinheiro (`credit_account_id` e a dívida,
+ * migration 0021), para a edição não soltar a compra do cartão.
+ *
  * Três leituras por `created_at desc`, cada uma com o mesmo limite, intercaladas por
  * `mergeByCreatedAt` (`lib/feed.ts`). Pedir `limit` de cada uma e cortar depois é o que
  * garante as `limit` mais recentes do conjunto: nenhuma das três pode contribuir com mais do
@@ -32,6 +35,7 @@ const ENTRY_COLUMNS = `
   id, kind, occurred_on, description, amount_cents, notes,
   is_settled, settled_on, source, source_id, occurrence_key,
   installment_number, installment_total, created_at, import_batch_id, keywords,
+  credit_account_id, charge_first_due_on, charge_count, interest_cents,
   category_id, categories ( id, name, color, icon )
 ` as const
 
@@ -77,6 +81,10 @@ interface EntryRow {
   installment_number: number | null
   installment_total: number | null
   keywords: string[]
+  credit_account_id: string | null
+  charge_first_due_on: string | null
+  charge_count: number
+  interest_cents: number
   created_at: string
   import_batch_id: string | null
   category_id: string | null
@@ -150,6 +158,10 @@ export async function listCreatedFeed({
       installmentNumber: row.installment_number,
       installmentTotal: row.installment_total,
       keywords: row.keywords ?? [],
+      creditAccountId: row.credit_account_id,
+      chargeFirstDueOn: row.charge_first_due_on,
+      chargeCount: row.charge_count,
+      interestCents: Number(row.interest_cents),
       category: row.categories,
     },
   }))

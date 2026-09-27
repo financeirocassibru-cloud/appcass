@@ -8,6 +8,7 @@ import type { EntryKind } from '@/lib/db/types'
 import type { RecategorizeTarget } from '@/lib/import/recategorize'
 import type { CategoryOption } from '@/lib/import/suggest'
 import { createClient } from '@/lib/supabase/server'
+import { creditPatch, readCreditFields } from '@/lib/validation/credit'
 import { keywordsPatch } from '@/lib/validation/keywords'
 import {
   applyCategoriesSchema,
@@ -21,7 +22,11 @@ import {
 } from '@/lib/validation/entries'
 
 /*
- * Escrita de lançamentos. v1.4 — 2026-09-27.
+ * Escrita de lançamentos. v1.5 — 2026-09-27.
+ *
+ * v1.5 (Fase 13): "pago com" cartão/empréstimo. A SAÍDA no cartão nasce e fica aberta — quem a
+ * conclui é o pagamento da fatura (constraint `entries_credit_expense_open`, migration 0021) —
+ * e `toggleSettled` a recusa com uma frase, em vez de deixar o banco recusar com um código.
  *
  * v1.3: `prepareRecategorize` e `applyCategories`, o "Categorizar" da seleção de "Todos os
  * lançamentos" — palavra-chave e IA aplicadas a lançamentos que já existem.
@@ -49,6 +54,13 @@ function revalidateEntryViews(): void {
   revalidatePath('/')
   // v1.2 — 2026-09-27: "Ver todos" também mostra lançamentos, e agora exclui em lote.
   revalidatePath('/novo/lancamentos')
+  // v1.5 — 2026-09-27: a compra no cartão muda a fatura e o limite.
+  revalidatePath('/cartoes', 'layout')
+}
+
+/** v1.5 — 2026-09-27: a saída no cartão/empréstimo nunca é liquidada pelo próprio lançamento. */
+function settledFor(kind: EntryKind, funded: boolean, isSettled: boolean): boolean {
+  return funded && kind === 'expense' ? false : isSettled
 }
 
 export async function createEntry(
@@ -64,6 +76,7 @@ export async function createEntry(
     notes: formData.get('notes') ?? '',
     isSettled: formData.get('isSettled'),
     keywords: formData.get('keywords'),
+    ...readCreditFields(formData),
   })
 
   if (!parsed.success) {
@@ -72,6 +85,7 @@ export async function createEntry(
 
   const userId = await currentUserId()
   const supabase = await createClient()
+  const isSettled = settledFor(parsed.data.kind, Boolean(parsed.data.creditAccountId), parsed.data.isSettled)
 
   const { error } = await supabase.from('entries').insert({
     // A RLS exige `user_id` no `with check`; a policy restringe a linha, ela não
@@ -83,11 +97,12 @@ export async function createEntry(
     description: parsed.data.description,
     category_id: parsed.data.categoryId,
     notes: parsed.data.notes ?? null,
-    is_settled: parsed.data.isSettled,
+    is_settled: isSettled,
     // A constraint `entries_settled_needs_date` exige a data quando liquidado.
-    settled_on: parsed.data.isSettled ? parsed.data.occurredOn : null,
+    settled_on: isSettled ? parsed.data.occurredOn : null,
     source: 'manual',
     ...keywordsPatch(parsed.data.keywords),
+    ...creditPatch(parsed.data),
   })
 
   if (error) {
@@ -112,6 +127,7 @@ export async function updateEntry(
     notes: formData.get('notes') ?? '',
     isSettled: formData.get('isSettled'),
     keywords: formData.get('keywords'),
+    ...readCreditFields(formData),
   })
 
   if (!parsed.success) {
@@ -119,6 +135,19 @@ export async function updateEntry(
   }
 
   const supabase = await createClient()
+
+  // v1.5 — 2026-09-27: sem o campo "pago com" no formulário (o assistente), vale o que está
+  // gravado — senão "marcar como pago" uma compra do cartão esbarraria na constraint.
+  let funded = Boolean(parsed.data.creditAccountId)
+  if (parsed.data.creditAccountId === undefined) {
+    const { data: current } = await supabase
+      .from('entries')
+      .select('credit_account_id')
+      .eq('id', parsed.data.id)
+      .maybeSingle()
+    funded = Boolean(current?.credit_account_id)
+  }
+  const isSettled = settledFor(parsed.data.kind, funded, parsed.data.isSettled)
 
   // `.select()` e checagem do resultado: o supabase-js devolve sucesso quando o
   // update não casa nenhuma linha (invariante 17). Aqui isso aconteceria se o id
@@ -132,9 +161,10 @@ export async function updateEntry(
       description: parsed.data.description,
       category_id: parsed.data.categoryId,
       notes: parsed.data.notes ?? null,
-      is_settled: parsed.data.isSettled,
-      settled_on: parsed.data.isSettled ? parsed.data.occurredOn : null,
+      is_settled: isSettled,
+      settled_on: isSettled ? parsed.data.occurredOn : null,
       ...keywordsPatch(parsed.data.keywords),
+      ...creditPatch(parsed.data),
     })
     .eq('id', parsed.data.id)
     .select('id')
@@ -190,12 +220,21 @@ export async function toggleSettled(
   // quando ela aconteceu.
   const { data: current, error: readError } = await supabase
     .from('entries')
-    .select('occurred_on')
+    .select('occurred_on, kind, source, credit_account_id')
     .eq('id', parsed.data.id)
     .maybeSingle()
 
   if (readError) return { error: `Não foi possível atualizar: ${readError.message}` }
   if (!current) return { error: 'Lançamento não encontrado.' }
+
+  // v1.5 — 2026-09-27 (Fase 13): quem conclui a compra no cartão é a fatura, e o pagamento da
+  // fatura se desfaz excluindo-o.
+  if (current.credit_account_id && current.kind === 'expense') {
+    return { error: 'É pago pela fatura do cartão ou do empréstimo.' }
+  }
+  if (current.source === 'credit_bill') {
+    return { error: 'Pagamento de fatura: para desfazer, exclua o lançamento.' }
+  }
 
   const { data, error } = await supabase
     .from('entries')

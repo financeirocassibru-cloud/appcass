@@ -54,7 +54,20 @@ export interface AgendaRecurringItem extends AgendaItemBase {
   key: string
 }
 
-export type AgendaItem = AgendaEntryItem | AgendaRecurringItem
+/**
+ * v1.1 — 2026-09-27 (Fase 13): a fatura de cartão/empréstimo ainda devida. Derivada das
+ * compras (lib/finance/credit.ts), não é linha de lugar nenhum; pagar é `payCreditBill`. As
+ * compras no cartão não aparecem na agenda — quem vence é a fatura.
+ */
+export interface AgendaCreditBillItem extends AgendaItemBase {
+  source: 'credit_bill'
+  accountId: string
+  /** O vencimento da fatura (em `occurredOn` está o mesmo dia). */
+  dueOn: ISODate
+  key: string
+}
+
+export type AgendaItem = AgendaEntryItem | AgendaRecurringItem | AgendaCreditBillItem
 
 /** A chave de React de um item, qualquer que seja a origem. */
 export function agendaItemKey(item: AgendaItem): string {

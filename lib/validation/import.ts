@@ -5,7 +5,9 @@ import { IMPORT_KEY_RE } from '@/lib/import/fingerprint'
 import { MAX_IMPORT_ROWS } from '@/lib/import/types'
 
 /**
- * Validação da importação de extrato. v1.2 — 2026-09-27.
+ * Validação da importação de extrato. v1.3 — 2026-09-27.
+ *
+ * v1.3 (Fase 13): o alvo `credit_bill` — a linha que paga a fatura de um cartão/empréstimo.
  *
  * v1.2: `link` opcional por linha — o item cadastrado que a linha liquida (conta fixa, parcela,
  * avulso pendente, meta). Só a identidade viaja; o que pode ser conectado quem confere é o
@@ -35,7 +37,8 @@ export const importRowSchema = z.object({
   importKey: z.string().regex(IMPORT_KEY_RE, 'Chave de importação inválida'),
   link: z
     .object({
-      target: z.enum(['entry', 'recurring', 'goal']),
+      // v1.3 — 2026-09-27 (Fase 13): `credit_bill` — a linha paga a fatura da conta `id`.
+      target: z.enum(['entry', 'recurring', 'goal', 'credit_bill']),
       id: z.string().uuid('Item inválido'),
       dueOn: isoDate.nullable(),
     })

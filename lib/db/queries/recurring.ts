@@ -13,11 +13,14 @@ import { createClient } from '@/lib/supabase/server'
  * `expandRecurringRule()` consome. Sem um tipo intermediário: a query existe
  * justamente para alimentar o motor puro, e converter duas vezes só criaria
  * chance de divergir.
+ *
+ * v1.1 — 2026-09-27 (Fase 13): `credit_account_id` na regra (migration 0021), para a projeção
+ * e a agenda deixarem a conta fixa no cartão para a fatura.
  */
 
 const COLUMNS = `
   id, kind, description, amount_cents, category_id,
-  frequency, day_of_month, starts_on, ends_on, is_active
+  frequency, day_of_month, starts_on, ends_on, is_active, credit_account_id
 ` as const
 
 interface Row {
@@ -31,6 +34,7 @@ interface Row {
   starts_on: string
   ends_on: string | null
   is_active: boolean
+  credit_account_id: string | null
 }
 
 function toRule(row: Row): RecurringRule {
@@ -45,6 +49,8 @@ function toRule(row: Row): RecurringRule {
     startsOn: row.starts_on,
     endsOn: row.ends_on,
     isActive: row.is_active,
+    // v1.1 — 2026-09-27 (Fase 13): conta fixa no cartão — fora do caixa, dentro da fatura.
+    creditAccountId: row.credit_account_id,
   }
 }
 
