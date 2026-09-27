@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/server'
 import {
   createInstallmentSchema,
   installmentPlanIdSchema,
+  setPaidCountSchema,
 } from '@/lib/validation/installments'
 
 /**
@@ -26,6 +27,9 @@ import {
  * v1.1 — 2026-09-27: parcelamento em andamento. `paidCount` vai para `p_paid_count`
  * (migration 0017), e as primeiras nascem liquidadas na data de cada uma, na mesma transação.
  * `/novo/lancamentos` passou a ser revalidado, porque o plano aparece lá.
+ *
+ * v1.2 — 2026-09-27: `setInstallmentsPaid`, para declarar quantas já foram pagas num
+ * parcelamento que já está no app (função `set_installments_paid`, migration 0017).
  */
 
 export interface InstallmentActionState {
@@ -101,6 +105,45 @@ export async function createInstallmentPlan(
       paidCount > 0
         ? `Parcelamento criado em ${parsed.data.installmentsCount}x, com ${paidCount} já ${paidCount === 1 ? 'paga' : 'pagas'}.`
         : `Parcelamento criado em ${parsed.data.installmentsCount}x.`,
+  }
+}
+
+/**
+ * Declara quantas parcelas já foram pagas: 1..N liquidadas, as seguintes pendentes.
+ *
+ * v1.0 — 2026-09-27. Via RPC porque cada parcela é liquidada na **própria** data — as já pagas
+ * guardam a delas — e um `update` do supabase-js só grava o mesmo valor em todas as linhas. A
+ * função recusa plano invisível pela RLS (`no_data_found`) e N fora de 0..total.
+ */
+export async function setInstallmentsPaid(
+  _prev: InstallmentActionState,
+  formData: FormData,
+): Promise<InstallmentActionState> {
+  const parsed = setPaidCountSchema.safeParse({
+    id: formData.get('id'),
+    paidCount: formData.get('paidCount'),
+  })
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos' }
+  }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('set_installments_paid', {
+    p_plan_id: parsed.data.id,
+    p_paid_count: parsed.data.paidCount,
+  })
+
+  if (error) return { error: `Não foi possível atualizar: ${error.message}` }
+
+  revalidateInstallmentViews()
+  revalidatePath(`/parcelas/${parsed.data.id}`)
+
+  const changed = Number(data ?? 0)
+  return {
+    success:
+      changed === 0
+        ? 'Nada mudou: já estava assim.'
+        : `${parsed.data.paidCount} ${parsed.data.paidCount === 1 ? 'parcela paga' : 'parcelas pagas'} — ${changed} ${changed === 1 ? 'parcela atualizada' : 'parcelas atualizadas'}.`,
   }
 }
 

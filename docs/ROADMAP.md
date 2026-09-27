@@ -355,6 +355,10 @@ Decisões:
   escolher. Quem informa a *próxima* parcela ganha a primeira recuada por `firstDueFromNext`, e
   o dia de vencimento viaja como `anchorDay` — sem ele, uma próxima no dia 31 arrastaria todas
   para o dia 30.
+- **E para o parcelamento que já está no app** (v1.1 — 2026-09-27), `set_installments_paid`
+  na mesma 0017: em `/parcelas/[id]`, "Quantas já foram pagas?" deixa 1..N pagas e as seguintes
+  pendentes. A declaração é o estado inteiro, não um acréscimo; quem já tinha marcado uma parcela
+  pelo Histórico mantém a data em que marcou, e as demais ficam com a data de vencimento.
 - **"Ver lançamentos" junta três tabelas** (lançamento avulso, regra, plano) por `created_at`,
   com cursor de instante **e id**: uma importação grava dezenas de linhas no mesmo instante, e
   um cursor só de instante pularia as que sobraram na virada da página. O dia de criação é o de

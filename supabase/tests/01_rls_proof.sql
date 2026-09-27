@@ -1,6 +1,7 @@
 -- Prova de isolamento por RLS com dois usuários reais.
 -- v1.1 — 2026-09-27: asserções da import_key (migration 0016) no fim.
 -- v1.2 — 2026-09-27: parcelamento em andamento (migration 0017) no fim.
+-- v1.3 — 2026-09-27: `set_installments_paid` (migration 0017) no fim.
 -- Roda como um papel sem BYPASSRLS, alternando o "usuário logado" via GUC,
 -- que é o que a função auth.uid() do shim lê.
 
@@ -1198,6 +1199,88 @@ begin
   end;
   select count(*) into planos_depois from public.installment_plans;
   if planos_depois <> planos_antes then raise exception 'plano gravado apesar da recusa'; end if;
+end $$;
+
+reset role;
+
+-- === Declarar pagas num parcelamento já cadastrado (migration 0017, seção 2) ===
+
+set role authenticated;
+set request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
+
+do $$
+declare plano uuid; mudou int; pagas int; datas int; data_da_1 date;
+begin
+  plano := public.create_installment_plan(
+    p_description => 'Sofá antigo', p_total_amount_cents => 40000,
+    p_installments_count => 4::smallint, p_first_due_on => '2026-03-20',
+    p_installments =>
+    '[{"number":"1","amount_cents":10000,"due_on":"2026-03-20","description":"Sofá antigo (1/4)"},
+      {"number":"2","amount_cents":10000,"due_on":"2026-04-20","description":"Sofá antigo (2/4)"},
+      {"number":"3","amount_cents":10000,"due_on":"2026-05-20","description":"Sofá antigo (3/4)"},
+      {"number":"4","amount_cents":10000,"due_on":"2026-06-20","description":"Sofá antigo (4/4)"}]'::jsonb
+  );
+
+  -- Guardado para o bloco do Bruno, que não enxerga a linha e não teria como achar o id.
+  perform set_config('teste.plano_ana', plano::text, false);
+
+  -- A 1ª foi marcada pelo app num outro dia: esse `settled_on` é história e precisa ficar.
+  update public.entries set is_settled = true, settled_on = '2026-03-25'
+   where source_id = plano and installment_number = 1;
+
+  mudou := public.set_installments_paid(plano, 2::smallint);
+  if mudou <> 1 then raise exception 'declarar 2 deveria mudar só a 2ª (mudou %)', mudou; end if;
+
+  select count(*) into pagas from public.entries where source_id = plano and is_settled;
+  if pagas <> 2 then raise exception 'deveriam ser 2 pagas, são %', pagas; end if;
+
+  select settled_on into data_da_1 from public.entries where source_id = plano and installment_number = 1;
+  if data_da_1 <> '2026-03-25' then
+    raise exception 'o settled_on da 1ª deveria ser preservado, virou %', data_da_1;
+  end if;
+
+  select count(*) into datas from public.entries
+   where source_id = plano and installment_number = 2 and settled_on = occurred_on;
+  if datas <> 1 then raise exception 'a 2ª deveria ser liquidada na própria data'; end if;
+
+  -- Declarar menos desfaz: 0 volta todas a pendentes, sem data de liquidação.
+  mudou := public.set_installments_paid(plano, 0::smallint);
+  if mudou <> 2 then raise exception 'declarar 0 deveria mudar 2 (mudou %)', mudou; end if;
+  select count(*) into pagas from public.entries
+   where source_id = plano and (is_settled or settled_on is not null);
+  if pagas <> 0 then raise exception 'com 0 declaradas nenhuma deveria ficar paga (%)', pagas; end if;
+
+  -- Fora de 0..N é recusado.
+  begin
+    perform public.set_installments_paid(plano, 5::smallint);
+    raise exception 'declarar 5 de 4 deveria ser recusado';
+  exception
+    when check_violation then null;  -- esperado
+  end;
+end $$;
+
+-- Bruno não mexe no parcelamento de Ana.
+set request.jwt.claim.sub = '22222222-2222-2222-2222-222222222222';
+
+do $$
+declare plano uuid := current_setting('teste.plano_ana')::uuid;
+begin
+  if plano is null then raise exception 'o id do plano de Ana deveria estar guardado'; end if;
+  perform public.set_installments_paid(plano, 1::smallint);
+  raise exception 'VAZAMENTO: Bruno declarou parcelas pagas no plano de Ana';
+exception
+  when no_data_found then null;  -- esperado
+end $$;
+
+reset role;
+
+set role anon;
+do $$
+begin
+  perform public.set_installments_paid(gen_random_uuid(), 1::smallint);
+  raise exception 'ESCALADA: anon executou set_installments_paid';
+exception
+  when insufficient_privilege then null;  -- esperado
 end $$;
 
 reset role;

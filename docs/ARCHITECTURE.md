@@ -526,6 +526,8 @@ npm run dev
 37. No [+], Saída → Parcelado → 12x de R$ 100 "em andamento" com 3 pagas: a prévia marca 1–3
     como pagas e soma R$ 1.200; `/parcelas` mostra "3 de 12"; as três pagas estão no Histórico
     na data de cada uma, e não hoje.
+    Num parcelamento antigo, `/parcelas/[id]` → "Quantas já foram pagas?" = 4 faz o mesmo sem
+    recriar o plano; declarar 0 devolve todas a pendentes.
 38. Entrada → Renda fixa aparece em `/rendas` e **não** em `/compromissos`; abrir o endereço de
     uma renda em `/compromissos/[id]` leva a `/rendas/[id]`.
 39. "Ver lançamentos" mostra o parcelamento uma vez, e não as 12 parcelas; um lançamento feito

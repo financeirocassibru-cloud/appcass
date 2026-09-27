@@ -128,6 +128,8 @@ create table recurring_rules (
 -- v1.2 — 2026-09-27: `create_installment_plan(..., p_paid_count)` (migration 0017) cadastra um
 -- parcelamento já em andamento: as primeiras `p_paid_count` nascem liquidadas, cada uma com
 -- `settled_on` = a própria data, na mesma transação do plano.
+-- `set_installments_paid(plan, n)` (mesma 0017) declara isso num plano já existente: 1..n pagas
+-- (as já pagas mantêm o `settled_on`), as seguintes pendentes.
 create table installment_plans (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,

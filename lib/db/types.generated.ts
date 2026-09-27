@@ -715,6 +715,7 @@ export type Database = {
         Args: { p_occurs_on: string; p_rule_id: string; p_settled?: boolean };
         Returns: string;
       };
+      set_installments_paid: { Args: { p_paid_count: number; p_plan_id: string }; Returns: number };
       set_scenario_override: {
         Args: {
           p_amount_cents?: number;
