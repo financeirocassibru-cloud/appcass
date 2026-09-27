@@ -2,7 +2,8 @@ import { RuleDetail } from '../../compromissos/rule-detail'
 
 /** Editar renda fixa. v1.0 — 2026-09-27. */
 
-export const metadata = { title: 'Renda fixa · Finanças' }
+// v1.1 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
+export const metadata = { title: 'Renda fixa' }
 export const dynamic = 'force-dynamic'
 
 export default async function RendaFixaPage({

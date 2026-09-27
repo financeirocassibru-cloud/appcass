@@ -2,7 +2,8 @@ import Link from 'next/link'
 import { ChevronRight } from 'lucide-react'
 import type { Route } from 'next'
 
-export const metadata = { title: 'Mais · Finanças' }
+// v1.3 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
+export const metadata = { title: 'Mais' }
 
 // v1.1 — 2026-09-26: fase 7, a tela do assistente.
 // v1.2 — 2026-09-27: Contas fixas e Parcelas saíram daqui para o [+], junto com Renda fixa.

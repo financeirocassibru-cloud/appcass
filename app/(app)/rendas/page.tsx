@@ -7,7 +7,8 @@ import { RuleList } from '../compromissos/rule-list'
  * lista, outro recorte.
  */
 
-export const metadata = { title: 'Renda fixa · Finanças' }
+// v1.1 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
+export const metadata = { title: 'Renda fixa' }
 export const dynamic = 'force-dynamic'
 
 export default function RendasPage() {

@@ -22,7 +22,8 @@ import { ScaleTabs } from './scale-tabs'
 import { ScenarioBar } from './scenario-bar'
 import { ScenarioEntries } from './scenario-entries'
 
-export const metadata = { title: 'Análise · Finanças' }
+// v2.3 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
+export const metadata = { title: 'Análise' }
 /** Depende de "hoje" e do banco: prerenderizada, congelaria os dois. */
 export const dynamic = 'force-dynamic'
 

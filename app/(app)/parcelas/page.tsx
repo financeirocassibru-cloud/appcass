@@ -10,7 +10,8 @@ import { formatCents } from '@/lib/finance/money'
  * inclusive um que já está em andamento.
  */
 
-export const metadata = { title: 'Parcelas · Finanças' }
+// v1.2 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
+export const metadata = { title: 'Parcelas' }
 export const dynamic = 'force-dynamic'
 
 export default async function ParcelasPage() {

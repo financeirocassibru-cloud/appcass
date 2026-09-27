@@ -6,8 +6,8 @@ import { formatCents } from '@/lib/finance/money'
 import { todayISO } from '@/lib/finance/date'
 
 // v1.1 — 2026-09-27: "Nova" abre o [+] no modo Meta, onde a meta passou a nascer.
-
-export const metadata = { title: 'Metas · Finanças' }
+// v1.1 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
+export const metadata = { title: 'Metas' }
 export const dynamic = 'force-dynamic'
 
 export default async function MetasPage() {

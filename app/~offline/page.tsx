@@ -1,6 +1,7 @@
 import { WifiOff } from 'lucide-react'
 
-export const metadata = { title: 'Sem conexão · Finanças' }
+// v1.1 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
+export const metadata = { title: 'Sem conexão' }
 
 /**
  * Página servida quando uma navegação falha e não há versão em cache.

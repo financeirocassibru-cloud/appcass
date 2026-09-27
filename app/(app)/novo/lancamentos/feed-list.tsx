@@ -2,7 +2,7 @@
 
 import { Fragment, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { CheckSquare, FileDown, Trash2, X } from 'lucide-react'
+import { CheckSquare, FileDown, Tags, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { deleteEntries } from '@/lib/actions/entries'
 import type { Category } from '@/lib/db/queries/categories'
@@ -10,9 +10,13 @@ import type { FeedItem, ImportBatch } from '@/lib/db/queries/created-feed'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { FeedRow } from './feed-row'
+import { RecategorizeSheet } from './recategorize-sheet'
 
 /**
- * A lista de "Ver todos", com modo seleção. v1.0 — 2026-09-27.
+ * A lista de "Ver todos", com modo seleção. v1.1 — 2026-09-27.
+ *
+ * v1.1: a seleção também **categoriza** — "Categorizar" abre `RecategorizeSheet`, que aplica a
+ * palavra-chave e a IA aos lançamentos marcados (e às importações inteiras), com prévia.
  *
  * "Selecionar" liga caixas de marcar nos lançamentos avulsos e importados, e uma barra no
  * topo diz quantos estão marcados e exclui todos de uma vez, com confirmação.
@@ -37,15 +41,19 @@ export function FeedList({
   expenseCategories,
   incomeCategories,
   today,
+  aiAvailable,
 }: {
   groups: FeedGroup[]
   batches: ImportBatch[]
   expenseCategories: Category[]
   incomeCategories: Category[]
   today: string
+  /** A IA está configurada? Sem ela, "Categorizar" oferece só a palavra-chave. */
+  aiAvailable: boolean
 }) {
   const router = useRouter()
   const [selecting, setSelecting] = useState(false)
+  const [categorizing, setCategorizing] = useState(false)
   const [ids, setIds] = useState<Set<string>>(() => new Set())
   const [batchIds, setBatchIds] = useState<Set<string>>(() => new Set())
   const [confirming, setConfirming] = useState(false)
@@ -206,16 +214,28 @@ export function FeedList({
                   </div>
                 </div>
               ) : (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setConfirming(true)}
-                  disabled={count === 0}
-                  className="min-h-11 w-full gap-2"
-                >
-                  <Trash2 className="size-4" aria-hidden />
-                  Excluir selecionados
-                </Button>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setCategorizing(true)}
+                    disabled={count === 0}
+                    className="min-h-11 gap-2"
+                  >
+                    <Tags className="size-4" aria-hidden />
+                    Categorizar
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setConfirming(true)}
+                    disabled={count === 0}
+                    className="min-h-11 gap-2"
+                  >
+                    <Trash2 className="size-4" aria-hidden />
+                    Excluir
+                  </Button>
+                </div>
               )}
             </>
           ) : (
@@ -234,6 +254,19 @@ export function FeedList({
           )}
         </div>
       ) : null}
+
+      <RecategorizeSheet
+        open={categorizing}
+        onOpenChange={setCategorizing}
+        ids={[...ids]}
+        importBatchIds={[...batchIds]}
+        count={count}
+        aiAvailable={aiAvailable}
+        onDone={() => {
+          exit()
+          router.refresh()
+        }}
+      />
 
       <BatchRows
         groups={groups}

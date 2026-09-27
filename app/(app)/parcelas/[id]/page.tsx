@@ -22,7 +22,8 @@ import { cn } from '@/lib/utils'
  * contém uma delas marca como paga a parcela pendente mais perto da data (migration 0019).
  */
 
-export const metadata = { title: 'Parcelamento · Finanças' }
+// v1.2 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
+export const metadata = { title: 'Parcelamento' }
 export const dynamic = 'force-dynamic'
 
 export default async function ParcelamentoPage({

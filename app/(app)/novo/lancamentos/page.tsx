@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { ChevronLeft } from 'lucide-react'
+import { isAiConfigured } from '@/lib/ai/env'
 import { listActiveCategories } from '@/lib/db/queries/categories'
 import { listCreatedFeed, listImportBatches } from '@/lib/db/queries/created-feed'
 import { createdDay, feedCursor } from '@/lib/feed'
@@ -9,7 +10,9 @@ import { FeedList } from './feed-list'
 
 /**
  * "Todos os lançamentos" (o "Ver todos" do [+]): tudo o que foi cadastrado, na ordem em que
- * foi gravado. v1.1 — 2026-09-27.
+ * foi gravado. v1.2 — 2026-09-27.
+ *
+ * v1.2: a seleção também categoriza, por palavra-chave e por IA (`RecategorizeSheet`).
  *
  * v1.1: o nome acompanhou o link, que virou "Ver todos"; e a lista ganhou modo seleção, com
  * exclusão em lote e o atalho que marca uma importação de extrato inteira (`FeedList`).
@@ -23,7 +26,8 @@ import { FeedList } from './feed-list'
  * na linha, como "para 05/10".
  */
 
-export const metadata = { title: 'Todos os lançamentos · Finanças' }
+// v1.3 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
+export const metadata = { title: 'Todos os lançamentos' }
 export const dynamic = 'force-dynamic'
 
 const PAGE_SIZE = 40
@@ -80,6 +84,7 @@ export default async function VerLancamentosPage({
           expenseCategories={expenseCategories}
           incomeCategories={incomeCategories}
           today={today}
+          aiAvailable={isAiConfigured()}
         />
       )}
 

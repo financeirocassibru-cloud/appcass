@@ -405,6 +405,10 @@ Decisões:
   escolha de filtro e não mexe no padrão.
 - **Duplicar hábitos aceita o mês em aberto.** Não dobra nada: o destino continua começando no
   mês seguinte à origem, e do mês atual entra o que já foi lançado.
+- **Categorizar depois do fato** (v1.1 — 2026-09-27). A seleção de "Todos os lançamentos" ganhou
+  "Categorizar": a mesma palavra-chave e a mesma IA da importação, aplicadas ao que já existe
+  (`lib/import/recategorize.ts`). Nada é gravado antes da prévia, e o que já tem categoria só
+  muda se a pessoa ligar "Trocar também os que já têm categoria" — sem isso, nem vai para a IA.
 
 ## Fase 12 — O extrato liquida o que já foi cadastrado, e Meta no [+]
 

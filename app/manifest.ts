@@ -9,8 +9,9 @@ import type { MetadataRoute } from 'next'
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'Finanças',
-    short_name: 'Finanças',
+    // v1.2 — 27/09/2026: nome do app passa a ser Cass.
+    name: 'Cass',
+    short_name: 'Cass',
     description:
       'Controle de finanças pessoais: lançamentos, contas fixas, parcelas, metas e projeção de saldo.',
     start_url: '/',
@@ -27,7 +28,9 @@ export default function manifest(): MetadataRoute.Manifest {
      * paisagem nas dez telas é trabalho de outro PR.
      */
     orientation: 'any',
-    background_color: '#ffffff',
+    // v1.2 — 27/09/2026: era `#ffffff`; agora é o mesmo lilás claro do fundo dos ícones, para a
+    // tela de abertura do PWA instalado emendar com o ícone em vez de piscar branco em volta dele.
+    background_color: '#f7f3fb',
     theme_color: '#7c3aed',
     lang: 'pt-BR',
     dir: 'ltr',
@@ -37,6 +40,7 @@ export default function manifest(): MetadataRoute.Manifest {
       { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
       // O mascarável recua o desenho para a área segura: o Android recorta um
       // círculo sobre o quadrado, e sem essa versão a ponta do traço some.
+      // v1.2 — 27/09/2026: os três PNGs agora trazem o logo Cass e são gerados por `npm run icons`.
       { src: '/icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
     ],
     shortcuts: [

@@ -51,7 +51,10 @@ calculado sempre — não pode depender da existência de um cenário ativo (bug
   **Ver todos** (`/novo/lancamentos`, "Todos os lançamentos"): o que foi cadastrado, pela data
   de criação. **v2.1 — 2026-09-27:** o link é "Ver todos" com a seta embaixo do texto, para não
   disputar a largura do título; a lista tem modo seleção com exclusão em lote e o atalho que
-  marca uma importação de extrato inteira. A descrição escolhe a categoria pela palavra-chave
+  marca uma importação de extrato inteira. **v2.2 — 2026-09-27:** a seleção também
+  **categoriza** retroativamente — por palavra-chave, ou palavra-chave + IA —, com prévia
+  "atual → sugerida" antes de gravar e um interruptor, desligado, para trocar também os que já
+  têm categoria. A descrição escolhe a categoria pela palavra-chave
   (Ajustes › Categorias) enquanto a pessoa não tocar num chip.
   **v2.2 — 2026-09-27:** Saída ganhou **Meta** — chips com as metas ativas (registrar aporte,
   que é uma saída) e "+ Nova meta" (cadastrar). E todo modo tem **Conectar ao extrato**, um

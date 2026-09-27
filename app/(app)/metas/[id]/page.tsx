@@ -10,7 +10,8 @@ import { GoalForm } from '../form'
 import { ContributionsPanel } from './contributions'
 import { GoalActions } from './actions'
 
-export const metadata = { title: 'Meta · Finanças' }
+// v1.1 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
+export const metadata = { title: 'Meta' }
 export const dynamic = 'force-dynamic'
 
 export default async function MetaPage({
