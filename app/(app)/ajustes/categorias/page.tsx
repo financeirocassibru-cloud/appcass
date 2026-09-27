@@ -1,7 +1,8 @@
 import { listAllCategories } from '@/lib/db/queries/categories'
 import { CategoryList, NewCategoryForm } from './forms'
 
-export const metadata = { title: 'Categorias · Finanças' }
+// v1.1 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
+export const metadata = { title: 'Categorias' }
 export const dynamic = 'force-dynamic'
 
 export default async function CategoriasPage() {

@@ -1,7 +1,8 @@
 import Link from 'next/link'
 import { LoginForm } from './login-form'
 
-export const metadata = { title: 'Entrar · Finanças' }
+// v1.1 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
+export const metadata = { title: 'Entrar' }
 
 export default async function LoginPage({
   searchParams,
@@ -13,7 +14,8 @@ export default async function LoginPage({
   return (
     <>
       <header className="mb-8">
-        <h1 className="text-2xl font-bold tracking-tight">Finanças</h1>
+        {/* v1.1 — 27/09/2026: nome do app passa a ser Cass. */}
+        <h1 className="text-2xl font-bold tracking-tight">Cass</h1>
         <p className="mt-1 text-sm text-[var(--foreground-muted)]">Entre na sua conta.</p>
       </header>
       <LoginForm proxima={proxima} />

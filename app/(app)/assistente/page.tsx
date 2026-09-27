@@ -3,7 +3,8 @@ import { listRecentJobs, type JobView } from '@/lib/ai/jobs'
 import { formatISODateBR } from '@/lib/ai/proposal'
 import { AssistantComposer } from '@/components/ai/composer'
 
-export const metadata = { title: 'Assistente · Finanças' }
+// v1.2 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
+export const metadata = { title: 'Assistente' }
 
 /**
  * A tela do assistente. v1.0 — 2026-09-26.

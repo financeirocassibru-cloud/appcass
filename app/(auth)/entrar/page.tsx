@@ -2,7 +2,8 @@ import Link from 'next/link'
 import { isSystemEmpty } from '@/lib/actions/auth'
 import { FirstAccountForm, RedeemForm } from './forms'
 
-export const metadata = { title: 'Criar conta · Finanças' }
+// v1.1 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
+export const metadata = { title: 'Criar conta' }
 
 // A porta de bootstrap depende do estado do banco; não pode ser pré-renderizada.
 export const dynamic = 'force-dynamic'

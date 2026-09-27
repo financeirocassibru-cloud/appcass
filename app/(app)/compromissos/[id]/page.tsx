@@ -6,7 +6,8 @@ import { RuleDetail } from '../rule-detail'
  * v1.1: o conteúdo mudou para `RuleDetail`, compartilhado com `/rendas/[id]`.
  */
 
-export const metadata = { title: 'Conta fixa · Finanças' }
+// v1.2 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
+export const metadata = { title: 'Conta fixa' }
 export const dynamic = 'force-dynamic'
 
 export default async function ContaFixaPage({

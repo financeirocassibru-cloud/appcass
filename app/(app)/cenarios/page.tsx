@@ -4,7 +4,8 @@ import { todayISO, addMonths } from '@/lib/finance/date'
 import { NewScenarioForm } from './new-form'
 import { ScenarioRow } from './scenario-row'
 
-export const metadata = { title: 'Cenários · Finanças' }
+// v1.1 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
+export const metadata = { title: 'Cenários' }
 export const dynamic = 'force-dynamic'
 
 export default async function CenariosPage() {

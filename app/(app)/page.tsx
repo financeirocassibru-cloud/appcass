@@ -9,8 +9,10 @@ import { BalanceHero } from '@/components/finance/balance-hero'
 import { Upcoming } from '@/components/finance/upcoming'
 import { AssistantComposer } from '@/components/ai/composer'
 import { ImportStatementLink } from '@/components/import/import-sheet'
+import { Logo } from '@/components/app/logo'
 
-export const metadata = { title: 'Início · Finanças' }
+// v1.6 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
+export const metadata = { title: 'Início' }
 
 /**
  * `force-dynamic` porque tudo nesta tela depende de "hoje" e do banco.
@@ -47,6 +49,11 @@ export default async function InicioPage() {
 
   return (
     <main className="mx-auto flex max-w-md flex-col gap-8 px-6 py-8">
+      {/* v1.6 — 27/09/2026: logo e nome do app no canto superior esquerdo, acima do saldo. */}
+      <header>
+        <Logo withName />
+      </header>
+
       <BalanceHero
         cents={balance.currentCents}
         anchorOn={balance.openingBalanceOn}

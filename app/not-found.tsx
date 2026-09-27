@@ -2,7 +2,9 @@ import Link from 'next/link'
 import { Compass } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
-export const metadata = { title: 'Não encontrado · Finanças' }
+// v1.1 — 27/09/2026: o app passa a se chamar Cass. `absolute` porque o `template` do
+// layout raiz não vale para o not-found do próprio segmento raiz.
+export const metadata = { title: { absolute: 'Não encontrado · Cass' } }
 
 export default function NotFound() {
   return (
