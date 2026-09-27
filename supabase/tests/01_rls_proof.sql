@@ -999,6 +999,69 @@ begin
   if n <> 0 then raise exception 'sem sessão deveriam aparecer 0 inscrições, apareceram %', n; end if;
 end $$;
 
+-- === v_source_breakdown (migration 0014) ===
+--
+-- A view nova da Análise. Duas coisas a provar: que ela isola por usuário — `security_invoker`
+-- esquecido faria a view rodar com os privilégios de quem a criou e mostrar o comprometimento
+-- da renda de todo mundo — e que ela soma a mesma coisa que `v_monthly_summary`, só repartida
+-- por origem. Se as duas discordassem, a tela mostraria um "sobra" que não fecha com o mês.
+
+set role authenticated;
+set request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
+
+do $$
+declare intrusas int; divergentes int; n int;
+begin
+  select count(*) into n from public.v_source_breakdown;
+  if n = 0 then raise exception 'a view deveria ver os lançamentos de Ana'; end if;
+
+  select count(*) into intrusas from public.v_source_breakdown
+   where user_id <> '11111111-1111-1111-1111-111111111111';
+  if intrusas <> 0 then
+    raise exception 'VAZAMENTO: v_source_breakdown mostrou % linha(s) de outro usuário', intrusas;
+  end if;
+
+  -- Repartir por origem não pode mudar o total do mês.
+  select count(*) into divergentes
+    from (
+      select month, kind, sum(total_cents) as por_origem
+        from public.v_source_breakdown group by month, kind
+    ) s
+    join (
+      select month,
+             income_cents  as income,
+             expense_cents as expense
+        from public.v_monthly_summary
+    ) m using (month)
+   where s.por_origem <> case when s.kind = 'income' then m.income else m.expense end;
+  if divergentes <> 0 then
+    raise exception 'v_source_breakdown não fecha com v_monthly_summary em % mês(es)', divergentes;
+  end if;
+end $$;
+
+-- Bruno não vê nada de Ana por ela.
+set request.jwt.claim.sub = '22222222-2222-2222-2222-222222222222';
+
+do $$
+declare intrusas int;
+begin
+  select count(*) into intrusas from public.v_source_breakdown
+   where user_id <> '22222222-2222-2222-2222-222222222222';
+  if intrusas <> 0 then
+    raise exception 'VAZAMENTO: Bruno viu % linha(s) de outro usuário na v_source_breakdown', intrusas;
+  end if;
+end $$;
+
+-- Sem sessão, nada.
+set request.jwt.claim.sub = '';
+
+do $$
+declare n int;
+begin
+  select count(*) into n from public.v_source_breakdown;
+  if n <> 0 then raise exception 'sem sessão a view deveria devolver 0 linhas, devolveu %', n; end if;
+end $$;
+
 reset role;
 
 select 'TODAS AS ASSERÇÕES DE RLS E CONSTRAINTS PASSARAM' as resultado;

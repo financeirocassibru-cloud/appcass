@@ -117,3 +117,23 @@ export interface ProjectRangeOptions {
   data: ProjectionData
   scenario?: Scenario
 }
+
+/**
+ * v1.1 — 2026-09-26: opções de `projectWindow`, a projeção que atravessa passado e futuro.
+ *
+ * Difere de `ProjectRangeOptions` em duas coisas, e as duas são a razão de existir um tipo
+ * separado em vez de um campo opcional: `today` é obrigatório, porque é a fronteira entre
+ * fato e previsão; e `data.entries` são os lançamentos **crus**, porque a partição depende da
+ * janela e quem a faz é a própria função.
+ */
+export interface ProjectWindowOptions {
+  from: ISODate
+  to: ISODate
+  /** A fronteira entre o que aconteceu e o que está previsto. */
+  today: ISODate
+  /** Saldo no fim do dia anterior a `from`. */
+  openingBalanceCents: number
+  /** Lançamentos crus: **não** passe o resultado de `entriesAheadOf`. */
+  data: ProjectionData
+  scenario?: Scenario
+}

@@ -86,11 +86,11 @@ export interface BriefingView {
 function revalidateEverything(): void {
   for (const path of [
     '/',
-    '/lancamentos',
+    '/historico',
     '/compromissos',
     '/parcelas',
     '/metas',
-    '/projecao',
+    '/analise',
     '/cenarios',
     '/assistente',
     '/ajustes/categorias',

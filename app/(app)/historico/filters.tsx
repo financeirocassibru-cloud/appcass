@@ -20,7 +20,7 @@ export function Filters({ categories, month }: { categories: Category[]; month: 
     next.set('mes', month)
     if (value === '') next.delete(key)
     else next.set(key, value)
-    router.replace(`/lancamentos?${next.toString()}` as Route)
+    router.replace(`/historico?${next.toString()}` as Route)
   }
 
   const selectClass =

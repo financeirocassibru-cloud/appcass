@@ -5,6 +5,7 @@ import { getCurrentBalance } from '@/lib/db/queries/balance'
 import { getAgendaItems } from '@/lib/db/queries/agenda'
 import { getCategoryBreakdown, getMonthlySeries, MONTHS_IN_CHART } from '@/lib/db/queries/summary'
 import { DEFAULT_HORIZON_DAYS, splitAgenda } from '@/lib/finance/agenda'
+import { formatMonthLong } from '@/lib/finance/series'
 import { todayISO } from '@/lib/finance/date'
 import { BalanceHero } from '@/components/finance/balance-hero'
 import { Upcoming } from '@/components/finance/upcoming'
@@ -97,7 +98,7 @@ export default async function InicioPage() {
           <CategoryRanking
             slices={breakdown.slices}
             totalCents={breakdown.totalCents}
-            month={breakdown.month}
+            caption={formatMonthLong(breakdown.month)}
           />
           <MonthlyBars data={monthly} today={today} />
         </>

@@ -10,10 +10,23 @@ import { addMonths, monthKey, parseISODate, type ISODate } from './date'
  * a partir do calendário e os dados são encaixados nela.
  *
  * Puro: o mês de referência entra por parâmetro (invariante 9).
+ *
+ * v1.1 — 2026-09-26: entraram `tickOffsets`, para a Análise desenhar o eixo Y em DOM e
+ * mantê-lo fixo enquanto o gráfico rola na horizontal, e `categoryDeviation`, para o gráfico
+ * de "fora da curva".
  */
 
 /** Chave de mês `YYYY-MM`. */
 export type MonthKey = string
+
+/**
+ * Períodos que a Análise oferece, em meses.
+ *
+ * Mora no módulo puro pelo mesmo motivo de `MAX_WINDOW_DAYS`: a tela valida `?meses=` com ele, e
+ * importá-lo da camada de query traria `lib/supabase/server` para o bundle do cliente.
+ */
+export const ANALYSIS_MONTHS = [3, 6, 12] as const
+export type AnalysisMonths = (typeof ANALYSIS_MONTHS)[number]
 
 const MONTH_KEY = /^(\d{4})-(\d{2})$/
 
@@ -206,6 +219,202 @@ export function topCategories(
     ...head,
     { categoryId: null, name: otherLabel, color: otherColor, totalCents: tailTotal },
   ]
+}
+
+/**
+ * Posição vertical, em pixels, de cada marca do eixo.
+ *
+ * Existe para o eixo Y poder ser desenhado como DOM, fora do SVG — que é o que permite
+ * fixá-lo enquanto o gráfico rola na horizontal. Um `<YAxis>` dentro do rolador rolaria junto,
+ * e um segundo gráfico sobreposto só para o eixo obrigaria a manter altura, margem e domínio
+ * de dois gráficos em sincronia, que é o tipo de coisa que desanda na primeira mudança.
+ *
+ * A conta é a mesma que o Recharts faz internamente; aqui ela fica onde pode ser provada.
+ *
+ * Centavos entram, pixels saem: é **apresentação**. O rótulo continua passando por
+ * `formatCentsCompact`, e nenhum valor em pixel volta a ser tratado como dinheiro
+ * (invariante 1).
+ */
+export function tickOffsets(
+  ticks: readonly number[],
+  plotHeight: number,
+  marginTop: number,
+  marginBottom: number,
+): { value: number; topPx: number }[] {
+  const low = ticks[0]
+  const high = ticks[ticks.length - 1]
+  if (low === undefined || high === undefined) return []
+
+  const area = plotHeight - marginTop - marginBottom
+  // Domínio degenerado (série constante): tudo cai no meio, e não numa divisão por zero.
+  if (high === low) return ticks.map((value) => ({ value, topPx: marginTop + area / 2 }))
+
+  return ticks.map((value) => ({
+    value,
+    topPx: marginTop + ((high - value) / (high - low)) * area,
+  }))
+}
+
+export interface CategoryDeviation {
+  categoryId: string | null
+  name: string
+  color: string
+  /** Média mensal no período consultado. */
+  currentCents: number
+  /** Média mensal no período de comparação. */
+  baselineCents: number
+  deltaCents: number
+  /** Variação relativa. `null` quando não há base — categoria nova não tem "+∞%". */
+  deltaRatio: number | null
+  isNew: boolean
+}
+
+/**
+ * Quanto cada categoria fugiu do próprio padrão.
+ *
+ * Responde "onde este período saiu da curva", que é diferente de "onde gastei mais" — o
+ * ranking de categorias já responde a segunda. Uma categoria pequena que dobrou merece ser
+ * vista; a maior de todas, estável, não é notícia.
+ *
+ * Os dois lados são normalizados para **média por mês** antes de comparar: sem isso, um
+ * período de três meses contra uma base de doze acusaria queda em tudo. A divisão é de
+ * apresentação — é uma média para comparar, nunca um total a reconciliar com lançamento
+ * nenhum.
+ *
+ * Categoria sem histórico sai com `deltaRatio: null` e `isNew: true`. Dividir por zero daria
+ * `Infinity`, que a tela mostraria como "+Infinity%".
+ */
+export function categoryDeviation(
+  current: readonly CategorySlice[],
+  baseline: readonly CategorySlice[],
+  options: { currentMonths: number; baselineMonths: number },
+): CategoryDeviation[] {
+  const { currentMonths, baselineMonths } = options
+  if (currentMonths < 1 || baselineMonths < 1) {
+    throw new Error(`Número de meses inválido: ${currentMonths}/${baselineMonths}`)
+  }
+
+  const baselineByKey = new Map<string, CategorySlice>()
+  for (const slice of baseline) baselineByKey.set(slice.categoryId ?? '', slice)
+
+  const keys = new Set<string>([
+    ...current.map((slice) => slice.categoryId ?? ''),
+    ...baseline.map((slice) => slice.categoryId ?? ''),
+  ])
+  const currentByKey = new Map<string, CategorySlice>()
+  for (const slice of current) currentByKey.set(slice.categoryId ?? '', slice)
+
+  const rows: CategoryDeviation[] = []
+  for (const key of keys) {
+    const now = currentByKey.get(key)
+    const before = baselineByKey.get(key)
+    const identity = now ?? before
+    if (!identity) continue
+
+    const currentCents = Math.round((now?.totalCents ?? 0) / currentMonths)
+    const baselineCents = Math.round((before?.totalCents ?? 0) / baselineMonths)
+
+    // Categoria que não gastou nem antes nem agora não é informação.
+    if (currentCents === 0 && baselineCents === 0) continue
+
+    rows.push({
+      categoryId: identity.categoryId,
+      name: identity.name,
+      color: identity.color,
+      currentCents,
+      baselineCents,
+      deltaCents: currentCents - baselineCents,
+      deltaRatio: baselineCents > 0 ? (currentCents - baselineCents) / baselineCents : null,
+      isNew: baselineCents === 0,
+    })
+  }
+
+  // O que mais fugiu primeiro, em reais — a variação percentual de um valor pequeno é ruído.
+  return rows.sort((a, b) => Math.abs(b.deltaCents) - Math.abs(a.deltaCents))
+}
+
+export interface CommitmentMonth {
+  month: MonthKey
+  incomeCents: number
+  /** Conta fixa: já estava comprometido antes de a pessoa decidir qualquer coisa. */
+  fixedCents: number
+  /** Parcela: comprometido por uma decisão passada, que segue cobrando. */
+  installmentCents: number
+  /** Gasto avulso — o único pedaço sobre o qual a decisão é do mês. */
+  variableCents: number
+  /** Aporte de meta: saiu da conta, mas não foi gasto. */
+  savedCents: number
+  /** O que sobrou. Negativo quer dizer que o mês gastou mais do que entrou. */
+  leftoverCents: number
+}
+
+/** Uma linha de `v_source_breakdown`, como a camada de query a entrega. */
+export interface SourceTotal {
+  month: MonthKey
+  kind: 'expense' | 'income'
+  source: 'manual' | 'recurring' | 'installment' | 'goal'
+  totalCents: number
+}
+
+/**
+ * Quanto de cada mês já estava comprometido antes de a pessoa decidir.
+ *
+ * É a pergunta que mais muda decisão em finança pessoal e que nenhum extrato responde: o total
+ * de saídas do mês não distingue o aluguel, que não dá para não pagar, do delivery, que dá. A
+ * repartição sai de `entries.source`, que o app já preenche desde a fase 4.
+ *
+ * O aporte de meta fica **fora** de "sobra" e fora de "gasto": o dinheiro saiu da conta, então
+ * somá-lo à sobra seria mentira, mas chamá-lo de gasto também — ele continua sendo da pessoa.
+ *
+ * Mês sem lançamento entra zerado em vez de desaparecer, pela mesma razão de
+ * `buildMonthlySeries`: se sumisse, os meses vizinhos leriam como consecutivos.
+ *
+ * Puro: os meses entram por parâmetro.
+ */
+export function buildCommitment(
+  rows: readonly SourceTotal[],
+  months: readonly MonthKey[],
+): CommitmentMonth[] {
+  const byMonth = new Map<MonthKey, CommitmentMonth>()
+  for (const month of months) {
+    byMonth.set(month, {
+      month,
+      incomeCents: 0,
+      fixedCents: 0,
+      installmentCents: 0,
+      variableCents: 0,
+      savedCents: 0,
+      leftoverCents: 0,
+    })
+  }
+
+  for (const row of rows) {
+    const target = byMonth.get(row.month)
+    // Linha fora do intervalo pedido é descartada: quem decide o intervalo é `months`, não o
+    // que o banco devolveu.
+    if (!target) continue
+
+    if (row.kind === 'income') {
+      target.incomeCents += row.totalCents
+      continue
+    }
+
+    if (row.source === 'recurring') target.fixedCents += row.totalCents
+    else if (row.source === 'installment') target.installmentCents += row.totalCents
+    else if (row.source === 'goal') target.savedCents += row.totalCents
+    else target.variableCents += row.totalCents
+  }
+
+  for (const month of byMonth.values()) {
+    month.leftoverCents =
+      month.incomeCents -
+      month.fixedCents -
+      month.installmentCents -
+      month.variableCents -
+      month.savedCents
+  }
+
+  return months.map((month) => byMonth.get(month)!)
 }
 
 /** Chave de mês da data informada — ponte entre `ISODate` e `MonthKey`. */

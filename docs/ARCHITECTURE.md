@@ -163,12 +163,12 @@ app/
   auth/logout/route.ts
   (app)/layout.tsx            # header com saldo + bottom nav
   (app)/page.tsx              # Início: saldo, próximos eventos, gráficos
-  (app)/lancamentos/          # extrato: filtros por mês, categoria, pago/pendente
+  (app)/historico/            # histórico: filtros por mês, categoria, pago/pendente; editar e excluir
   (app)/novo/                 # lançamento rápido
   (app)/recorrentes/          # custos fixos + rendas recorrentes
   (app)/parcelas/
   (app)/metas/
-  (app)/projecao/             # fluxo diário + cenários
+  (app)/analise/              # janela passado+futuro, escala dia/semana/mês, cenários, análises mensais
   (app)/ajustes/{perfil,categorias,convites}/
   manifest.ts
 components/
@@ -177,7 +177,7 @@ components/
                                # DailyFlowChart, CategoryDonut, UpcomingList
 lib/
   supabase/{client,server,admin,proxy}.ts
-  finance/{money,date,recurrence,installments,goals,projection,types}.ts
+  finance/{money,date,recurrence,installments,goals,projection,buckets,series,types}.ts
   db/queries/{entries,recurring,installments,goals,scenarios,categories}.ts
   actions/                    # Server Actions, uma por caso de uso
   validation/                 # schemas Zod por entidade
@@ -383,6 +383,55 @@ rota em si é autorizada por `CRON_SECRET`, comparado em tempo constante. O raci
 está escrito no topo do arquivo, porque quem o ler depois vai bater o olho no invariante e
 precisar da resposta ali.
 
+### A janela da Análise (v1.0 — 2026-09-27)
+
+A Projeção virou **Análise** e passou a atravessar passado e futuro numa curva só. Três coisas
+valem registro porque foram erros pegos no caminho, e não escolhas de estilo:
+
+- **A janela nunca começa antes da âncora do saldo.** `getCurrentBalance(d)` com `d` anterior à
+  âncora cai no atalho de janela vazia e devolve o próprio valor dela — que já embute tudo o que
+  foi liquidado antes. Acumular esses lançamentos em cima disso os contaria **duas vezes**,
+  falsificando o histórico e, pela costura em `today`, o saldo de hoje. Antes da âncora o app não
+  sabe qual era o saldo, e a tela diz isso em vez de desenhar zero.
+- **Recorrência, meta e cenário são expandidos de `max(from, hoje)`, nunca de `from`.**
+  `expandGoal` divide o que falta pelos meses **da janela**: com um `from` no passado, o aporte
+  futuro sai menor, sem erro e sem aviso. E `expandRecurringRule` com `from` no passado ressuscita
+  a conta fixa do mês passado que nunca virou lançamento.
+- **Uma janela inteiramente no passado descarta o vencido** em vez de somá-lo num dia qualquer:
+  empurrá-lo para um dia passado fabricaria história que contradiz os liquidados daquele mesmo
+  dia. O total sai em texto, dizendo que conta a partir de hoje.
+
+`projectRange` continua existindo e intocada, ao lado de `projectWindow`. As duas não são a mesma
+função com um parâmetro a mais: `projectRange` exige que o chamador já tenha rodado
+`entriesAheadOf` e `rollOverdueTo`, e um booleano que ligasse e desligasse a prevenção de
+contagem em dobro teria exatamente a forma do bug que ela previne.
+`tests/unit/projection-span.test.ts` prova que, com `from = hoje`, as duas devolvem a mesma série.
+
+**O agregado não esconde o mergulho.** O ponto de um bucket é o saldo de **fechamento**, nunca a
+média, e o piso do período viaja junto. O domínio do eixo vem do piso, não dos fechamentos: com os
+fechamentos, uma terça a −R$ 800 numa semana que fecha positiva sai fora da escala e o gráfico
+afirma que o saldo nunca ficou negativo. O alerta de texto continua apontando o **dia**, porque
+sai da série diária antes de qualquer agrupamento.
+
+**Constantes puras não podem morar na camada de query.** `MAX_WINDOW_DAYS` e `ANALYSIS_MONTHS`
+moram em `lib/finance/`, e não em `lib/db/queries/`, porque a tela valida a URL com elas — e
+importá-las de lá arrastaria `lib/supabase/server` para o bundle do navegador. O `next build`
+recusa, e é o invariante 4 sendo cobrado pela ferramenta.
+
+**Tela cheia em paisagem, e o que não existe.** `requestFullscreen` não existe no Safari do
+iPhone; `screen.orientation.lock` não existe em nenhum Safari e exige fullscreen onde existe. A
+expansão é em três camadas independentes — camada `fixed inset-0`, depois fullscreen, depois o
+lock — e cai na rotação por CSS onde as duas últimas faltam. Enquanto um formulário está aberto a
+rotação sai de cena: num conteúdo girado 90° o teclado sobe pelo lado físico e cobre o campo.
+`manifest.orientation` teve de virar `'any'`: com `'portrait'` o sistema não gira o PWA instalado
+de jeito nenhum.
+
+**Dois detalhes que a ferramenta pegou e valem lembrar:** `flushSync` é obrigatório antes de
+`requestFullscreen()`, senão a camada ainda não existe e a chamada nunca acontece (um `await` no
+lugar gastaria a ativação do usuário); e a variante `landscape:` lê a orientação do **aparelho**,
+que está em retrato exatamente quando a rotação é por CSS — ali a decisão de layout tem de vir do
+estado.
+
 ## Verificação
 
 **Local**
@@ -449,6 +498,26 @@ npm run dev
     1** — `Number('')` é `0`, e sem o corte o piso daria um resumo de um dia só.
 28. O botão Copiar põe o texto na área de transferência; barrada, a tela diz isso em vez de
     não fazer nada.
+
+**Cenários do Histórico e da Análise (v1.0 — 2026-09-27):**
+
+29. `/lancamentos` e `/projecao` redirecionam para `/historico` e `/analise`, com a query
+    preservada — `/lancamentos?status=pendente` chega com o filtro intacto.
+30. Tocar numa linha do Histórico abre a edição; salvar muda o valor na lista **e na Análise**.
+    Excluir remove. Uma parcela mostra o aviso de que faz parte de um plano.
+31. O ponto de **hoje** na Análise mostra exatamente o mesmo saldo que o herói do Início — é a
+    costura entre fato e previsão, e é onde a contagem em dobro apareceria.
+32. Arrastar o gráfico para trás revela o passado e **para** na data da âncora, com a frase
+    explicando o corte. A vista não salta quando a janela amplia, e não há uma requisição por
+    quadro do gesto.
+33. Trocar dia → semana → mês mantém período e cenário. Numa semana que fecha positiva mas teve
+    um dia negativo, a linha do piso aparece e o alerta de texto nomeia **o dia**.
+34. Tocar num ponto abre o detalhamento **do período** tocado: na escala semanal, os lançamentos
+    da semana inteira, com a data em cada linha.
+35. Duplo toque (ou o botão) abre em tela cheia; lançar, alterar e excluir funcionam ali e o
+    gráfico atualiza sem fechar; `Escape` e o botão voltar do Android fecham e devolvem o retrato.
+36. Com um cenário escolhido aparecem as duas curvas — com e sem ele. Um ajuste só afeta de hoje
+    para frente e **não** altera nenhum lançamento real (é o cenário 8, por outro caminho).
 
 **Produção:** deploy na Vercel com preview por PR; `Site URL`/`Redirect URLs` do Supabase
 apontando para produção e para os previews; `supabase db push` no projeto remoto; conferir

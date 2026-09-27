@@ -11,7 +11,19 @@ import { FormMessage } from '@/components/auth/form-field'
 
 const initialState: ScenarioActionState = {}
 
-export function NewScenarioForm({ today, defaultEnd }: { today: string; defaultEnd: string }) {
+/**
+ * v1.1 — 2026-09-27: ganhou `onCreated`, para a Análise poder criar um cenário num sheet e
+ * fechá-lo ao terminar. `/cenarios` não passa nada e segue como era.
+ */
+export function NewScenarioForm({
+  today,
+  defaultEnd,
+  onCreated,
+}: {
+  today: string
+  defaultEnd: string
+  onCreated?: () => void
+}) {
   const router = useRouter()
 
   const [state, formAction, pending] = useActionState(
@@ -20,6 +32,7 @@ export function NewScenarioForm({ today, defaultEnd }: { today: string; defaultE
       if (result.success) {
         toast.success(result.success)
         router.refresh()
+        onCreated?.()
       }
       return result
     },

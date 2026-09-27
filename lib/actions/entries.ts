@@ -15,9 +15,17 @@ export interface EntryActionState {
   success?: string
 }
 
-/** Rotas que exibem lançamentos e precisam ser revalidadas depois de escrever. */
+/**
+ * Rotas que exibem lançamentos e precisam ser revalidadas depois de escrever.
+ *
+ * v1.1 — 2026-09-26: `/analise` entrou na lista. Ela sempre exibiu lançamentos, e até aqui só
+ * não ficava velha por ser `force-dynamic` — o que é sorte, não garantia. Agora que dá para
+ * criar e editar lançamento de dentro dela (pela tela cheia do gráfico), a revalidação é o que
+ * faz a curva mudar depois de salvar.
+ */
 function revalidateEntryViews(): void {
-  revalidatePath('/lancamentos')
+  revalidatePath('/historico')
+  revalidatePath('/analise')
   revalidatePath('/')
 }
 

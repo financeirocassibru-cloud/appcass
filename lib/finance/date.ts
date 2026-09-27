@@ -10,6 +10,10 @@
  * acontece sobre os componentes ano/mês/dia, sem fuso envolvido. `Date` aparece
  * uma única vez, em `todayISO`, para descobrir que dia é hoje num fuso
  * explícito.
+ *
+ * v1.1 — 2026-09-26: entraram `isoWeekday`, `startOfWeek` e `endOfWeek`, para a Análise poder
+ * agrupar a série por semana. O dia da semana sai de uma congruência sobre ano/mês/dia, e não
+ * de `new Date(iso).getDay()`, pelo mesmo motivo que todo o resto do arquivo existe.
  */
 
 export const APP_TIMEZONE = 'America/Sao_Paulo'
@@ -154,6 +158,42 @@ export function startOfMonth(date: ISODate): ISODate {
 export function endOfMonth(date: ISODate): ISODate {
   const { year, month } = parseISODate(date)
   return toISODate({ year, month, day: daysInMonth(year, month) })
+}
+
+/**
+ * Dia da semana: 1 = segunda … 7 = domingo (numeração ISO-8601).
+ *
+ * Congruência de Sakamoto, sobre os componentes da data. **Não** use
+ * `new Date(iso).getDay()`: a string é interpretada como meia-noite UTC e em fuso negativo
+ * devolve o dia da semana anterior — o bug de deslocamento deste módulo, na sua forma mais
+ * silenciosa, porque erra só em parte dos dias do ano.
+ *
+ * Segunda como 1, e não domingo como 0, porque a semana do calendário em pt-BR e a do
+ * ISO-8601 começam na segunda; a aritmética de `startOfWeek` fica sem ajuste.
+ */
+export function isoWeekday(date: ISODate): number {
+  const { year, month, day } = parseISODate(date)
+
+  // Deslocamento acumulado do primeiro dia de cada mês dentro do ano comum.
+  const shift = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4] as const
+  // Janeiro e fevereiro pertencem ao ano anterior para efeito de bissexto: o dia 29/02
+  // acrescentado no fim do ciclo não pode contar para os meses antes dele.
+  const y = month < 3 ? year - 1 : year
+  const weekday =
+    (y + Math.floor(y / 4) - Math.floor(y / 100) + Math.floor(y / 400) + shift[month - 1]! + day) % 7
+
+  // A congruência devolve 0 = domingo; a numeração ISO quer domingo como 7.
+  return weekday === 0 ? 7 : weekday
+}
+
+/** Segunda-feira da semana da data informada. */
+export function startOfWeek(date: ISODate): ISODate {
+  return addDays(date, 1 - isoWeekday(date))
+}
+
+/** Domingo da semana da data informada. */
+export function endOfWeek(date: ISODate): ISODate {
+  return addDays(startOfWeek(date), 6)
 }
 
 /** Chave de mês `YYYY-MM`, usada como `occurrence_key` das recorrências. */

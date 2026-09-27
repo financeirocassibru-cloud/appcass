@@ -53,7 +53,7 @@ export function Upcoming({
         <h2 id="titulo-agenda" className="text-base font-semibold">
           A vencer
         </h2>
-        <Link href="/lancamentos?status=pendente" className="text-xs text-[var(--brand)] underline">
+        <Link href="/historico?status=pendente" className="text-xs text-[var(--brand)] underline">
           Ver tudo
         </Link>
       </div>

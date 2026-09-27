@@ -34,8 +34,23 @@ if (process.argv[1]?.endsWith('next') && process.argv[2] === 'build') {
   }
 }
 
+/**
+ * v1.1 — 2026-09-26: as abas Extrato e Projeção viraram Histórico e Análise, e as rotas
+ * acompanharam. Os redirecionamentos existem porque as URLs antigas estão nos atalhos do
+ * PWA já instalado e em qualquer link que a pessoa tenha guardado — um 404 ali seria o
+ * app aberto no vazio depois de uma atualização que ela não pediu.
+ *
+ * `permanent: true` (308) preserva o método e a query string, então
+ * `/lancamentos?status=pendente` chega em `/historico?status=pendente` com o filtro intacto.
+ */
 const nextConfig: NextConfig = {
   typedRoutes: true,
+  async redirects() {
+    return [
+      { source: '/lancamentos', destination: '/historico', permanent: true },
+      { source: '/projecao', destination: '/analise', permanent: true },
+    ]
+  },
 }
 
 export default nextConfig

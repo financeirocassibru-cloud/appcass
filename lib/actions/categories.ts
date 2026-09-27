@@ -16,7 +16,7 @@ export interface CategoryActionState {
 
 function revalidateCategoryViews(): void {
   revalidatePath('/ajustes/categorias')
-  revalidatePath('/lancamentos')
+  revalidatePath('/historico')
   revalidatePath('/novo')
 }
 

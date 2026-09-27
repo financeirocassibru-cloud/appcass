@@ -32,7 +32,7 @@ export interface InstallmentActionState {
 function revalidateInstallmentViews(): void {
   revalidatePath('/parcelas')
   revalidatePath('/')
-  revalidatePath('/lancamentos')
+  revalidatePath('/historico')
 }
 
 export async function createInstallmentPlan(

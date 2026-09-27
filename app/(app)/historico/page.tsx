@@ -1,3 +1,12 @@
+/**
+ * Histórico dos lançamentos.
+ *
+ * v1.1 — 2026-09-26: era "Extrato", em `/lancamentos`. Mudou de nome e de rota junto com a
+ * edição de lançamento, que passou a acontecer aqui: até esta versão `updateEntry` e
+ * `deleteEntry` existiam em `lib/actions/entries.ts` sem nenhuma interface que os chamasse, e
+ * corrigir um valor errado exigia excluir e lançar de novo — o que não era possível, porque
+ * excluir também não tinha botão.
+ */
 import Link from 'next/link'
 import type { Route } from 'next'
 import { listActiveCategories } from '@/lib/db/queries/categories'
@@ -9,7 +18,7 @@ import { Balance, Money } from '@/components/finance/money'
 import { EntryRow } from './entry-row'
 import { Filters } from './filters'
 
-export const metadata = { title: 'Extrato · Finanças' }
+export const metadata = { title: 'Histórico · Finanças' }
 export const dynamic = 'force-dynamic'
 
 const MONTH_LABEL = new Intl.DateTimeFormat('pt-BR', {
@@ -50,9 +59,13 @@ export default async function LancamentosPage({
   const settled =
     params.status === 'pago' ? true : params.status === 'pendente' ? false : undefined
 
-  const [entries, categories] = await Promise.all([
+  // As listas por tipo são para o formulário de edição, que abre em cima da linha: alternar
+  // saída/entrada dentro dele não deve ir ao banco de novo.
+  const [entries, categories, expenseCategories, incomeCategories] = await Promise.all([
     listEntriesByMonth({ month, categoryId: params.categoria, kind, settled }),
     listActiveCategories(),
+    listActiveCategories('expense'),
+    listActiveCategories('income'),
   ])
 
   const totals = monthTotals(entries)
@@ -64,13 +77,13 @@ export default async function LancamentosPage({
     if (params.categoria) next.set('categoria', params.categoria)
     if (params.tipo) next.set('tipo', params.tipo)
     if (params.status) next.set('status', params.status)
-    return `/lancamentos?${next.toString()}` as Route
+    return `/historico?${next.toString()}` as Route
   }
 
   return (
     <main className="mx-auto flex max-w-md flex-col gap-5 px-6 py-8">
       <header className="flex flex-col gap-4">
-        <h1 className="text-2xl font-bold tracking-tight">Extrato</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Histórico</h1>
 
         <nav className="flex items-center justify-between gap-2" aria-label="Mês">
           <Link
@@ -127,7 +140,13 @@ export default async function LancamentosPage({
               </h2>
               <ul className="divide-border bg-card divide-y rounded-xl border">
                 {group.items.map((entry) => (
-                  <EntryRow key={entry.id} entry={entry} />
+                  <EntryRow
+                    key={entry.id}
+                    entry={entry}
+                    expenseCategories={expenseCategories}
+                    incomeCategories={incomeCategories}
+                    today={today}
+                  />
                 ))}
               </ul>
             </section>

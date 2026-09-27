@@ -99,7 +99,7 @@ export default async function MetasPage() {
 
       <p className="text-xs text-[var(--foreground-muted)]">
         O aporte de cada meta aparece na{' '}
-        <Link href="/projecao" className="text-[var(--brand)] underline">
+        <Link href="/analise" className="text-[var(--brand)] underline">
           projeção
         </Link>{' '}
         como previsão, no último dia de cada mês. Ele não vira lançamento sozinho — só sai da conta

@@ -1,5 +1,5 @@
 import { formatCents } from '@/lib/finance/money'
-import { formatMonthLong, type CategorySlice } from '@/lib/finance/series'
+import type { CategorySlice } from '@/lib/finance/series'
 
 /**
  * Para onde foi o dinheiro no mês, por categoria.
@@ -18,16 +18,20 @@ import { formatMonthLong, type CategorySlice } from '@/lib/finance/series'
  *
  * Server Component: não tem estado nem interação, e não precisa de Recharts para
  * desenhar uma barra. Sai zero JavaScript para o cliente.
+ *
+ * v1.1 — 2026-09-27: `month` virou `caption`. A Análise mostra o mesmo ranking para um período de
+ * vários meses, e formatar o mês aqui dentro obrigava o chamador a mentir sobre o recorte.
  */
 
 export function CategoryRanking({
   slices,
   totalCents,
-  month,
+  caption,
 }: {
   slices: CategorySlice[]
   totalCents: number
-  month: string
+  /** O recorte que estas somas cobrem: "setembro de 2026", "últimos 6 meses". */
+  caption: string
 }) {
   const maxCents = slices.reduce((max, slice) => Math.max(max, slice.totalCents), 0)
 
@@ -37,9 +41,7 @@ export function CategoryRanking({
         <h2 id="titulo-categorias" className="text-base font-semibold">
           Saídas por categoria
         </h2>
-        <span className="text-xs text-[var(--foreground-muted)]">
-          {formatMonthLong(month)}
-        </span>
+        <span className="text-xs text-[var(--foreground-muted)]">{caption}</span>
       </div>
 
       {slices.length === 0 ? (

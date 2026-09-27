@@ -5,6 +5,8 @@ import { cn } from "cn"
 import { XIcon } from "lucide-react"
 import { Dialog as DialogPrimitive } from "radix-ui"
 
+import { usePortalContainer } from "@/components/ui/portal-container"
+
 import { Button } from "@/components/ui/button"
 
 function Dialog({
@@ -19,10 +21,22 @@ function DialogTrigger({
   return <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />
 }
 
+/**
+ * v1.1 — 2026-09-26: o portal passou a respeitar `usePortalContainer`.
+ *
+ * Em `document.body` — o padrão — um portal aberto de dentro de um elemento em fullscreen
+ * nativo simplesmente não é desenhado, porque está fora da subárvore que o navegador exibe.
+ * Quem entra em tela cheia declara o container e o portal vai para dentro dele. Sem contexto
+ * declarado o valor é `undefined`, que é o padrão do Radix: nada muda nas outras telas.
+ */
 function DialogPortal({
+  container,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Portal>) {
-  return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />
+  const fallback = usePortalContainer()
+  return (
+    <DialogPrimitive.Portal data-slot="dialog-portal" container={container ?? fallback} {...props} />
+  )
 }
 
 function DialogClose({
@@ -39,7 +53,7 @@ function DialogOverlay({
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 z-50 bg-black/50 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
+        "fixed inset-0 z-[60] bg-black/50 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
         className
       )}
       {...props}
@@ -61,7 +75,7 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border bg-background p-6 shadow-lg duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg",
+          "fixed top-[50%] left-[50%] z-[60] grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border bg-background p-6 shadow-lg duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg",
           className
         )}
         {...props}

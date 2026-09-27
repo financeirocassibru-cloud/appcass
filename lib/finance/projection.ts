@@ -7,6 +7,7 @@ import type {
   Occurrence,
   OverrideTarget,
   ProjectRangeOptions,
+  ProjectWindowOptions,
   Scenario,
   ScenarioOverride,
 } from './types'
@@ -136,6 +137,90 @@ export function projectRange(options: ProjectRangeOptions): DayProjection[] {
 
   // 6. Acumular por dia.
   return accumulate(all, from, to, openingBalanceCents)
+}
+
+/**
+ * Projeção de saldo dia a dia sobre uma janela que pode começar no **passado**.
+ *
+ * v1.1 — 2026-09-26: nova. Até aqui a projeção só olhava para frente (`from = hoje`), e a
+ * Análise precisa de uma curva única em que arrastar para trás mostra o que aconteceu e para
+ * frente o que vem.
+ *
+ * A janela tem duas metades com regras diferentes, e a diferença é o ponto inteiro da função:
+ *
+ * - **Antes de hoje o dia é fato.** O movimento é a soma dos lançamentos **liquidados** daquele
+ *   dia. Pendente não entra: o dinheiro não saiu da conta. Recorrência e meta **não** são
+ *   expandidas — inventar previsão sobre um dia que já passou é desenhar um gasto que não
+ *   aconteceu.
+ * - **De hoje em diante é previsão.** Vale o mesmo que `projectRange`: os pendentes e os
+ *   liquidados com data futura (`entriesAheadOf`), as recorrências e metas expandidas e
+ *   deduplicadas, e o cenário por cima.
+ *
+ * `projectRange` continua existindo e não foi tocada. As duas não são a mesma função com um
+ * parâmetro a mais: `projectRange` exige que o chamador já tenha rodado `entriesAheadOf` e
+ * `rollOverdueTo`, enquanto aqui a partição depende da janela e por isso pertence à função. Um
+ * booleano que ligasse e desligasse a prevenção de contagem em dobro teria exatamente a forma
+ * do bug que ela previne. `tests/unit/projection-span.test.ts` prova que, com `from = hoje`, as
+ * duas devolvem a mesma série — é a rede contra elas divergirem.
+ *
+ * **A costura.** No dia `today` o saldo tem de fechar no mesmo número que a tela mostra hoje:
+ * partindo do saldo do dia anterior a `from`, somar os liquidados até hoje reconstrói
+ * exatamente `getCurrentBalance(today)`, e o que se acrescenta em cima é o que ainda vai
+ * acontecer hoje. Se as duas metades se sobrepusessem num único lançamento, ele entraria duas
+ * vezes — o erro que destruiu o saldo do app antigo.
+ *
+ * Pura: `today` entra por parâmetro (invariante 9).
+ */
+export function projectWindow(options: ProjectWindowOptions): DayProjection[] {
+  const { from, to, today, openingBalanceCents, data, scenario } = options
+  if (compareISO(from, to) > 0) return []
+
+  // Onde o fato termina e a previsão começa, dentro desta janela.
+  const pastTo = compareISO(to, today) < 0 ? to : today
+  const futureFrom = compareISO(from, today) > 0 ? from : today
+  const hasFuture = compareISO(to, today) >= 0
+
+  // 1. O passado: o lado "já aconteceu" da partição, recortado pela janela.
+  const history: Occurrence[] = data.entries
+    .filter((entry) => entry.isSettled && entry.occurredOn <= today)
+    .filter((entry) => isWithin(entry.occurredOn, from, pastTo))
+    .map(entryToOccurrence)
+
+  // 2. O futuro. Sem nenhum dia a partir de hoje dentro da janela não há o que projetar — e,
+  //    principalmente, não há onde somar uma conta vencida: empurrá-la para um dia do passado
+  //    fabricaria história que contradiz os liquidados daquele mesmo dia. Ela sai da série, e
+  //    quem avisa é a tela, com o total que a camada de query devolve.
+  const ahead: Occurrence[] = hasFuture
+    ? rollOverdueTo(entriesAheadOf(data.entries, today), futureFrom)
+        .filter((entry) => isWithin(entry.occurredOn, futureFrom, to))
+        .map(entryToOccurrence)
+    : []
+
+  // 3. Recorrências e metas, expandidas de `futureFrom` — nunca de `from`.
+  //
+  //    Não é simetria: é correção. `expandGoal` divide o que falta pelos meses **da janela**,
+  //    então um `from` no passado espalha o aporte por meses que já passaram e o aporte futuro
+  //    sai menor — sem erro, sem aviso. E `expandRecurringRule` com `from` no passado
+  //    ressuscita a conta fixa do mês passado que nunca virou lançamento, porque não há
+  //    lançamento real para `dedupeAgainstEntries` casar com ela.
+  const projected: Occurrence[] = []
+  if (hasFuture) {
+    for (const rule of data.recurringRules) {
+      projected.push(...expandRecurringRule(rule, futureFrom, to))
+    }
+    for (const goal of data.goals) {
+      projected.push(...expandGoal(goal, futureFrom, to))
+    }
+  }
+  const deduped = dedupeAgainstEntries(projected, data.entries)
+
+  // 4. O cenário alcança só a previsão. Um `dateOverride` poderia mover uma ocorrência para
+  //    trás e um item hipotético poderia ser datado no passado; hipótese não é fato.
+  const future = scenario
+    ? applyScenario([...ahead, ...deduped], scenario, futureFrom, to)
+    : [...ahead, ...deduped]
+
+  return accumulate([...history, ...future], from, to, openingBalanceCents)
 }
 
 function entryToOccurrence(entry: Entry): Occurrence {

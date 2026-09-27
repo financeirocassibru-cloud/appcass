@@ -16,7 +16,17 @@ export default function manifest(): MetadataRoute.Manifest {
     start_url: '/',
     // `standalone` tira a barra do navegador: instalado, parece um app.
     display: 'standalone',
-    orientation: 'portrait',
+    /**
+     * v1.1 — 2026-09-27: era `'portrait'`, e com ele o sistema **não gira o PWA instalado de jeito
+     * nenhum** — nem quando a Análise pede paisagem para o gráfico em tela cheia, nem quando a
+     * pessoa gira o aparelho por conta própria.
+     *
+     * O custo é real e está assumido: agora toda tela pode ser renderizada em paisagem, e nenhuma
+     * foi desenhada para isso. O bloco `@media (orientation: landscape)` em `globals.css` é o
+     * mínimo para o conteúdo não ficar preso em duzentos pixels de altura; um passe completo de
+     * paisagem nas dez telas é trabalho de outro PR.
+     */
+    orientation: 'any',
     background_color: '#ffffff',
     theme_color: '#7c3aed',
     lang: 'pt-BR',
@@ -31,8 +41,8 @@ export default function manifest(): MetadataRoute.Manifest {
     ],
     shortcuts: [
       { name: 'Novo lançamento', short_name: 'Novo', url: '/novo' },
-      { name: 'Extrato', short_name: 'Extrato', url: '/lancamentos' },
-      { name: 'Projeção', short_name: 'Projeção', url: '/projecao' },
+      { name: 'Histórico', short_name: 'Histórico', url: '/historico' },
+      { name: 'Análise', short_name: 'Análise', url: '/analise' },
     ],
   }
 }
