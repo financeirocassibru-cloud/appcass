@@ -8,7 +8,7 @@ import { MoneyInput } from '@/components/finance/money-input'
 import { cn } from '@/lib/utils'
 
 /**
- * A conferência do extrato. v1.0 — 2026-09-27.
+ * A conferência do extrato. v1.1 — 2026-09-27.
  *
  * Mesmo espírito do "Entendi assim" do assistente: nada é gravado antes de a pessoa ver, e
  * tudo que dá para errar dá para ajustar aqui — incluir ou não, descrição, tipo, valor, data
@@ -16,7 +16,8 @@ import { cn } from '@/lib/utils'
  * formulário de ajuste só existe na linha aberta.
  */
 
-export type CategorySource = 'history' | 'ai' | 'user' | null
+// v1.1 — 2026-09-27: 'keyword', a categoria que veio da palavra-chave da própria pessoa.
+export type CategorySource = 'keyword' | 'history' | 'ai' | 'user' | null
 
 export interface ReviewRow extends KeyedRow {
   include: boolean
@@ -193,6 +194,7 @@ const Row = memo(function Row({
           <span className="text-muted-foreground flex flex-wrap gap-x-2 text-xs">
             <span>
               {categoryLabel ?? 'Sem categoria'}
+              {row.categorySource === 'keyword' && ' · pela palavra-chave'}
               {row.categorySource === 'ai' && ' · sugerida pela IA'}
               {row.categorySource === 'history' && ' · do histórico'}
             </span>

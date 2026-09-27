@@ -2,7 +2,7 @@ import 'server-only'
 
 import { todayISO, type ISODate } from '@/lib/finance/date'
 import { geminiModelChain } from './env'
-import { runInteraction } from './gemini'
+import { interactionText, runInteraction } from './gemini'
 import { parseLooseJson } from './json'
 import { nextModel } from './models'
 import {
@@ -13,7 +13,9 @@ import {
 } from './triage'
 
 /**
- * A chamada da triagem. v1.0 — 2026-09-26.
+ * A chamada da triagem. v1.1 — 2026-09-27.
+ *
+ * v1.1: a resposta é lida por `interactionText` (dos `steps`), e não de `output_text`.
  *
  * O primeiro tempo da conversa, e a razão de ele ser rápido está toda aqui:
  *
@@ -84,7 +86,9 @@ async function tentar(model: string, input: string): Promise<Triage | null> {
 
     if (!interaction) return null
 
-    return parseTriage(parseLooseJson(interaction.output_text))
+    // v1.1 — 2026-09-27: o texto vem dos `steps` (`interactionText`); `output_text` não existe
+    // no JSON da API e deixava a triagem sempre vazia.
+    return parseTriage(parseLooseJson(interactionText(interaction)))
   } catch {
     // Silencioso de propósito: a triagem que falha não é um erro para a pessoa ler, é
     // um caminho que não deu. Quem chama já sabe o que fazer com `null`, e o erro de

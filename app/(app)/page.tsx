@@ -3,14 +3,10 @@ import { Plus } from 'lucide-react'
 import { isAiConfigured } from '@/lib/ai/env'
 import { getCurrentBalance } from '@/lib/db/queries/balance'
 import { getAgendaItems } from '@/lib/db/queries/agenda'
-import { getCategoryBreakdown, getMonthlySeries, MONTHS_IN_CHART } from '@/lib/db/queries/summary'
 import { DEFAULT_HORIZON_DAYS, splitAgenda } from '@/lib/finance/agenda'
-import { formatMonthLong } from '@/lib/finance/series'
 import { todayISO } from '@/lib/finance/date'
 import { BalanceHero } from '@/components/finance/balance-hero'
 import { Upcoming } from '@/components/finance/upcoming'
-import { CategoryRanking } from '@/components/finance/charts/category-ranking'
-import { MonthlyBars } from '@/components/finance/charts/monthly-bars'
 import { AssistantComposer } from '@/components/ai/composer'
 import { ImportStatementLink } from '@/components/import/import-sheet'
 
@@ -30,13 +26,14 @@ export default async function InicioPage() {
 
   // v1.2 — 2026-09-26: a leitura de `ai_insights_enabled` saiu daqui junto com o resumo,
   // que mudou para a Projeção. Uma query a menos na tela que mais se abre.
-  const [balance, agendaItems, breakdown, monthly] = await Promise.all([
+  // v1.5 — 2026-09-27: "Saídas por categoria" e "Mês a mês" saíram daqui para a Análise,
+  // que já tinha a primeira e passou a ter a segunda no carrossel de "Como foi". O Início
+  // fica com o que se olha todo dia: saldo, caixa do assistente e o que vem por aí.
+  const [balance, agendaItems] = await Promise.all([
     getCurrentBalance(today),
     // Junta pendentes reais e ocorrências de contas fixas ainda não
     // materializadas, já deduplicadas entre si.
     getAgendaItems(today, DEFAULT_HORIZON_DAYS),
-    getCategoryBreakdown(today),
-    getMonthlySeries(today, MONTHS_IN_CHART),
   ])
 
   const assistenteLigado = isAiConfigured()
@@ -46,7 +43,6 @@ export default async function InicioPage() {
   const isFirstUse =
     balance.countedEntries === 0 &&
     agendaItems.length === 0 &&
-    breakdown.slices.length === 0 &&
     !balance.isAnchorConfigured
 
   return (
@@ -103,15 +99,7 @@ export default async function InicioPage() {
           </Link>
         </section>
       ) : (
-        <>
-          <Upcoming agenda={agenda} today={today} />
-          <CategoryRanking
-            slices={breakdown.slices}
-            totalCents={breakdown.totalCents}
-            caption={formatMonthLong(breakdown.month)}
-          />
-          <MonthlyBars data={monthly} today={today} />
-        </>
+        <Upcoming agenda={agenda} today={today} />
       )}
     </main>
   )

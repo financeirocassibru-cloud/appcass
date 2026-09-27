@@ -3,7 +3,9 @@ import {
   cancelInteraction,
   GeminiError,
   getInteraction,
+  interactionText,
   isTerminal,
+  runInteraction,
   startInteraction,
 } from '@/lib/ai/gemini'
 import { TOOLS } from '@/lib/ai/tools'
@@ -246,21 +248,26 @@ describe('getInteraction', () => {
     expect(init.method).toBe('GET')
   })
 
-  it('devolve os passos e o texto de saída', async () => {
+  // v1.1 — 2026-09-27: o mock tem o formato do JSON REST de verdade. O anterior trazia
+  // `output_text`, que só os SDKs montam — e foi por isso que o teste passava enquanto o
+  // Diagnóstico falhava sempre em produção.
+  it('devolve os passos, e o texto sai dos passos de model_output', async () => {
     const doFetch = vi.fn(async () =>
       resposta({
         id: 'int-1',
         status: 'completed',
-        steps: [{ type: 'function_call', name: 'create_entry' }],
-        output_text: 'pronto',
+        steps: [
+          { type: 'function_call', name: 'create_entry' },
+          { type: 'model_output', content: [{ type: 'text', text: 'pronto' }] },
+        ],
       }),
     )
 
     const interaction = await getInteraction('int-1', doFetch)
 
     expect(interaction.status).toBe('completed')
-    expect(interaction.steps).toHaveLength(1)
-    expect(interaction.output_text).toBe('pronto')
+    expect(interaction.steps).toHaveLength(2)
+    expect(interactionText(interaction)).toBe('pronto')
   })
 })
 
@@ -282,11 +289,71 @@ describe('cancelInteraction', () => {
   })
 })
 
+describe('interactionText', () => {
+  it('junta as partes de texto de todos os passos model_output', () => {
+    expect(
+      interactionText({
+        id: 'x',
+        steps: [
+          { type: 'user_input', content: [{ type: 'text', text: 'pergunta' }] },
+          { type: 'model_output', content: [{ type: 'text', text: 'Olá, ' }] },
+          { type: 'model_output', content: [{ type: 'text', text: 'tudo certo.' }] },
+        ],
+      }),
+    ).toBe('Olá, tudo certo.')
+  })
+
+  it('ignora partes que não são texto e passos tortos', () => {
+    expect(
+      interactionText({
+        id: 'x',
+        steps: [
+          null,
+          'lixo',
+          { type: 'model_output', content: 'não é lista' },
+          { type: 'model_output', content: [{ type: 'image', data: '...' }, { type: 'text', text: 'ok' }] },
+        ],
+      }),
+    ).toBe('ok')
+  })
+
+  it('aceita output_text, se um dia vier', () => {
+    expect(interactionText({ id: 'x', output_text: 'legado' })).toBe('legado')
+  })
+
+  it('sem texto nenhum devolve null', () => {
+    expect(interactionText({ id: 'x', steps: [] })).toBeNull()
+    expect(interactionText({ id: 'x' })).toBeNull()
+    expect(interactionText({ id: 'x', steps: [{ type: 'model_output', content: [{ type: 'text', text: '  ' }] }] })).toBeNull()
+    expect(interactionText(null)).toBeNull()
+  })
+})
+
+describe('runInteraction', () => {
+  it('devolve na primeira resposta quando ela já traz texto nos passos', async () => {
+    const doFetch = vi.fn(async () =>
+      resposta({
+        id: 'int-1',
+        status: 'in_progress',
+        steps: [{ type: 'model_output', content: [{ type: 'text', text: '{"a":1}' }] }],
+      }),
+    )
+
+    const interaction = await runInteraction({ model: 'm', input: 'oi' }, doFetch)
+
+    expect(doFetch).toHaveBeenCalledTimes(1)
+    expect(interactionText(interaction)).toBe('{"a":1}')
+  })
+})
+
 describe('isTerminal', () => {
   it('reconhece os estados finais, inclusive o "cancelled" com dois L', () => {
     expect(isTerminal('completed')).toBe(true)
     expect(isTerminal('failed')).toBe(true)
     expect(isTerminal('cancelled')).toBe(true)
+    // v1.1 — 2026-09-27: `incomplete` é final na API; sem ele o Diagnóstico esperava a
+    // fatia inteira de 20s por uma interação já encerrada.
+    expect(isTerminal('incomplete')).toBe(true)
   })
 
   it('em andamento e ausente não são finais', () => {

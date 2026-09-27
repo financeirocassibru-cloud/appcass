@@ -19,6 +19,11 @@ import type { CategorySlice } from '@/lib/finance/series'
  * Server Component: não tem estado nem interação, e não precisa de Recharts para
  * desenhar uma barra. Sai zero JavaScript para o cliente.
  *
+ * v1.2 — 2026-09-27: saiu do Início. Na Análise é a alternativa **Barras** do cartão
+ * "Saídas por categoria", cujo padrão passou a ser a pizza (`CategoryPie`) por pedido
+ * explícito — a razão da escolha original, abaixo, continua valendo, e é por isso que as
+ * barras ficaram a um toque.
+ *
  * v1.1 — 2026-09-27: `month` virou `caption`. A Análise mostra o mesmo ranking para um período de
  * vários meses, e formatar o mês aqui dentro obrigava o chamador a mentir sobre o recorte.
  */
@@ -27,26 +32,38 @@ export function CategoryRanking({
   slices,
   totalCents,
   caption,
+  embedded = false,
 }: {
   slices: CategorySlice[]
   totalCents: number
   /** O recorte que estas somas cobrem: "setembro de 2026", "últimos 6 meses". */
   caption: string
+  /**
+   * v1.2 — 2026-09-27: dentro de um carrossel da Análise (`PanelCarousel`), que já mostra o
+   * título e o recorte no cabeçalho dele — aqui eles não se repetem.
+   */
+  embedded?: boolean
 }) {
   const maxCents = slices.reduce((max, slice) => Math.max(max, slice.totalCents), 0)
 
   return (
-    <section aria-labelledby="titulo-categorias" className="flex flex-col gap-3">
-      <div className="flex items-baseline justify-between gap-3">
-        <h2 id="titulo-categorias" className="text-base font-semibold">
-          Saídas por categoria
-        </h2>
-        <span className="text-xs text-[var(--foreground-muted)]">{caption}</span>
-      </div>
+    <section
+      aria-labelledby={embedded ? undefined : 'titulo-categorias'}
+      aria-label={embedded ? 'Saídas por categoria, em barras' : undefined}
+      className="flex flex-col gap-3"
+    >
+      {embedded ? null : (
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 id="titulo-categorias" className="text-base font-semibold">
+            Saídas por categoria
+          </h2>
+          <span className="text-xs text-[var(--foreground-muted)]">{caption}</span>
+        </div>
+      )}
 
       {slices.length === 0 ? (
         <p className="rounded-xl bg-[var(--surface)] p-4 text-sm text-[var(--foreground-muted)]">
-          Nenhuma saída registrada neste mês.
+          Nenhuma saída registrada neste período.
         </p>
       ) : (
         <div className="flex flex-col gap-4 rounded-xl bg-[var(--surface)] p-4">

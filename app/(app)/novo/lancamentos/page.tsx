@@ -1,14 +1,18 @@
 import Link from 'next/link'
 import { ChevronLeft } from 'lucide-react'
 import { listActiveCategories } from '@/lib/db/queries/categories'
-import { listCreatedFeed } from '@/lib/db/queries/created-feed'
+import { listCreatedFeed, listImportBatches } from '@/lib/db/queries/created-feed'
 import { createdDay, feedCursor } from '@/lib/feed'
 import { todayISO } from '@/lib/finance/date'
 import { formatDayLabel, groupByDay } from '@/lib/finance/grouping'
-import { FeedRow } from './feed-row'
+import { FeedList } from './feed-list'
 
 /**
- * "Ver lançamentos": tudo o que foi cadastrado, na ordem em que foi gravado. v1.0 — 2026-09-27.
+ * "Todos os lançamentos" (o "Ver todos" do [+]): tudo o que foi cadastrado, na ordem em que
+ * foi gravado. v1.1 — 2026-09-27.
+ *
+ * v1.1: o nome acompanhou o link, que virou "Ver todos"; e a lista ganhou modo seleção, com
+ * exclusão em lote e o atalho que marca uma importação de extrato inteira (`FeedList`).
  *
  * O Histórico responde "quando o dinheiro entrou ou saiu"; esta tela responde "o que eu
  * registrei, e quando". Um lançamento de ontem para o mês que vem aparece aqui em cima, e lá
@@ -19,7 +23,7 @@ import { FeedRow } from './feed-row'
  * na linha, como "para 05/10".
  */
 
-export const metadata = { title: 'Ver lançamentos · Finanças' }
+export const metadata = { title: 'Todos os lançamentos · Finanças' }
 export const dynamic = 'force-dynamic'
 
 const PAGE_SIZE = 40
@@ -38,8 +42,18 @@ export default async function VerLancamentosPage({
     listActiveCategories('income'),
   ])
 
-  const groups = groupByDay(items, (item) => createdDay(item.createdAt))
+  const groups = groupByDay(items, (item) => createdDay(item.createdAt)).map((group) => ({
+    date: group.date,
+    label: formatDayLabel(group.date, today),
+    items: group.items,
+  }))
   const last = items.at(-1)
+
+  // As importações citadas nesta página, com o tamanho inteiro de cada uma.
+  const batchIds = [
+    ...new Set(items.flatMap((item) => (item.type === 'entry' && item.importBatchId ? [item.importBatchId] : []))),
+  ]
+  const batches = await listImportBatches(batchIds)
 
   return (
     <main className="mx-auto flex max-w-md flex-col gap-5 px-6 py-8">
@@ -48,7 +62,7 @@ export default async function VerLancamentosPage({
           <ChevronLeft className="size-4" aria-hidden />
           Novo lançamento
         </Link>
-        <h1 className="text-2xl font-bold tracking-tight">Ver lançamentos</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Todos os lançamentos</h1>
         <p className="text-muted-foreground text-sm">
           Na ordem em que foram cadastrados — o mais recente primeiro. Parcelamentos aparecem uma
           vez, e não parcela por parcela.
@@ -60,26 +74,13 @@ export default async function VerLancamentosPage({
           {antes ? 'Não há nada mais antigo.' : 'Nada cadastrado ainda.'}
         </p>
       ) : (
-        <div className="flex flex-col gap-5">
-          {groups.map((group) => (
-            <section key={group.date} className="flex flex-col gap-1">
-              <h2 className="text-muted-foreground px-1 text-xs font-semibold uppercase">
-                {formatDayLabel(group.date, today)}
-              </h2>
-              <ul className="divide-border bg-card divide-y rounded-xl border">
-                {group.items.map((item) => (
-                  <FeedRow
-                    key={`${item.type}:${item.id}`}
-                    item={item}
-                    expenseCategories={expenseCategories}
-                    incomeCategories={incomeCategories}
-                    today={today}
-                  />
-                ))}
-              </ul>
-            </section>
-          ))}
-        </div>
+        <FeedList
+          groups={groups}
+          batches={batches}
+          expenseCategories={expenseCategories}
+          incomeCategories={incomeCategories}
+          today={today}
+        />
       )}
 
       <nav className="flex items-center justify-between gap-3" aria-label="Páginas">

@@ -6,7 +6,12 @@ import { createClient } from '@/lib/supabase/server'
 import type { EntryWithCategory } from './entries'
 
 /**
- * "Ver lançamentos": o que foi cadastrado, pela data de criação. v1.0 — 2026-09-27.
+ * "Ver todos" (antes "Ver lançamentos"): o que foi cadastrado, pela data de criação.
+ * v1.1 — 2026-09-27.
+ *
+ * v1.1: o lançamento traz o `import_batch_id` (migration 0018), e `listImportBatches` conta
+ * cada importação que aparece na página — é o que permite "selecionar todos desta
+ * importação" mesmo quando ela passa de uma página.
  *
  * Três leituras por `created_at desc`, cada uma com o mesmo limite, intercaladas por
  * `mergeByCreatedAt` (`lib/feed.ts`). Pedir `limit` de cada uma e cortar depois é o que
@@ -24,13 +29,15 @@ import type { EntryWithCategory } from './entries'
 const ENTRY_COLUMNS = `
   id, kind, occurred_on, description, amount_cents, notes,
   is_settled, settled_on, source, source_id, occurrence_key,
-  installment_number, installment_total, created_at,
+  installment_number, installment_total, created_at, import_batch_id,
   category_id, categories ( id, name, color, icon )
 ` as const
 
 export interface FeedEntry extends FeedItemBase {
   type: 'entry'
   entry: EntryWithCategory
+  /** A importação de extrato que gravou este lançamento; `null` para digitado. */
+  importBatchId: string | null
 }
 
 export interface FeedRule extends FeedItemBase {
@@ -68,6 +75,7 @@ interface EntryRow {
   installment_number: number | null
   installment_total: number | null
   created_at: string
+  import_batch_id: string | null
   category_id: string | null
   categories: { id: string; name: string; color: string; icon: string | null } | null
 }
@@ -123,6 +131,7 @@ export async function listCreatedFeed({
     type: 'entry',
     id: row.id,
     createdAt: row.created_at,
+    importBatchId: row.import_batch_id,
     entry: {
       id: row.id,
       kind: row.kind,
@@ -165,4 +174,60 @@ export async function listCreatedFeed({
 
   const merged = mergeByCreatedAt<FeedItem>([entryItems, ruleItems, planItems], take)
   return { items: merged.slice(0, limit), hasMore: merged.length > limit }
+}
+
+/** Uma importação de extrato, como o atalho de seleção a mostra. */
+export interface ImportBatch {
+  id: string
+  /** Quantos lançamentos dela ainda existem — inclusive os de outras páginas. */
+  count: number
+  /** O período do extrato: a menor e a maior data de competência. */
+  from: ISODate
+  to: ISODate
+}
+
+/**
+ * As importações citadas na página, com o tamanho de cada uma. v1.0 — 2026-09-27.
+ *
+ * Só as da página, e não todas: é delas que a pessoa pode pedir "selecionar todos". Uma
+ * importação tem no máximo 1000 linhas (`MAX_IMPORT_ROWS`), e a página cita poucas, então a
+ * contagem aqui mesmo é barata — sem depender de agregação no PostgREST.
+ */
+export async function listImportBatches(batchIds: readonly string[]): Promise<ImportBatch[]> {
+  if (batchIds.length === 0) return []
+  const supabase = await createClient()
+
+  // O Supabase devolve no máximo 1000 linhas por pedido; várias importações na mesma página
+  // passam disso, então pagina — como `prepareImport`.
+  const rows: { import_batch_id: string | null; occurred_on: string }[] = []
+  for (let page = 0; page < 20; page += 1) {
+    const { data, error } = await supabase
+      .from('entries')
+      .select('import_batch_id, occurred_on')
+      .in('import_batch_id', [...batchIds])
+      .order('id')
+      .range(page * 1000, page * 1000 + 999)
+    if (error) throw new Error(`Falha ao ler importações: ${error.message}`)
+    rows.push(...data)
+    if (data.length < 1000) break
+  }
+
+  const batches = new Map<string, ImportBatch>()
+  for (const row of rows) {
+    if (!row.import_batch_id) continue
+    const atual = batches.get(row.import_batch_id)
+    if (!atual) {
+      batches.set(row.import_batch_id, {
+        id: row.import_batch_id,
+        count: 1,
+        from: row.occurred_on,
+        to: row.occurred_on,
+      })
+    } else {
+      atual.count += 1
+      if (row.occurred_on < atual.from) atual.from = row.occurred_on
+      if (row.occurred_on > atual.to) atual.to = row.occurred_on
+    }
+  }
+  return [...batches.values()]
 }

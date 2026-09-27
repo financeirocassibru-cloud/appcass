@@ -20,7 +20,12 @@ import {
 import { cn } from '@/lib/utils'
 
 /**
- * Uma linha de "Ver lançamentos". v1.0 — 2026-09-27.
+ * Uma linha de "Ver todos". v1.1 — 2026-09-27.
+ *
+ * v1.1: modo seleção. Com `selection`, o lançamento avulso vira uma caixa de marcar em vez
+ * de abrir a edição, e regra e parcelamento ficam apagados — eles têm a exclusão deles, na
+ * tela deles. O importado ganha o selo "importada", para a importação ruim se achar de
+ * relance.
  *
  * O selo diz o que foi cadastrado; a hora é a da criação; a data ao lado é a de competência.
  * Tocar abre a edição — o lançamento avulso num painel, como no Histórico, e a regra ou o
@@ -29,23 +34,76 @@ import { cn } from '@/lib/utils'
 
 const FREQUENCY: Record<string, string> = { monthly: 'mensal', weekly: 'semanal', yearly: 'anual' }
 
+export interface RowSelection {
+  checked: boolean
+  onToggle: () => void
+}
+
 export function FeedRow({
   item,
   expenseCategories,
   incomeCategories,
   today,
+  selecting = false,
+  selection,
 }: {
   item: FeedItem
   expenseCategories: Category[]
   incomeCategories: Category[]
   today: string
+  /** A lista está em modo seleção. */
+  selecting?: boolean
+  /** Presente só para linha que pode ser marcada (lançamento avulso ou importado). */
+  selection?: RowSelection | undefined
 }) {
   const router = useRouter()
   const [editing, setEditing] = useState(false)
   const time = createdTime(item.createdAt)
 
+  if (selecting && !selection && item.type !== 'entry') {
+    // Regra e parcelamento: visíveis, para a ordem da lista não pular, mas fora do alcance.
+    return (
+      <li className="flex min-h-11 items-center gap-3 px-3 py-2.5 opacity-50">
+        <span className="size-5 shrink-0" aria-hidden />
+        <Content
+          badge={item.type === 'installment' ? 'Parcelado' : item.kind === 'income' ? 'Renda fixa' : 'Conta fixa'}
+          title={item.description}
+          detail="Exclua na tela do cadastro"
+        />
+      </li>
+    )
+  }
+
   if (item.type === 'entry') {
     const { entry } = item
+    const imported = item.importBatchId !== null
+    const badge =
+      entry.kind === 'expense'
+        ? imported
+          ? 'Saída importada'
+          : 'Saída avulsa'
+        : imported
+          ? 'Entrada importada'
+          : 'Entrada avulsa'
+    const detail = `${time} · para ${formatShort(entry.occurredOn)}${entry.category ? ` · ${entry.category.name}` : ''}${entry.isSettled ? '' : ' · pendente'}`
+
+    if (selection) {
+      return (
+        <li>
+          <label className="flex min-h-11 w-full cursor-pointer items-center gap-3 px-3 py-2.5">
+            <input
+              type="checkbox"
+              checked={selection.checked}
+              onChange={selection.onToggle}
+              className="size-5 shrink-0 accent-[var(--brand)]"
+            />
+            <Content badge={badge} title={entry.description} detail={detail} />
+            <Money cents={entry.amountCents} kind={entry.kind} className="shrink-0 text-sm" />
+          </label>
+        </li>
+      )
+    }
+
     return (
       <li>
         <button
@@ -53,11 +111,7 @@ export function FeedRow({
           onClick={() => setEditing(true)}
           className="flex min-h-11 w-full items-center gap-3 px-3 py-2.5 text-left"
         >
-          <Content
-            badge={entry.kind === 'expense' ? 'Saída avulsa' : 'Entrada avulsa'}
-            title={entry.description}
-            detail={`${time} · para ${formatShort(entry.occurredOn)}${entry.category ? ` · ${entry.category.name}` : ''}${entry.isSettled ? '' : ' · pendente'}`}
-          />
+          <Content badge={badge} title={entry.description} detail={detail} />
           <Money
             cents={entry.amountCents}
             kind={entry.kind}

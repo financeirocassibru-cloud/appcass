@@ -7,7 +7,14 @@ import {
   archiveCategorySchema,
   createCategorySchema,
   renameCategorySchema,
+  updateCategoryKeywordsSchema,
 } from '@/lib/validation/entries'
+
+/**
+ * Escrita de categorias. v1.1 — 2026-09-27.
+ *
+ * v1.1: `updateCategoryKeywords`, para as palavras-chave que categorizam sozinhas.
+ */
 
 export interface CategoryActionState {
   error?: string
@@ -85,6 +92,45 @@ export async function renameCategory(
 
   revalidateCategoryViews()
   return { success: 'Categoria renomeada.' }
+}
+
+/**
+ * Grava as palavras-chave de uma categoria. v1.0 — 2026-09-27.
+ *
+ * A lista inteira substitui a anterior — o campo da tela é o estado completo, e somar
+ * seria não ter como remover uma palavra. `.select('id')` e a checagem de vazio pelo
+ * invariante 17: sem elas, uma categoria de outra pessoa "salvaria" sem erro nenhum.
+ */
+export async function updateCategoryKeywords(
+  _prev: CategoryActionState,
+  formData: FormData,
+): Promise<CategoryActionState> {
+  const parsed = updateCategoryKeywordsSchema.safeParse({
+    id: formData.get('id'),
+    keywords: formData.get('keywords') ?? '',
+  })
+
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos' }
+  }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('categories')
+    .update({ keywords: parsed.data.keywords })
+    .eq('id', parsed.data.id)
+    .select('id')
+
+  if (error) return { error: `Não foi possível salvar: ${error.message}` }
+  if (!data || data.length === 0) return { error: 'Categoria não encontrada.' }
+
+  revalidateCategoryViews()
+  return {
+    success:
+      parsed.data.keywords.length === 0
+        ? 'Palavras-chave removidas.'
+        : 'Palavras-chave salvas.',
+  }
 }
 
 /**

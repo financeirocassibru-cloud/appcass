@@ -34,8 +34,8 @@ describe('readCategorySuggestions', () => {
     { key: 'income:empresa', description: 'Pix de Empresa', kind: 'income' as const },
   ]
   const categories = [
-    { id: TRANSPORTE, name: 'Transporte', kind: 'expense' as const },
-    { id: SALARIO, name: 'Salário', kind: 'income' as const },
+    { id: TRANSPORTE, name: 'Transporte', kind: 'expense' as const, keywords: [] },
+    { id: SALARIO, name: 'Salário', kind: 'income' as const, keywords: [] },
   ]
 
   it('aceita só id existente, do mesmo tipo, para chave pedida', () => {

@@ -10,7 +10,12 @@ import { createClient } from '@/lib/supabase/server'
 import { commitImportSchema, prepareImportSchema, suggestGroupsSchema } from '@/lib/validation/import'
 
 /**
- * Importação de extrato, do lado do servidor. v1.0 — 2026-09-27.
+ * Importação de extrato, do lado do servidor. v1.1 — 2026-09-27.
+ *
+ * v1.1: as categorias voltam com as palavras-chave, que o navegador aplica antes do
+ * histórico (a regra escrita pela pessoa vence o palpite); a IA deixou de rodar sozinha e
+ * passou a ser um botão, em lotes de 100; e cada `commitImport` grava um
+ * `import_batch_id`, que é o que permite desfazer uma importação inteira em "Ver todos".
  *
  * O arquivo **não chega aqui**. O navegador lê o PDF/CSV, monta as linhas e manda só elas;
  * o servidor confere, sugere e grava. Três tempos, como o assistente:
@@ -115,7 +120,7 @@ export async function prepareImport(input: unknown): Promise<ImportSetup> {
   })
 
   return {
-    categories: categories.map((c) => ({ id: c.id, name: c.name, kind: c.kind })),
+    categories: categories.map((c) => ({ id: c.id, name: c.name, kind: c.kind, keywords: c.keywords })),
     alreadyImported: [...imported].filter((k) => rows.some((r) => r.importKey === k)),
     possibleDuplicates,
     suggestions,
@@ -132,7 +137,7 @@ export async function suggestImportCategories(input: unknown): Promise<Record<st
   const categories = await listActiveCategories()
   return suggestCategoriesWithAi(
     parsed.data,
-    categories.map((c) => ({ id: c.id, name: c.name, kind: c.kind })),
+    categories.map((c) => ({ id: c.id, name: c.name, kind: c.kind, keywords: c.keywords })),
   )
 }
 
@@ -157,6 +162,10 @@ export async function commitImport(input: unknown): Promise<CommitImportState> {
   const categories = await listActiveCategories()
   const kindOf = new Map(categories.map((c) => [c.id, c.kind]))
 
+  // v1.1 — 2026-09-27: um id por importação, em todas as linhas dela. É o que "Ver todos"
+  // usa para selecionar — e excluir — uma importação ruim de uma vez.
+  const batchId = crypto.randomUUID()
+
   // A mesma chave duas vezes no mesmo envio seria uma linha a mais para o banco descartar.
   const seen = new Set<string>()
   const rows = parsed.data.flatMap((row) => {
@@ -178,6 +187,7 @@ export async function commitImport(input: unknown): Promise<CommitImportState> {
         settled_on: row.occurredOn,
         source: 'manual' as const,
         import_key: row.importKey,
+        import_batch_id: batchId,
       },
     ]
   })
@@ -199,6 +209,7 @@ export async function commitImport(input: unknown): Promise<CommitImportState> {
   revalidatePath('/historico')
   revalidatePath('/analise')
   revalidatePath('/')
+  revalidatePath('/novo/lancamentos')
 
   const plural = (n: number, um: string, varios: string) => (n === 1 ? um : varios.replace('#', String(n)))
   const success =

@@ -1,5 +1,7 @@
 /**
- * A cadeia de modelos do Gemini e a regra de queda para o próximo. v1.1 — 2026-09-26.
+ * A cadeia de modelos do Gemini e a regra de queda para o próximo. v1.2 — 2026-09-27.
+ *
+ * v1.2: `incomplete` virou status final e motivo de queda, como `failed`.
  *
  * v1.1: `shouldFallback` parou de reconhecer "em andamento" por NOME de status.
  * Antes a lista era `undefined` e `'in_progress'`, e qualquer outro status não-final
@@ -103,7 +105,10 @@ export function nextModel(chain: readonly string[], current: string): string | n
  * Vive no módulo puro porque quem mais precisa dela é `shouldFallback`, e um módulo
  * `server-only` não pode ser importado daqui (invariante 9). `gemini.ts` reexporta.
  */
-export const TERMINAL_STATUSES = ['completed', 'failed', 'cancelled'] as const
+// v1.2 — 2026-09-27: `incomplete` entrou. A API o documenta como final (a geração parou
+// antes do fim, por limite), e sem ele na lista o Diagnóstico esperava a fatia inteira de
+// 20s por uma interação que já tinha acabado.
+export const TERMINAL_STATUSES = ['completed', 'failed', 'cancelled', 'incomplete'] as const
 
 /** O trabalho acabou, de um jeito ou de outro? */
 export function isTerminal(status: string | undefined): boolean {
@@ -144,7 +149,10 @@ export function shouldFallback(signal: FallbackSignal): boolean {
   if (signal.httpStatus !== undefined && isRetriableHttpStatus(signal.httpStatus)) {
     return true
   }
-  if (signal.status === 'failed') return true
+  // v1.2 — 2026-09-27: `incomplete` é final e sem resposta inteira — cai como `failed`.
+  // Sem isto, ao virar status final, ele pararia de vencer o prazo e o trabalho ficaria
+  // `running` para sempre.
+  if (signal.status === 'failed' || signal.status === 'incomplete') return true
 
   // A pergunta é "já terminou?", e não "está num dos andamentos que eu conheço".
   // Listar os status em andamento pelo nome deixa de fora todo status que a API

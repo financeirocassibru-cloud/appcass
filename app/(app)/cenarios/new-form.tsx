@@ -11,7 +11,7 @@ import {
 } from '@/lib/actions/scenarios'
 import { isISODate } from '@/lib/finance/date'
 import {
-  closedMonthsBefore,
+  habitSourceMonths,
   habitTargetMonths,
   habitWindowStart,
   type HabitKinds,
@@ -51,6 +51,9 @@ const KIND_OPTIONS: { value: HabitKinds; label: string }[] = [
  *
  * A prévia é descartada a cada mudança de período ou de mês: confirmar números que já não
  * valem seria pior que não mostrar número nenhum.
+ *
+ * v1.3 — 2026-09-27: o mês atual, ainda em aberto, também pode ser a origem — marcado
+ * "(em aberto)", com o aviso de que só entra o que já foi lançado.
  */
 export function NewScenarioForm({
   today,
@@ -67,7 +70,9 @@ export function NewScenarioForm({
   const [startsOn, setStartsOn] = useState(today)
   const [endsOn, setEndsOn] = useState(defaultEnd)
   const [habits, setHabits] = useState(false)
-  const sourceOptions = closedMonthsBefore(today, 12)
+  // v1.1 — 2026-09-27: o mês atual, em aberto, é a primeira opção.
+  const sourceOptions = habitSourceMonths(today, 12)
+  const currentMonth = sourceOptions[0]
   const [sourceMonth, setSourceMonth] = useState(sourceOptions[0] ?? '')
   const [target, setTarget] = useState<'all' | 'range'>('all')
   const [rangeFrom, setRangeFrom] = useState('')
@@ -199,9 +204,15 @@ export function NewScenarioForm({
               {sourceOptions.map((month) => (
                 <option key={month} value={month}>
                   {monthLabel(month)}
+                  {month === currentMonth ? ' (em aberto)' : ''}
                 </option>
               ))}
             </select>
+            {sourceMonth === currentMonth ? (
+              <p className="text-muted-foreground text-xs">
+                O mês ainda não fechou: entra o que já foi lançado até hoje.
+              </p>
+            ) : null}
             <p className="text-muted-foreground text-xs">
               Cada gasto cai no mesmo dia da semana: o do 2º sábado vai para o 2º sábado do mês
               seguinte.

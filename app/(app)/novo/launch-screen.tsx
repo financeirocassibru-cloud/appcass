@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import type { Route } from 'next'
-import { ChevronRight, ListOrdered } from 'lucide-react'
+import { ArrowRight, ChevronRight } from 'lucide-react'
 import type { Category } from '@/lib/db/queries/categories'
 import type { EntryKind } from '@/lib/db/types'
 import { LaunchForm, type LaunchMode } from '@/components/finance/launch-form'
@@ -14,6 +14,9 @@ import { LaunchForm, type LaunchMode } from '@/components/finance/launch-form'
  * v1.0 — 2026-09-27. Os atalhos acompanham Saída/Entrada: em Saída, contas fixas e
  * parcelamentos; em Entrada, renda fixa. É onde essas listas passaram a morar depois de sair
  * da aba Mais.
+ *
+ * v1.1 — 2026-09-27. "Ver lançamentos" virou "Ver todos", com a seta embaixo do texto em vez
+ * do ícone de lista ao lado: o link disputava a largura do título no topo da tela.
  */
 export function LaunchScreen({
   expenseCategories,
@@ -56,14 +59,15 @@ export function LaunchScreen({
 
   return (
     <>
-      <div className="flex items-baseline justify-between gap-3">
+      <div className="flex items-center justify-between gap-3">
         <h1 className="text-2xl font-bold tracking-tight">Novo lançamento</h1>
         <Link
           href="/novo/lancamentos"
-          className="flex min-h-11 items-center gap-1.5 text-sm font-medium text-[var(--brand)]"
+          aria-label="Ver todos os lançamentos"
+          className="flex min-h-11 min-w-11 shrink-0 flex-col items-center justify-center text-sm leading-tight font-medium text-[var(--brand)]"
         >
-          <ListOrdered className="size-4" aria-hidden />
-          Ver lançamentos
+          Ver todos
+          <ArrowRight className="size-4" aria-hidden />
         </Link>
       </div>
 

@@ -2,7 +2,10 @@ import type { CategoryKind } from '@/lib/db/types'
 import { createClient } from '@/lib/supabase/server'
 
 /**
- * Leitura de categorias.
+ * Leitura de categorias. v1.1 — 2026-09-27.
+ *
+ * v1.1: `keywords` entrou nas colunas (migration 0018) — as palavras que põem um
+ * lançamento na categoria sozinho.
  *
  * Nenhuma query repete `eq('user_id', ...)`: as policies de RLS já restringem as
  * linhas, e duplicar o filtro na aplicação passaria a impressão de que é ele que
@@ -14,7 +17,7 @@ import { createClient } from '@/lib/supabase/server'
  * typecheck em vez de virar `undefined` em tempo de execução.
  */
 
-const COLUMNS = 'id, name, kind, color, icon, sort_order, archived_at' as const
+const COLUMNS = 'id, name, kind, color, icon, sort_order, archived_at, keywords' as const
 
 export interface Category {
   id: string
@@ -24,6 +27,7 @@ export interface Category {
   icon: string | null
   sortOrder: number
   archivedAt: string | null
+  keywords: string[]
 }
 
 type Row = {
@@ -34,6 +38,7 @@ type Row = {
   icon: string | null
   sort_order: number
   archived_at: string | null
+  keywords: string[]
 }
 
 /** Converte a linha do banco (snake_case) para o domínio (camelCase). */
@@ -46,6 +51,7 @@ function toCategory(row: Row): Category {
     icon: row.icon,
     sortOrder: row.sort_order,
     archivedAt: row.archived_at,
+    keywords: row.keywords,
   }
 }
 

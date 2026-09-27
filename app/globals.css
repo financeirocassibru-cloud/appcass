@@ -146,6 +146,20 @@
     --chart-commit-installment: #5b21b6;
     --chart-commit-saved: #7c3aed;
     --chart-commit-variable: #a78bfa;
+
+    /* v1.2 — 2026-09-27: fatias da pizza de "Saídas por categoria", na ordem das fatias (da
+       maior para a menor), mais o cinza neutro de "Outros". Cinco matizes da paleta de
+       referência da skill `dataviz` — sem verde nem vermelho, que no app são direção do
+       dinheiro. Numa pizza toda fatia encosta em duas, inclusive a última na primeira, então
+       a validação foi de pares adjacentes COM a volta: passou nos dois temas contra a
+       superfície real (#f8fafc / #131a2e). No claro, amarelo e magenta ficam abaixo de 3:1 —
+       a legenda com nome, valor e porcentagem é o alívio que a skill exige. */
+    --chart-cat-1: #2a78d6;
+    --chart-cat-2: #eb6834;
+    --chart-cat-3: #4a3aa7;
+    --chart-cat-4: #eda100;
+    --chart-cat-5: #e87ba4;
+    --chart-cat-other: #94a3b8;
   }
 
   @media (prefers-color-scheme: dark) {
@@ -173,6 +187,12 @@
       --chart-commit-installment: #c4b5fd;
       --chart-commit-saved: #a78bfa;
       --chart-commit-variable: #8b5cf6;
+      --chart-cat-1: #3987e5;
+      --chart-cat-2: #d95926;
+      --chart-cat-3: #9085e9;
+      --chart-cat-4: #c98500;
+      --chart-cat-5: #d55181;
+      --chart-cat-other: #64748b;
     }
   }
 
@@ -197,6 +217,12 @@
     --chart-commit-installment: #c4b5fd;
     --chart-commit-saved: #a78bfa;
     --chart-commit-variable: #8b5cf6;
+    --chart-cat-1: #3987e5;
+    --chart-cat-2: #d95926;
+    --chart-cat-3: #9085e9;
+    --chart-cat-4: #c98500;
+    --chart-cat-5: #d55181;
+    --chart-cat-other: #64748b;
   }
 
   /**

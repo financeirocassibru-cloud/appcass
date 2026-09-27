@@ -6,6 +6,9 @@ import type { CategoryDeviation } from '@/lib/finance/series'
  *
  * v1.0 — 2026-09-27.
  *
+ * v1.1 — 2026-09-27: "Fora da curva" passou a se chamar **Variação**, e divide o espaço com
+ * "Saídas por categoria" num carrossel da Análise.
+ *
  * Pergunta diferente da do ranking: lá é "onde gastei mais", aqui é "o que mudou". Uma categoria
  * pequena que dobrou merece ser vista; a maior de todas, estável, não é notícia.
  *
@@ -29,23 +32,35 @@ export function CategoryDeviationChart({
   rows,
   caption,
   baselineCaption,
+  embedded = false,
 }: {
   rows: CategoryDeviation[]
   caption: string
   /** O que serve de comparação, dito por extenso. */
   baselineCaption: string
+  /**
+   * v1.1 — 2026-09-27: dentro de um carrossel da Análise (`PanelCarousel`), que já mostra o
+   * título e o recorte no cabeçalho dele — aqui eles não se repetem.
+   */
+  embedded?: boolean
 }) {
   const shown = rows.slice(0, MAX_ROWS)
   const widest = shown.reduce((max, row) => Math.max(max, Math.abs(row.deltaCents)), 0)
 
   return (
-    <section aria-labelledby="titulo-fora-da-curva" className="flex flex-col gap-3">
-      <div className="flex items-baseline justify-between gap-3">
-        <h2 id="titulo-fora-da-curva" className="text-base font-semibold">
-          Fora da curva
-        </h2>
-        <span className="text-xs text-[var(--foreground-muted)]">{caption}</span>
-      </div>
+    <section
+      aria-labelledby={embedded ? undefined : 'titulo-variacao'}
+      aria-label={embedded ? 'Variação' : undefined}
+      className="flex flex-col gap-3"
+    >
+      {embedded ? null : (
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 id="titulo-variacao" className="text-base font-semibold">
+            Variação
+          </h2>
+          <span className="text-xs text-[var(--foreground-muted)]">{caption}</span>
+        </div>
+      )}
 
       {shown.length === 0 ? (
         <p className="rounded-xl bg-[var(--surface)] p-4 text-sm text-[var(--foreground-muted)]">

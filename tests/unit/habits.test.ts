@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { isoWeekday } from '@/lib/finance/date'
 import {
   alignWeekdayToMonth,
-  closedMonthsBefore,
+  habitSourceMonths,
   duplicateHabits,
   habitTargetMonths,
   habitWindowStart,
@@ -177,8 +177,15 @@ describe('duplicateHabits', () => {
   })
 })
 
-describe('closedMonthsBefore', () => {
-  it('lista os meses fechados, do mais recente para trás, atravessando o ano', () => {
-    expect(closedMonthsBefore('2026-02-10', 3)).toEqual(['2026-01', '2025-12', '2025-11'])
+// v1.1 — 2026-09-27: o mês em aberto também pode ser a origem.
+describe('habitSourceMonths', () => {
+  it('começa no mês atual, em aberto, e volta atravessando o ano', () => {
+    expect(habitSourceMonths('2026-02-10', 3)).toEqual(['2026-02', '2026-01', '2025-12'])
+  })
+
+  it('repetir o mês em aberto começa no mês seguinte, sem dobrar o atual', () => {
+    expect(
+      habitTargetMonths({ sourceMonth: '2026-09', from: '2026-09-27', to: '2026-12-31' }),
+    ).toEqual(['2026-10', '2026-11', '2026-12'])
   })
 })

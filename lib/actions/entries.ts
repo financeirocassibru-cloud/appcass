@@ -5,6 +5,7 @@ import { currentUserId } from '@/lib/db/current-user'
 import { createClient } from '@/lib/supabase/server'
 import {
   createEntrySchema,
+  deleteEntriesSchema,
   entryIdSchema,
   toggleSettledSchema,
   updateEntrySchema,
@@ -27,6 +28,8 @@ function revalidateEntryViews(): void {
   revalidatePath('/historico')
   revalidatePath('/analise')
   revalidatePath('/')
+  // v1.2 — 2026-09-27: "Ver todos" também mostra lançamentos, e agora exclui em lote.
+  revalidatePath('/novo/lancamentos')
 }
 
 export async function createEntry(
@@ -185,4 +188,66 @@ export async function toggleSettled(
 
   revalidateEntryViews()
   return {}
+}
+
+export interface DeleteEntriesState {
+  error?: string
+  success?: string
+  deleted?: number
+}
+
+/**
+ * Exclui vários lançamentos de uma vez — os marcados e/ou importações inteiras. v1.0 —
+ * 2026-09-27.
+ *
+ * Só `source = 'manual'` (avulsos e importados), que é o que "Ver todos" lista: parcela e
+ * ocorrência de conta fixa pertencem a um cadastro e têm a exclusão dele. O filtro vai na
+ * query, e não só na tela, para um id forjado de parcela não passar.
+ *
+ * Cada exclusão leva filtro (o PostgREST recusa escrita sem WHERE — invariante 3) e
+ * `.select('id')`, e nada apagado é erro (invariante 17): a RLS descarta em silêncio o que
+ * não é da pessoa, e sem a contagem o "excluído" seria mentira.
+ *
+ * Excluir um importado libera a `import_key` dele — importar o mesmo extrato de novo volta a
+ * trazê-lo. É justamente o que se quer ao desfazer uma importação ruim.
+ */
+export async function deleteEntries(input: unknown): Promise<DeleteEntriesState> {
+  const parsed = deleteEntriesSchema.safeParse(input)
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Seleção inválida' }
+  }
+
+  const { ids, importBatchIds } = parsed.data
+  const supabase = await createClient()
+  let deleted = 0
+
+  if (importBatchIds.length > 0) {
+    const { data, error } = await supabase
+      .from('entries')
+      .delete()
+      .eq('source', 'manual')
+      .in('import_batch_id', importBatchIds)
+      .select('id')
+    if (error) return { error: `Não foi possível excluir: ${error.message}` }
+    deleted += data?.length ?? 0
+  }
+
+  if (ids.length > 0) {
+    const { data, error } = await supabase
+      .from('entries')
+      .delete()
+      .eq('source', 'manual')
+      .in('id', ids)
+      .select('id')
+    if (error) return { error: `Não foi possível excluir: ${error.message}` }
+    deleted += data?.length ?? 0
+  }
+
+  if (deleted === 0) return { error: 'Nenhum lançamento encontrado para excluir.' }
+
+  revalidateEntryViews()
+  return {
+    deleted,
+    success: deleted === 1 ? '1 lançamento excluído.' : `${deleted} lançamentos excluídos.`,
+  }
 }
