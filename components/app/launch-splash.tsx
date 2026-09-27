@@ -1,11 +1,14 @@
 import Image from 'next/image'
 
 /**
- * Abertura do PWA — v1.0 — 27/09/2026.
+ * Abertura do PWA — v1.1 — 27/09/2026.
  *
  * v1.0 (27/09/2026): ao abrir o app instalado pelo ícone, o logo começa no centro da tela, sobre
  * o mesmo lilás da tela de abertura do sistema (`background_color` do manifest), e voa até o
  * logo do topo do Início. A intenção é que o logo do ícone pareça se tornar o logo do cabeçalho.
+ * v1.1 (27/09/2026): o logo do overlay começa do mesmo tamanho do logo na tela de abertura do
+ * Android. Era `min(48vw, 200px)` (~187 px num celular comum), e na troca da tela do sistema
+ * para o overlay o logo "crescia" ~30% antes de voar. Ver `START_WIDTH`.
  *
  * Por que mora no layout de `(app)` e não na página: o Início é dinâmico e tem `loading.tsx`.
  * Numa carga completa, o HTML chega primeiro com o esqueleto, e o `<header>` com o logo só vem
@@ -20,6 +23,21 @@ import Image from 'next/image'
  * O overlay nunca é removido do DOM, só escondido: ele faz parte da árvore do React, e remover
  * um nó antes da hidratação quebraria a hidratação do shell inteiro.
  */
+
+/**
+ * v1.1 (27/09/2026): largura inicial do logo, igual à do último frame da tela de abertura.
+ *
+ * No Android 12+ essa tela é do sistema: ele desenha o ícone adaptativo do app, que o Chrome
+ * gera a partir do `maskable-512.png`, num quadrado de 240 dp (ícone com fundo). No maskable o
+ * logo ocupa 60% da largura (`escala: 0.6` em `scripts/gen-icons.mjs`), então no último frame do
+ * sistema ele tem 0,6 × 240 = 144 dp. No Chrome do Android 1 px de CSS vale 1 dp na escala
+ * padrão. Mudou a escala do maskable, muda aqui também.
+ */
+const SPLASH_ICON_DP = 240
+const MASKABLE_LOGO_SCALE = 0.6
+const START_WIDTH = Math.round(SPLASH_ICON_DP * MASKABLE_LOGO_SCALE)
+// Proporção do `viewBox` do logo (409 × 291).
+const START_HEIGHT = Math.round((START_WIDTH * 291) / 409)
 
 // Chave do `sessionStorage`: a animação roda uma vez por abertura do app, não a cada recarga.
 const STORAGE_KEY = 'cass:launch'
@@ -127,11 +145,13 @@ export function LaunchSplash() {
         <div className="absolute inset-0 flex items-center justify-center">
           <Image
             src="/icons/logo.svg"
-            width={200}
-            height={142}
+            // v1.1 (27/09/2026): tamanho fixo da tela de abertura do Android, não mais `48vw`.
+            width={START_WIDTH}
+            height={START_HEIGHT}
+            style={{ width: START_WIDTH, height: START_HEIGHT }}
             alt=""
             priority
-            className="h-auto w-[min(48vw,200px)] will-change-transform"
+            className="will-change-transform"
           />
         </div>
       </div>
