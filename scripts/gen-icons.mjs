@@ -3,6 +3,7 @@
  *
  *   npm run icons
  *
+ * v1.1 — 27/09/2026: comentário no maskable — a escala dele é usada também pelo `LaunchSplash`.
  * v1.0 — 27/09/2026: criado junto com a troca do ícone provisório pelo logo Cass. Os PNGs da
  * fase 6b tinham sido feitos à mão; agora trocar o logo é editar o SVG e rodar de novo.
  *
@@ -24,6 +25,9 @@ const logo = await readFile(new URL('../public/icons/logo.svg', import.meta.url)
 const ICONES = [
   { arquivo: 'icon-192.png', lado: 192, escala: 0.8 },
   { arquivo: 'icon-512.png', lado: 512, escala: 0.8 },
+  // v1.1 (27/09/2026): `MASKABLE_LOGO_SCALE` em `components/app/launch-splash.tsx` repete este
+  // 0.6 para o logo da animação de abertura nascer do tamanho da tela de abertura do Android.
+  // Mudou aqui, muda lá.
   { arquivo: 'maskable-512.png', lado: 512, escala: 0.6 },
   { arquivo: 'apple-touch-icon.png', lado: 180, escala: 0.76 },
 ]
