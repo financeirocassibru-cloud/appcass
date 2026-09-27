@@ -4,6 +4,7 @@ import { useActionState, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { createEntry, type EntryActionState } from '@/lib/actions/entries'
+import { createGoal, recordGoalContribution } from '@/lib/actions/goals'
 import { createInstallmentPlan } from '@/lib/actions/installments'
 import { createRecurring } from '@/lib/actions/recurring'
 import type { Category } from '@/lib/db/queries/categories'
@@ -13,6 +14,7 @@ import { firstDueFromNext, planInstallments } from '@/lib/finance/installments'
 import { matchCategoryByKeywords } from '@/lib/finance/keywords'
 import { formatCents } from '@/lib/finance/money'
 import type { RecurrenceFrequency } from '@/lib/finance/types'
+import { KeywordField } from '@/components/finance/keyword-field'
 import { MoneyInput } from '@/components/finance/money-input'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -30,6 +32,12 @@ import { cn } from '@/lib/utils'
  * Categorias) enquanto a pessoa não tocar num chip — tocou, a escolha é dela e a palavra
  * não mexe mais.
  *
+ * v1.2 — 2026-09-27. Saída ganhou **Meta**: escolher uma meta registra um aporte (uma saída
+ * amarrada ao aporte, `recordGoalContribution`), e "Nova meta" cadastra uma (`createGoal`).
+ * E todo modo ganhou "Conectar ao extrato" — as palavras-chave com que a importação reconhece
+ * este item e o marca como pago (migration 0019), sugeridas a partir do que já foi importado.
+ * Fica recolhido para o avulso continuar em dois toques.
+ *
  * O avulso continua sendo o padrão e o caminho mais curto: o valor já com foco, dois toques
  * para salvar (meta de `docs/DESIGN.md`). Os outros modos só **acrescentam** campos — valor,
  * categoria, descrição e data são os mesmos, e trocar de modo não perde o que já foi digitado.
@@ -39,7 +47,18 @@ import { cn } from '@/lib/utils'
  * schema dela espera. Validação, `revalidatePath` e as garantias do banco vêm de graça.
  */
 
-export type LaunchMode = 'single' | 'recurring' | 'installment'
+export type LaunchMode = 'single' | 'recurring' | 'installment' | 'goal'
+
+/** Meta ativa, para o seletor do modo Meta. */
+export interface LaunchGoal {
+  id: string
+  name: string
+  savedCents: number
+  targetAmountCents: number
+}
+
+/** Escolha do modo Meta: o id de uma meta existente, ou uma nova. */
+const NEW_GOAL = 'nova'
 
 type ActionState = EntryActionState
 
@@ -63,6 +82,7 @@ function modesFor(kind: EntryKind): { value: LaunchMode; label: string }[] {
         { value: 'single', label: 'Avulso' },
         { value: 'recurring', label: 'Conta fixa' },
         { value: 'installment', label: 'Parcelado' },
+        { value: 'goal', label: 'Meta' },
       ]
     : [
         { value: 'single', label: 'Avulsa' },
@@ -76,6 +96,8 @@ export function LaunchForm({
   today,
   initialKind = 'expense',
   initialMode = 'single',
+  goals = [],
+  suggestions = { expense: [], income: [] },
   onKindChange,
 }: {
   expenseCategories: Category[]
@@ -83,6 +105,10 @@ export function LaunchForm({
   today: string
   initialKind?: EntryKind
   initialMode?: LaunchMode
+  /** Metas ativas, para o modo Meta. */
+  goals?: LaunchGoal[]
+  /** Descrições já importadas, por tipo, para sugerir palavra-chave. */
+  suggestions?: Record<EntryKind, string[]>
   /** Para a tela mostrar os atalhos do tipo escolhido. */
   onKindChange?: (kind: EntryKind) => void
 }) {
@@ -90,7 +116,9 @@ export function LaunchForm({
 
   const [kind, setKind] = useState<EntryKind>(initialKind)
   const [mode, setMode] = useState<LaunchMode>(
-    initialKind === 'income' && initialMode === 'installment' ? 'single' : initialMode,
+    initialKind === 'income' && (initialMode === 'installment' || initialMode === 'goal')
+      ? 'single'
+      : initialMode,
   )
   const [cents, setCents] = useState(0)
   const [categoryId, setCategoryId] = useState('')
@@ -110,6 +138,14 @@ export function LaunchForm({
   const [ongoing, setOngoing] = useState(false)
   const [paidCount, setPaidCount] = useState(1)
 
+  // Meta: a meta escolhida, ou "nova". Sem nenhuma meta, só dá para criar.
+  const [goalChoice, setGoalChoice] = useState<string>(goals[0]?.id ?? NEW_GOAL)
+  const newGoal = goalChoice === NEW_GOAL
+  const contribution = mode === 'goal' && !newGoal
+
+  // "Conectar ao extrato": o campo de palavras-chave só aparece a pedido.
+  const [showKeywords, setShowKeywords] = useState(false)
+
   const [state, formAction, pending] = useActionState(
     async (previous: ActionState, formData: FormData): Promise<ActionState> => {
       if (mode === 'single') {
@@ -119,6 +155,22 @@ export function LaunchForm({
           router.push('/historico')
         }
         return result
+      }
+      if (mode === 'goal') {
+        if (newGoal) {
+          const result = await createGoal(previous, formData)
+          if (result.success) {
+            toast.success(result.success)
+            router.push('/metas')
+          }
+          return { error: result.error }
+        }
+        const result = await recordGoalContribution(previous, formData)
+        if (result.success) {
+          toast.success(result.success)
+          router.push(`/metas/${goalChoice}`)
+        }
+        return { error: result.error }
       }
       if (mode === 'recurring') {
         const result = await createRecurring(previous, formData)
@@ -172,7 +224,7 @@ export function LaunchForm({
     setCategoryId('')
     setCategoryTouched(false)
     setAutoKeyword(null)
-    if (option === 'income' && mode === 'installment') setMode('single')
+    if (option === 'income' && (mode === 'installment' || mode === 'goal')) setMode('single')
   }
 
   function onDescriptionChange(description: string) {
@@ -193,13 +245,17 @@ export function LaunchForm({
   }
 
   const submitLabel =
-    mode === 'single'
-      ? 'Salvar'
-      : mode === 'recurring'
-        ? kind === 'income'
-          ? 'Criar renda fixa'
-          : 'Criar conta fixa'
-        : `Criar parcelamento em ${safeCount || count}x`
+    mode === 'goal'
+      ? newGoal
+        ? 'Criar meta'
+        : 'Registrar aporte'
+      : mode === 'single'
+        ? 'Salvar'
+        : mode === 'recurring'
+          ? kind === 'income'
+            ? 'Criar renda fixa'
+            : 'Criar conta fixa'
+          : `Criar parcelamento em ${safeCount || count}x`
 
   return (
     <form action={formAction} className="flex flex-col gap-6">
@@ -214,6 +270,7 @@ export function LaunchForm({
         count={safeCount || count}
         paidCount={safePaid}
         schedule={schedule}
+        goalId={contribution ? goalChoice : null}
       />
 
       {/* Saída/entrada primeiro: define o significado de tudo abaixo. */}
@@ -260,6 +317,34 @@ export function LaunchForm({
         ))}
       </div>
 
+      {mode === 'goal' ? (
+        <div className="flex flex-col gap-2">
+          <span className="text-muted-foreground text-sm font-medium">Meta</span>
+          <div role="radiogroup" aria-label="Qual meta" className="-mx-6 flex gap-2 overflow-x-auto px-6 pb-1">
+            {[...goals.map((g) => ({ value: g.id, label: g.name })), { value: NEW_GOAL, label: '+ Nova meta' }].map(
+              (option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={goalChoice === option.value}
+                  onClick={() => setGoalChoice(option.value)}
+                  className={cn(
+                    'min-h-11 shrink-0 rounded-full border px-4 text-sm font-medium transition-colors',
+                    goalChoice === option.value
+                      ? 'border-primary bg-primary text-primary-foreground'
+                      : 'border-input bg-card text-foreground',
+                  )}
+                >
+                  {option.label}
+                </button>
+              ),
+            )}
+          </div>
+          {contribution ? <GoalProgressNote goal={goals.find((g) => g.id === goalChoice)} /> : null}
+        </div>
+      ) : null}
+
       {mode === 'installment' ? (
         <div className="flex flex-col gap-3">
           <div role="radiogroup" aria-label="O valor informado é" className="bg-muted grid grid-cols-2 gap-1 rounded-lg p-1">
@@ -290,7 +375,11 @@ export function LaunchForm({
       <MoneyInput
         name={null}
         label={
-          mode === 'installment'
+          mode === 'goal'
+            ? newGoal
+              ? 'Quanto quer juntar'
+              : 'Valor do aporte'
+            : mode === 'installment'
             ? amountIs === 'total'
               ? 'Valor total da compra'
               : 'Valor de cada parcela'
@@ -336,7 +425,7 @@ export function LaunchForm({
         </div>
       ) : null}
 
-      {categories.length > 0 ? (
+      {categories.length > 0 && mode !== 'goal' ? (
         <div className="flex flex-col gap-2">
           <span className="text-muted-foreground text-sm font-medium">Categoria</span>
           {/* Chips em rolagem horizontal: em celular é mais rápido que um select. */}
@@ -365,40 +454,46 @@ export function LaunchForm({
         </div>
       ) : null}
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="campo-descricao">Descrição</Label>
-        <Input
-          id="campo-descricao"
-          name="description"
-          required
-          // O parcelamento acrescenta " (12/12)" a cada parcela; o limite do schema dele é 100.
-          maxLength={mode === 'installment' ? 100 : 120}
-          placeholder={
-            mode === 'installment'
-              ? 'Sofá'
-              : mode === 'recurring'
-                ? kind === 'expense'
-                  ? 'Aluguel'
-                  : 'Salário'
-                : kind === 'expense'
-                  ? 'Mercado'
-                  : 'Pix recebido'
-          }
-          onChange={(event) => onDescriptionChange(event.target.value)}
-          className="min-h-11 text-base"
-        />
-        {autoKeyword && categoryId ? (
-          <p className="text-muted-foreground text-xs" role="status">
-            Categoria {categories.find((c) => c.id === categoryId)?.name} pela palavra-chave
-            &ldquo;{autoKeyword}&rdquo;.
-          </p>
-        ) : null}
-        {mode === 'installment' ? (
-          <p className="text-muted-foreground text-xs">
-            Cada parcela entra no histórico como &ldquo;Sofá (1/{safeCount || count})&rdquo;.
-          </p>
-        ) : null}
-      </div>
+      {/* O aporte não tem descrição própria: a saída se chama "Meta: <nome>". */}
+      {contribution ? null : (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="campo-descricao">{mode === 'goal' ? 'Para quê' : 'Descrição'}</Label>
+          <Input
+            id="campo-descricao"
+            // A meta nova vai para `createGoal`, que lê `name`.
+            name={mode === 'goal' ? 'name' : 'description'}
+            required
+            // O parcelamento acrescenta " (12/12)" a cada parcela; o limite do schema dele é 100.
+            maxLength={mode === 'installment' ? 100 : mode === 'goal' ? 60 : 120}
+            placeholder={
+              mode === 'goal'
+                ? 'Viagem'
+                : mode === 'installment'
+                  ? 'Sofá'
+                  : mode === 'recurring'
+                    ? kind === 'expense'
+                      ? 'Aluguel'
+                      : 'Salário'
+                    : kind === 'expense'
+                      ? 'Mercado'
+                      : 'Pix recebido'
+            }
+            onChange={(event) => onDescriptionChange(event.target.value)}
+            className="min-h-11 text-base"
+          />
+          {autoKeyword && categoryId ? (
+            <p className="text-muted-foreground text-xs" role="status">
+              Categoria {categories.find((c) => c.id === categoryId)?.name} pela palavra-chave
+              &ldquo;{autoKeyword}&rdquo;.
+            </p>
+          ) : null}
+          {mode === 'installment' ? (
+            <p className="text-muted-foreground text-xs">
+              Cada parcela entra no histórico como &ldquo;Sofá (1/{safeCount || count})&rdquo;.
+            </p>
+          ) : null}
+        </div>
+      )}
 
       {mode === 'installment' ? (
         <div className="flex flex-col gap-3 rounded-xl bg-[var(--surface)] p-4">
@@ -434,33 +529,51 @@ export function LaunchForm({
         </div>
       ) : null}
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="campo-data">
-          {mode === 'single'
-            ? 'Data'
-            : mode === 'recurring'
-              ? 'Começa em'
-              : ongoing
-                ? 'Próxima parcela vence em'
-                : 'Primeira parcela vence em'}
-        </Label>
-        <Input
-          id="campo-data"
-          type="date"
-          required
-          value={date}
-          onChange={(event) => setDate(event.target.value)}
-          className="min-h-11 text-base"
-        />
-        {mode === 'recurring' && validDate ? (
-          <p className="text-muted-foreground text-xs">{recurrenceHint(frequency, date)}</p>
-        ) : null}
-        {mode === 'installment' ? (
-          <p className="text-muted-foreground text-xs">
-            As seguintes caem no mesmo dia dos meses seguintes. Dia 31 vira 28 em fevereiro.
-          </p>
-        ) : null}
-      </div>
+      {mode === 'goal' && newGoal ? (
+        <>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="campo-prazo">Até quando (opcional)</Label>
+            <Input id="campo-prazo" name="targetDate" type="date" min={today} className="min-h-11 text-base" />
+            <p className="text-muted-foreground text-xs">
+              Com prazo, o app calcula sozinho quanto guardar por mês.
+            </p>
+          </div>
+          <MoneyInput name="monthlyContributionCents" label="Ou defina o aporte mensal (opcional)" />
+        </>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="campo-data">
+            {mode === 'single' || mode === 'goal'
+              ? 'Data'
+              : mode === 'recurring'
+                ? 'Começa em'
+                : ongoing
+                  ? 'Próxima parcela vence em'
+                  : 'Primeira parcela vence em'}
+          </Label>
+          <Input
+            id="campo-data"
+            type="date"
+            required
+            value={date}
+            onChange={(event) => setDate(event.target.value)}
+            className="min-h-11 text-base"
+          />
+          {mode === 'recurring' && validDate ? (
+            <p className="text-muted-foreground text-xs">{recurrenceHint(frequency, date)}</p>
+          ) : null}
+          {mode === 'installment' ? (
+            <p className="text-muted-foreground text-xs">
+              As seguintes caem no mesmo dia dos meses seguintes. Dia 31 vira 28 em fevereiro.
+            </p>
+          ) : null}
+          {contribution ? (
+            <p className="text-muted-foreground text-xs">
+              Entra como saída da conta e como aporte na meta, no mesmo registro.
+            </p>
+          ) : null}
+        </div>
+      )}
 
       {mode === 'recurring' ? (
         <>
@@ -521,11 +634,33 @@ export function LaunchForm({
         <p className="text-sm text-[var(--destructive)]">O total passa do limite de valor.</p>
       ) : null}
 
+      {contribution ? null : showKeywords ? (
+        <div className="flex flex-col gap-2 rounded-xl bg-[var(--surface)] p-4">
+          <KeywordField
+            label="Palavras-chave do extrato"
+            hint={keywordsHint(mode, kind)}
+            suggestions={suggestions[kind]}
+          />
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setShowKeywords(true)}
+          className="text-muted-foreground min-h-11 self-start text-sm underline"
+        >
+          Conectar ao extrato
+        </button>
+      )}
+
       <FormMessage error={state.error} />
 
       <Button
         type="submit"
-        disabled={pending || (mode === 'installment' && (preview.length === 0 || cents === 0))}
+        disabled={
+          pending ||
+          (mode === 'installment' && (preview.length === 0 || cents === 0)) ||
+          (mode === 'goal' && cents === 0)
+        }
         className="min-h-12 text-base"
       >
         {pending ? 'Salvando…' : submitLabel}
@@ -548,6 +683,7 @@ function HiddenFields({
   count,
   paidCount,
   schedule,
+  goalId,
 }: {
   mode: LaunchMode
   cents: number
@@ -557,7 +693,21 @@ function HiddenFields({
   count: number
   paidCount: number
   schedule: { firstDueOn: string; anchorDay: number | null } | null
+  /** Meta do aporte; `null` quando o modo Meta cria uma meta nova. */
+  goalId: string | null
 }) {
+  if (mode === 'goal') {
+    return goalId ? (
+      <>
+        <input type="hidden" name="goalId" value={goalId} />
+        <input type="hidden" name="amountCents" value={cents} />
+        <input type="hidden" name="occurredOn" value={date} />
+      </>
+    ) : (
+      <input type="hidden" name="targetAmountCents" value={cents} />
+    )
+  }
+
   if (mode === 'single') {
     return (
       <>
@@ -589,6 +739,33 @@ function HiddenFields({
       <input type="hidden" name="anchorDay" value={schedule?.anchorDay ?? ''} />
       <input type="hidden" name="paidCount" value={paidCount} />
     </>
+  )
+}
+
+/** O que a palavra-chave faz, dito para o modo atual. v1.0 — 2026-09-27. */
+function keywordsHint(mode: LaunchMode, kind: EntryKind): string {
+  const paid = kind === 'income' ? 'recebida' : 'paga'
+  if (mode === 'recurring') {
+    return `Na importação, a linha do extrato com uma destas palavras marca a ocorrência do mês como ${paid}, com o valor do extrato. Ex.: o nome de quem paga ou de quem cobra.`
+  }
+  if (mode === 'installment') {
+    return 'Na importação, a linha do extrato com uma destas palavras marca a parcela do mês como paga. A parcela mantém o valor dela.'
+  }
+  if (mode === 'goal') {
+    return 'Na importação, a saída do extrato com uma destas palavras vira aporte nesta meta — por exemplo, o nome da caixinha ou do investimento.'
+  }
+  return `Se ficar pendente, a linha do extrato com uma destas palavras o marca como ${kind === 'income' ? 'recebido' : 'pago'} na importação, com o valor do extrato.`
+}
+
+/** A meta escolhida: quanto já tem e quanto falta. */
+function GoalProgressNote({ goal }: { goal: LaunchGoal | undefined }) {
+  if (!goal) return null
+  const left = Math.max(0, goal.targetAmountCents - goal.savedCents)
+  return (
+    <p className="text-muted-foreground text-xs">
+      {formatCents(goal.savedCents)} de {formatCents(goal.targetAmountCents)}
+      {left > 0 ? ` · faltam ${formatCents(left)}` : ' · meta alcançada'}
+    </p>
   )
 }
 

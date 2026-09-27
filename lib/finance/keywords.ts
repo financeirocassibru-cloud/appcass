@@ -3,6 +3,10 @@ import type { EntryKind } from './types'
 /**
  * Categoria pela palavra-chave. v1.0 — 2026-09-27.
  *
+ * v1.1 — 2026-09-27: `matchKeyword` (a palavra que casa, sem categoria em volta) passou a ser
+ * a peça comum com a conexão do extrato (`reconcile.ts`), e `suggestKeywords` alimenta o
+ * campo de palavras-chave com as descrições já importadas.
+ *
  * A pessoa escreve em cada categoria as palavras que a identificam ("iFood, Rappi" em
  * Alimentação), e um lançamento cujo nome contém uma delas entra ali sozinho — na
  * importação de extrato e no [+]. É regra escrita pela própria pessoa, e por isso vence o
@@ -86,6 +90,60 @@ function contains(haystack: string, needle: string): boolean {
 }
 
 /**
+ * A palavra-chave mais longa da lista que aparece no texto, ou `null`. v1.1 — 2026-09-27.
+ *
+ * Mesmas regras de `matchCategoryByKeywords`: sem acento e sem caixa, e palavra de até 3
+ * letras só casa inteira. Devolve também o tamanho normalizado, que é o critério de
+ * especificidade de quem compara vários candidatos.
+ */
+export function matchKeyword(
+  text: string,
+  keywords: readonly string[],
+): { keyword: string; length: number } | null {
+  const haystack = normalizeText(text)
+  if (!haystack) return null
+
+  let best: { keyword: string; length: number } | null = null
+  for (const keyword of keywords) {
+    const needle = normalizeText(keyword)
+    if (!needle || !contains(haystack, needle)) continue
+    if (!best || needle.length > best.length) best = { keyword, length: needle.length }
+  }
+  return best
+}
+
+/**
+ * Sugestões para o campo de palavras-chave. v1.1 — 2026-09-27.
+ *
+ * `pool` são as descrições únicas dos lançamentos importados, na ordem de relevância que a
+ * camada de query escolheu (mais frequentes primeiro). Fica o que contém o rascunho — sem
+ * acento, sem caixa, em qualquer ponto — e ainda não foi escolhido. Com rascunho vazio, as
+ * primeiras da lista: é o convite para quem não sabe o que digitar.
+ */
+export function suggestKeywords(
+  draft: string,
+  pool: readonly string[],
+  chosen: readonly string[],
+  limit = 8,
+): string[] {
+  const query = normalizeText(draft)
+  const taken = new Set(chosen.map(normalizeText))
+  const seen = new Set<string>()
+  const result: string[] = []
+
+  for (const item of pool) {
+    const key = normalizeText(item)
+    if (!key || taken.has(key) || seen.has(key)) continue
+    if (query && !key.includes(query)) continue
+    seen.add(key)
+    result.push(item.slice(0, MAX_KEYWORD_LENGTH).trim())
+    if (result.length >= limit) break
+  }
+
+  return result
+}
+
+/**
  * A categoria cuja palavra-chave aparece no nome do lançamento, ou `null`.
  *
  * Só considera categorias ativas e do mesmo tipo do lançamento — "Salário" numa categoria de
@@ -96,25 +154,21 @@ export function matchCategoryByKeywords(
   kind: EntryKind,
   categories: readonly KeywordCategory[],
 ): KeywordMatch | null {
-  const text = normalizeText(description)
-  if (!text) return null
-
   let best: { match: KeywordMatch; length: number } | null = null
   let tie = false
 
   for (const category of categories) {
     if (category.kind !== kind || category.archivedAt) continue
 
-    for (const keyword of category.keywords) {
-      const needle = normalizeText(keyword)
-      if (!needle || !contains(text, needle)) continue
+    // v1.1: a palavra mais longa de cada categoria; o empate só importa entre categorias.
+    const found = matchKeyword(description, category.keywords)
+    if (!found) continue
 
-      if (!best || needle.length > best.length) {
-        best = { match: { categoryId: category.id, keyword }, length: needle.length }
-        tie = false
-      } else if (needle.length === best.length && category.id !== best.match.categoryId) {
-        tie = true
-      }
+    if (!best || found.length > best.length) {
+      best = { match: { categoryId: category.id, keyword: found.keyword }, length: found.length }
+      tie = false
+    } else if (found.length === best.length && category.id !== best.match.categoryId) {
+      tie = true
     }
   }
 

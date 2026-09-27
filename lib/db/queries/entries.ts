@@ -1,4 +1,5 @@
 import { endOfMonth, startOfMonth, type ISODate } from '@/lib/finance/date'
+import { normalizeText } from '@/lib/finance/keywords'
 import type { EntryKind, EntrySource } from '@/lib/db/types'
 import { createClient } from '@/lib/supabase/server'
 
@@ -10,12 +11,15 @@ import { createClient } from '@/lib/supabase/server'
  *
  * v1.1: acrescentada `listEntriesInRange`, para o resumo da IA ler o histórico de
  * um período escolhido. Nenhuma das outras servia, e por quê está no docblock dela.
+ *
+ * v1.2 — 2026-09-27: `keywords` na linha (a edição do Histórico mostra as palavras que ligam o
+ * lançamento ao extrato) e `listImportedDescriptions`, que alimenta as sugestões do campo.
  */
 
 const COLUMNS = `
   id, kind, occurred_on, description, amount_cents, notes,
   is_settled, settled_on, source, source_id, occurrence_key,
-  installment_number, installment_total,
+  installment_number, installment_total, keywords,
   category_id, categories ( id, name, color, icon )
 ` as const
 
@@ -34,6 +38,8 @@ export interface EntryWithCategory {
   occurrenceKey: string | null
   installmentNumber: number | null
   installmentTotal: number | null
+  /** v1.2 — 2026-09-27: palavras que ligam este lançamento ao extrato (migration 0019). */
+  keywords: string[]
   category: { id: string; name: string; color: string; icon: string | null } | null
 }
 
@@ -51,6 +57,7 @@ interface JoinedRow {
   occurrence_key: string | null
   installment_number: number | null
   installment_total: number | null
+  keywords: string[]
   category_id: string | null
   categories: { id: string; name: string; color: string; icon: string | null } | null
 }
@@ -70,6 +77,7 @@ function toEntry(row: JoinedRow): EntryWithCategory {
     occurrenceKey: row.occurrence_key,
     installmentNumber: row.installment_number,
     installmentTotal: row.installment_total,
+    keywords: row.keywords ?? [],
     category: row.categories,
   }
 }
@@ -246,4 +254,48 @@ export async function listPendingEntries(
   if (error) throw new Error(`Falha ao listar pendências: ${error.message}`)
 
   return (data as unknown as JoinedRow[]).map(toEntry)
+}
+
+/**
+ * Descrições únicas do que já foi importado de extrato, para sugerir palavra-chave.
+ * v1.0 — 2026-09-27.
+ *
+ * É o que a pessoa já viu escrito na conferência ("Pix de Empresa X"), e por isso o jeito
+ * mais fácil de acertar a palavra que o próximo extrato vai trazer. Por tipo, mais
+ * frequentes primeiro, comparando sem acento e sem caixa; o teto é de tamanho de página, não
+ * de regra. Lê as 2000 importações mais recentes — o PostgREST não faz `distinct`.
+ */
+export async function listImportedDescriptions(
+  limit = 500,
+): Promise<Record<EntryKind, string[]>> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('entries')
+    .select('description, kind')
+    .not('import_key', 'is', null)
+    .order('occurred_on', { ascending: false })
+    .limit(2000)
+
+  if (error) throw new Error(`Falha ao ler as importações: ${error.message}`)
+
+  const tally: Record<EntryKind, Map<string, { text: string; count: number }>> = {
+    expense: new Map(),
+    income: new Map(),
+  }
+  for (const row of data ?? []) {
+    const key = normalizeText(row.description)
+    if (!key) continue
+    const current = tally[row.kind].get(key)
+    if (current) current.count += 1
+    else tally[row.kind].set(key, { text: row.description, count: 1 })
+  }
+
+  const rank = (map: Map<string, { text: string; count: number }>) =>
+    [...map.values()]
+      .sort((a, b) => b.count - a.count || a.text.localeCompare(b.text, 'pt-BR'))
+      .slice(0, limit)
+      .map((item) => item.text)
+
+  return { expense: rank(tally.expense), income: rank(tally.income) }
 }

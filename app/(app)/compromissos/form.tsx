@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { updateRecurring, type RecurringActionState } from '@/lib/actions/recurring'
 import type { Category } from '@/lib/db/queries/categories'
 import type { RecurrenceFrequency, RecurringRule } from '@/lib/finance/types'
+import { KeywordField } from '@/components/finance/keyword-field'
 import { MoneyInput } from '@/components/finance/money-input'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -29,6 +30,9 @@ const FREQUENCIES: { value: RecurrenceFrequency; label: string }[] = [
  * o salário em despesa por um toque errado no meio da edição não é uma operação que alguém
  * queira. Quem errou o tipo exclui e cadastra de novo.
  *
+ * v1.2 — 2026-09-27: palavras-chave do extrato (migration 0019) — a linha importada que
+ * contém uma delas marca a ocorrência do mês como paga/recebida, com o valor do extrato.
+ *
  * O dia do vencimento só aparece quando a frequência é mensal — numa semanal ou
  * anual o vencimento sai da data de início, e um campo que não governa nada só
  * confunde. A validação no servidor recusa a combinação de qualquer forma.
@@ -36,10 +40,13 @@ const FREQUENCIES: { value: RecurrenceFrequency; label: string }[] = [
 export function RecurringForm({
   categories,
   rule,
+  suggestions = [],
 }: {
   /** As categorias do tipo da regra. */
   categories: Category[]
-  rule: RecurringRule
+  rule: RecurringRule & { keywords: string[] }
+  /** Descrições já importadas do mesmo tipo, para sugerir palavra-chave. */
+  suggestions?: string[]
 }) {
   const router = useRouter()
   const kind = rule.kind
@@ -186,6 +193,13 @@ export function RecurringForm({
         {kind === 'income' ? 'recebido' : 'pago'} fica como está — é histórico, e mexer nele
         mudaria o saldo de meses fechados.
       </p>
+
+      <KeywordField
+        label="Palavras-chave do extrato"
+        hint={`Na importação, a linha do extrato com uma destas palavras marca a ocorrência do mês como ${kind === 'income' ? 'recebida' : 'paga'}, com o valor do extrato. Ex.: o nome de quem ${kind === 'income' ? 'paga' : 'cobra'}.`}
+        initial={rule.keywords}
+        suggestions={suggestions}
+      />
 
       <FormMessage error={state.error} />
 

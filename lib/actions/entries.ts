@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { currentUserId } from '@/lib/db/current-user'
 import { createClient } from '@/lib/supabase/server'
+import { keywordsPatch } from '@/lib/validation/keywords'
 import {
   createEntrySchema,
   deleteEntriesSchema,
@@ -10,6 +11,11 @@ import {
   toggleSettledSchema,
   updateEntrySchema,
 } from '@/lib/validation/entries'
+
+/*
+ * v1.3 — 2026-09-27: criar e editar gravam `keywords` (migration 0019) — as palavras que, no
+ * extrato importado, liquidam este lançamento pendente. Ausente no formulário, não mexe.
+ */
 
 export interface EntryActionState {
   error?: string
@@ -44,6 +50,7 @@ export async function createEntry(
     categoryId: formData.get('categoryId') ?? '',
     notes: formData.get('notes') ?? '',
     isSettled: formData.get('isSettled'),
+    keywords: formData.get('keywords'),
   })
 
   if (!parsed.success) {
@@ -67,6 +74,7 @@ export async function createEntry(
     // A constraint `entries_settled_needs_date` exige a data quando liquidado.
     settled_on: parsed.data.isSettled ? parsed.data.occurredOn : null,
     source: 'manual',
+    ...keywordsPatch(parsed.data.keywords),
   })
 
   if (error) {
@@ -90,6 +98,7 @@ export async function updateEntry(
     categoryId: formData.get('categoryId') ?? '',
     notes: formData.get('notes') ?? '',
     isSettled: formData.get('isSettled'),
+    keywords: formData.get('keywords'),
   })
 
   if (!parsed.success) {
@@ -112,6 +121,7 @@ export async function updateEntry(
       notes: parsed.data.notes ?? null,
       is_settled: parsed.data.isSettled,
       settled_on: parsed.data.isSettled ? parsed.data.occurredOn : null,
+      ...keywordsPatch(parsed.data.keywords),
     })
     .eq('id', parsed.data.id)
     .select('id')

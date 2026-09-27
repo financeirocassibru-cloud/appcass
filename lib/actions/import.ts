@@ -5,12 +5,21 @@ import { suggestCategoriesWithAi } from '@/lib/ai/categorize'
 import { isAiConfigured } from '@/lib/ai/env'
 import { currentUserId } from '@/lib/db/current-user'
 import { listActiveCategories } from '@/lib/db/queries/categories'
+import { listReconcileCandidates } from '@/lib/db/queries/reconcile'
+import type { ReconcileCandidate } from '@/lib/finance/reconcile'
 import { suggestFromHistory, type CategoryOption, type HistoryEntry } from '@/lib/import/suggest'
 import { createClient } from '@/lib/supabase/server'
 import { commitImportSchema, prepareImportSchema, suggestGroupsSchema } from '@/lib/validation/import'
 
 /**
- * Importação de extrato, do lado do servidor. v1.1 — 2026-09-27.
+ * Importação de extrato, do lado do servidor. v1.2 — 2026-09-27.
+ *
+ * v1.2: a importação **conecta** a linha do extrato ao que já foi cadastrado. `prepareImport`
+ * devolve os itens pendentes com palavra-chave (`candidates`), o navegador casa com
+ * `matchStatementRows` (o texto original não sai do aparelho), e `commitImport` liquida cada
+ * item conectado por `reconcile_import_row` (migration 0019) em vez de criar outro lançamento.
+ * Conexão que o banco recusa (o item foi pago entre a conferência e o lançar) vira lançamento
+ * novo, como era antes.
  *
  * v1.1: as categorias voltam com as palavras-chave, que o navegador aplica antes do
  * histórico (a regra escrita pela pessoa vence o palpite); a IA deixou de rodar sozinha e
@@ -34,6 +43,8 @@ export interface ImportSetup {
   possibleDuplicates: string[]
   /** Categoria sugerida pelo histórico, por `import_key`. */
   suggestions: Record<string, string>
+  /** v1.2 — 2026-09-27: o que a linha pode liquidar em vez de virar lançamento novo. */
+  candidates: ReconcileCandidate[]
   aiAvailable: boolean
   error?: string
 }
@@ -48,6 +59,7 @@ export async function prepareImport(input: unknown): Promise<ImportSetup> {
     alreadyImported: [],
     possibleDuplicates: [],
     suggestions: {},
+    candidates: [],
     aiAvailable: false,
   }
 
@@ -97,7 +109,7 @@ export async function prepareImport(input: unknown): Promise<ImportSetup> {
     }
   }
 
-  const [categories, historyResult] = await Promise.all([
+  const [categories, historyResult, candidates] = await Promise.all([
     listActiveCategories(),
     supabase
       .from('entries')
@@ -105,6 +117,8 @@ export async function prepareImport(input: unknown): Promise<ImportSetup> {
       .not('category_id', 'is', null)
       .order('occurred_on', { ascending: false })
       .limit(PAGE),
+    // Sem os candidatos a importação segue como antes — conectar é um bônus, não um requisito.
+    listReconcileCandidates(from, to).catch(() => [] as ReconcileCandidate[]),
   ])
 
   const history: HistoryEntry[] = (historyResult.data ?? []).flatMap((h) =>
@@ -124,6 +138,7 @@ export async function prepareImport(input: unknown): Promise<ImportSetup> {
     alreadyImported: [...imported].filter((k) => rows.some((r) => r.importKey === k)),
     possibleDuplicates,
     suggestions,
+    candidates,
     aiAvailable: isAiConfigured(),
   }
 }
@@ -146,6 +161,8 @@ export interface CommitImportState {
   success?: string
   inserted?: number
   skipped?: number
+  /** v1.2 — 2026-09-27: quantas linhas liquidaram um item já cadastrado. */
+  linked?: number
 }
 
 export async function commitImport(input: unknown): Promise<CommitImportState> {
@@ -168,9 +185,39 @@ export async function commitImport(input: unknown): Promise<CommitImportState> {
 
   // A mesma chave duas vezes no mesmo envio seria uma linha a mais para o banco descartar.
   const seen = new Set<string>()
-  const rows = parsed.data.flatMap((row) => {
-    if (seen.has(row.importKey)) return []
+  const unique = parsed.data.filter((row) => {
+    if (seen.has(row.importKey)) return false
     seen.add(row.importKey)
+    return true
+  })
+
+  // v1.2 — 2026-09-27: primeiro as conexões, uma a uma — cada chamada é uma transação, e são
+  // poucas (as linhas que casaram com algo cadastrado). O que o banco recusa volta para a
+  // lista de lançamentos novos: a linha do extrato nunca se perde.
+  let linked = 0
+  const plain: typeof unique = []
+  for (const row of unique) {
+    if (!row.link) {
+      plain.push(row)
+      continue
+    }
+    const { data: connected, error: linkError } = await supabase.rpc('reconcile_import_row', {
+      p_target: row.link.target,
+      p_target_id: row.link.id,
+      // O tipo gerado não exprime `null` num parâmetro sem default; a meta não usa a data.
+      p_due_on: row.link.dueOn ?? row.occurredOn,
+      p_occurred_on: row.occurredOn,
+      p_kind: row.kind,
+      p_amount_cents: row.amountCents,
+      p_import_key: row.importKey,
+      p_import_batch_id: batchId,
+      ...(row.notes === null ? {} : { p_notes: row.notes }),
+    })
+    if (!linkError && connected) linked += 1
+    else plain.push(row)
+  }
+
+  const rows = plain.flatMap((row) => {
     const categoryId = row.categoryId && kindOf.get(row.categoryId) === row.kind ? row.categoryId : null
     return [
       {
@@ -196,10 +243,13 @@ export async function commitImport(input: unknown): Promise<CommitImportState> {
   // mesmo extrato não cria nada (migration 0016). O `.select` devolve só as inseridas, e é
   // por ele que se sabe quantas eram novas — sem ele, o sucesso seria silencioso mesmo que
   // nada tivesse entrado (invariante 17).
-  const { data, error } = await supabase
-    .from('entries')
-    .upsert(rows, { onConflict: 'user_id,import_key', ignoreDuplicates: true })
-    .select('id')
+  const { data, error } =
+    rows.length === 0
+      ? { data: [], error: null }
+      : await supabase
+          .from('entries')
+          .upsert(rows, { onConflict: 'user_id,import_key', ignoreDuplicates: true })
+          .select('id')
 
   if (error) return { error: `Não foi possível importar: ${error.message}` }
 
@@ -210,13 +260,22 @@ export async function commitImport(input: unknown): Promise<CommitImportState> {
   revalidatePath('/analise')
   revalidatePath('/')
   revalidatePath('/novo/lancamentos')
+  if (linked > 0) {
+    revalidatePath('/compromissos')
+    revalidatePath('/rendas')
+    revalidatePath('/parcelas')
+    revalidatePath('/metas')
+  }
 
   const plural = (n: number, um: string, varios: string) => (n === 1 ? um : varios.replace('#', String(n)))
+  const parts: string[] = []
+  if (inserted > 0) parts.push(`${plural(inserted, '1 lançamento importado', '# lançamentos importados')}.`)
+  if (linked > 0) {
+    parts.push(`${plural(linked, '1 item cadastrado marcado como pago', '# itens cadastrados marcados como pagos')}.`)
+  }
+  if (skipped > 0 && parts.length > 0) parts.push(`${plural(skipped, '1 já existia', '# já existiam')}.`)
   const success =
-    inserted === 0
-      ? 'Nada novo: esses lançamentos já tinham sido importados.'
-      : `${plural(inserted, '1 lançamento importado', '# lançamentos importados')}.` +
-        (skipped > 0 ? ` ${plural(skipped, '1 já existia', '# já existiam')}.` : '')
+    parts.length === 0 ? 'Nada novo: esses lançamentos já tinham sido importados.' : parts.join(' ')
 
-  return { success, inserted, skipped }
+  return { success, inserted, skipped, linked }
 }

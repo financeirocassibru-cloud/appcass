@@ -12,6 +12,7 @@ import {
 import type { Category } from '@/lib/db/queries/categories'
 import type { EntryWithCategory } from '@/lib/db/queries/entries'
 import type { EntryKind } from '@/lib/db/types'
+import { KeywordField } from '@/components/finance/keyword-field'
 import { MoneyInput } from '@/components/finance/money-input'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -23,6 +24,11 @@ const initialState: EntryActionState = {}
 
 /**
  * Lançamento: criar e editar, o mesmo formulário.
+ *
+ * v1.2 — 2026-09-27: "Conectar ao extrato" — as palavras-chave com que a importação reconhece
+ * este lançamento pendente e o marca como pago (migration 0019). Só no lançamento avulso: a
+ * parcela usa as do plano e a ocorrência de conta fixa, as da regra, e o lugar de editá-las é
+ * lá. Aberto de saída quando o lançamento já tem palavras.
  *
  * v1.1 — 2026-09-27: o [+] passou a usar `LaunchForm`, que cadastra também conta fixa, renda
  * fixa e parcelamento; este segue na edição (Histórico, Análise, "Ver lançamentos"). A nota de
@@ -51,6 +57,7 @@ export function EntryForm({
   incomeCategories,
   today,
   onDone,
+  suggestions,
 }: {
   mode: 'create' | 'edit'
   /** Obrigatório em `edit`. */
@@ -60,8 +67,11 @@ export function EntryForm({
   today: string
   /** Chamado depois de salvar ou excluir. */
   onDone?: (result: 'saved' | 'deleted') => void
+  /** Descrições já importadas, por tipo, para sugerir palavra-chave. */
+  suggestions?: Record<EntryKind, string[]>
 }) {
   const [kind, setKind] = useState<EntryKind>(entry?.kind ?? 'expense')
+  const [showKeywords, setShowKeywords] = useState((entry?.keywords.length ?? 0) > 0)
   const [categoryId, setCategoryId] = useState<string>(entry?.category?.id ?? '')
   const [confirmingDelete, setConfirmingDelete] = useState(false)
 
@@ -193,6 +203,25 @@ export function EntryForm({
           />
           <span className="text-sm">{kind === 'expense' ? 'Já paguei' : 'Já recebi'}</span>
         </label>
+
+        {generated ? null : showKeywords ? (
+          <div className="flex flex-col gap-2 rounded-xl bg-[var(--surface)] p-4">
+            <KeywordField
+              label="Palavras-chave do extrato"
+              hint={`Se ficar pendente, a linha do extrato com uma destas palavras o marca como ${kind === 'expense' ? 'pago' : 'recebido'} na importação, com o valor do extrato.`}
+              initial={entry?.keywords ?? []}
+              suggestions={suggestions?.[kind] ?? []}
+            />
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowKeywords(true)}
+            className="text-muted-foreground min-h-11 self-start text-sm underline"
+          >
+            Conectar ao extrato
+          </button>
+        )}
 
         <FormMessage error={state.error} />
 

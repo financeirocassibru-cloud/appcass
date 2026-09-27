@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { Sparkles } from 'lucide-react'
 import { commitImport, prepareImport, suggestImportCategories } from '@/lib/actions/import'
 import { matchCategoryByKeywords } from '@/lib/finance/keywords'
+import { matchStatementRows } from '@/lib/finance/reconcile'
 import { formatCents } from '@/lib/finance/money'
 import { checkTotals, ImportError, keyRows, type ParseResult } from '@/lib/import'
 import { notesFrom } from '@/lib/import/describe'
@@ -17,7 +18,11 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { diaEMes, ImportReview, type ReviewRow, type RowPatch } from './import-review'
 
 /**
- * Importar extrato: o gatilho discreto e a janela. v1.1 — 2026-09-27.
+ * Importar extrato: o gatilho discreto e a janela. v1.2 — 2026-09-27.
+ *
+ * v1.2: a linha cujo texto contém a palavra-chave de um item cadastrado e pendente (conta
+ * fixa, renda fixa, parcela, avulso, meta) vem **conectada**: lançar marca o item como pago em
+ * vez de criar outro. A conexão já vem aceita; "Não é este" solta, "Conectar" devolve.
  *
  * v1.1: a categoria nasce, nesta ordem, da **palavra-chave** da categoria (regra da pessoa,
  * casada aqui no aparelho contra a descrição e o texto original do banco), do histórico, e
@@ -107,17 +112,37 @@ function ImportSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (ope
 
       const imported = new Set(setup.alreadyImported)
       const duplicates = new Set(setup.possibleDuplicates)
+      // v1.2 — 2026-09-27: o que cada linha liquida. O texto original entra, como na categoria:
+      // é nele que o banco escreve o nome de quem pagou.
+      const links = matchStatementRows(
+        keyed
+          .filter((r) => !imported.has(r.importKey))
+          .map((r) => ({
+            importKey: r.importKey,
+            occurredOn: r.occurredOn,
+            kind: r.kind,
+            amountCents: r.amountCents,
+            text: `${r.description} ${r.original}`,
+          })),
+        setup.candidates,
+      )
       const inicial: ReviewRow[] = keyed.map((r) => {
+        const link = links[r.importKey] ?? null
         // Palavra-chave primeiro: é regra que a pessoa escreveu. O texto original entra na
         // comparação porque é nele que o banco escreve o estabelecimento — e ele não sai
         // do aparelho, a comparação é aqui.
         const porPalavra = matchCategoryByKeywords(`${r.description} ${r.original}`, r.kind, setup.categories)
         const doHistorico = setup.suggestions[r.importKey] ?? null
+        // Conectada não é "parece duplicada": a pendência que ela liquida é justamente o que
+        // fazia a linha parecer lançada à mão.
+        const duplicate = !link && duplicates.has(r.importKey)
         return {
           ...r,
           imported: imported.has(r.importKey),
-          duplicate: duplicates.has(r.importKey),
-          include: !imported.has(r.importKey) && !duplicates.has(r.importKey),
+          duplicate,
+          include: !imported.has(r.importKey) && !duplicate,
+          link,
+          linkSuggestion: link,
           categoryId: porPalavra?.categoryId ?? doHistorico,
           categorySource: porPalavra ? 'keyword' : doHistorico ? 'history' : null,
         }
@@ -140,7 +165,15 @@ function ImportSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (ope
   }, [])
 
   const patch = useCallback((index: number, change: RowPatch) => {
-    setRows((atual) => atual.map((r) => (r.index === index ? { ...r, ...change } : r)))
+    setRows((atual) =>
+      atual.map((r) => {
+        if (r.index !== index) return r
+        // v1.2 — 2026-09-27: trocar entrada/saída desfaz a conexão — ela foi achada para o
+        // tipo que o extrato dizia, e uma saída nunca liquida uma renda.
+        const kindChanged = change.kind !== undefined && change.kind !== r.kind
+        return kindChanged ? { ...r, ...change, link: null, linkSuggestion: null } : { ...r, ...change }
+      }),
+    )
   }, [])
 
   const patchGroup = useCallback(
@@ -158,8 +191,11 @@ function ImportSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (ope
 
   const selecionados = rows.filter((r) => r.include && !r.imported)
 
-  // O que a IA pode tentar: nem palavra-chave, nem histórico, nem escolha na tela.
-  const semCategoria = rows.filter((r) => !r.imported && r.categoryId === null && r.categorySource === null)
+  // O que a IA pode tentar: nem palavra-chave, nem histórico, nem escolha na tela. A linha
+  // conectada fica com a categoria do item que ela liquida.
+  const semCategoria = rows.filter(
+    (r) => !r.imported && !r.link && r.categoryId === null && r.categorySource === null,
+  )
 
   /**
    * "Categorizar com IA". v1.0 — 2026-09-27.
@@ -222,6 +258,7 @@ function ImportSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (ope
         notes: notesFrom(r.original),
         categoryId: r.categoryId,
         importKey: r.importKey,
+        link: r.link ? { target: r.link.target, id: r.link.id, dueOn: r.link.dueOn } : null,
       })),
     )
     if (resposta.success) {
@@ -241,6 +278,7 @@ function ImportSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (ope
   const periodo = datas.length > 0 ? `${diaEMes(datas[0] ?? '')} a ${diaEMes(datas.at(-1) ?? '')}` : ''
   const jaImportados = rows.filter((r) => r.imported).length
   const duplicados = rows.filter((r) => r.duplicate && !r.imported).length
+  const conectados = rows.filter((r) => r.link && r.include && !r.imported).length
 
   return (
     <Sheet open={open} onOpenChange={(v) => (v ? onOpenChange(true) : fechar())}>
@@ -318,6 +356,13 @@ function ImportSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (ope
                   {duplicados === 1
                     ? '1 parece já ter sido lançado à mão (mesmo dia e valor) e veio desmarcado.'
                     : `${duplicados} parecem já ter sido lançados à mão (mesmo dia e valor) e vieram desmarcados.`}
+                </p>
+              )}
+              {conectados > 0 && (
+                <p className="text-xs text-[var(--color-income)]">
+                  {conectados === 1
+                    ? '1 lançamento do extrato marca como pago um item que você já cadastrou.'
+                    : `${conectados} lançamentos do extrato marcam como pagos itens que você já cadastrou.`}
                 </p>
               )}
               {aiAvailable && (semCategoria.length > 0 || aiProgress || aiNote) && (

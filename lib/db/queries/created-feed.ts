@@ -13,6 +13,8 @@ import type { EntryWithCategory } from './entries'
  * cada importação que aparece na página — é o que permite "selecionar todos desta
  * importação" mesmo quando ela passa de uma página.
  *
+ * v1.2 — 2026-09-27: o lançamento traz `keywords` (migration 0019), que a edição mostra.
+ *
  * Três leituras por `created_at desc`, cada uma com o mesmo limite, intercaladas por
  * `mergeByCreatedAt` (`lib/feed.ts`). Pedir `limit` de cada uma e cortar depois é o que
  * garante as `limit` mais recentes do conjunto: nenhuma das três pode contribuir com mais do
@@ -29,7 +31,7 @@ import type { EntryWithCategory } from './entries'
 const ENTRY_COLUMNS = `
   id, kind, occurred_on, description, amount_cents, notes,
   is_settled, settled_on, source, source_id, occurrence_key,
-  installment_number, installment_total, created_at, import_batch_id,
+  installment_number, installment_total, created_at, import_batch_id, keywords,
   category_id, categories ( id, name, color, icon )
 ` as const
 
@@ -74,6 +76,7 @@ interface EntryRow {
   occurrence_key: string | null
   installment_number: number | null
   installment_total: number | null
+  keywords: string[]
   created_at: string
   import_batch_id: string | null
   category_id: string | null
@@ -146,6 +149,7 @@ export async function listCreatedFeed({
       occurrenceKey: row.occurrence_key,
       installmentNumber: row.installment_number,
       installmentTotal: row.installment_total,
+      keywords: row.keywords ?? [],
       category: row.categories,
     },
   }))

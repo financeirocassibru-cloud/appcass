@@ -115,6 +115,7 @@ export type Database = {
           installment_number: number | null;
           installment_total: number | null;
           is_settled: boolean;
+          keywords: string[];
           kind: Database["public"]["Enums"]["entry_kind"];
           notes: string | null;
           occurred_on: string;
@@ -136,6 +137,7 @@ export type Database = {
           installment_number?: number | null;
           installment_total?: number | null;
           is_settled?: boolean;
+          keywords?: string[];
           kind: Database["public"]["Enums"]["entry_kind"];
           notes?: string | null;
           occurred_on: string;
@@ -157,6 +159,7 @@ export type Database = {
           installment_number?: number | null;
           installment_total?: number | null;
           is_settled?: boolean;
+          keywords?: string[];
           kind?: Database["public"]["Enums"]["entry_kind"];
           notes?: string | null;
           occurred_on?: string;
@@ -237,6 +240,7 @@ export type Database = {
           archived_at: string | null;
           created_at: string;
           id: string;
+          keywords: string[];
           monthly_contribution_cents: number | null;
           name: string;
           target_amount_cents: number;
@@ -248,6 +252,7 @@ export type Database = {
           archived_at?: string | null;
           created_at?: string;
           id?: string;
+          keywords?: string[];
           monthly_contribution_cents?: number | null;
           name: string;
           target_amount_cents: number;
@@ -259,6 +264,7 @@ export type Database = {
           archived_at?: string | null;
           created_at?: string;
           id?: string;
+          keywords?: string[];
           monthly_contribution_cents?: number | null;
           name?: string;
           target_amount_cents?: number;
@@ -276,6 +282,7 @@ export type Database = {
           first_due_on: string;
           id: string;
           installments_count: number;
+          keywords: string[];
           total_amount_cents: number;
           updated_at: string;
           user_id: string;
@@ -287,6 +294,7 @@ export type Database = {
           first_due_on: string;
           id?: string;
           installments_count: number;
+          keywords?: string[];
           total_amount_cents: number;
           updated_at?: string;
           user_id: string;
@@ -298,6 +306,7 @@ export type Database = {
           first_due_on?: string;
           id?: string;
           installments_count?: number;
+          keywords?: string[];
           total_amount_cents?: number;
           updated_at?: string;
           user_id?: string;
@@ -461,6 +470,7 @@ export type Database = {
           frequency: Database["public"]["Enums"]["recurrence_freq"];
           id: string;
           is_active: boolean;
+          keywords: string[];
           kind: Database["public"]["Enums"]["entry_kind"];
           starts_on: string;
           updated_at: string;
@@ -476,6 +486,7 @@ export type Database = {
           frequency?: Database["public"]["Enums"]["recurrence_freq"];
           id?: string;
           is_active?: boolean;
+          keywords?: string[];
           kind: Database["public"]["Enums"]["entry_kind"];
           starts_on: string;
           updated_at?: string;
@@ -491,6 +502,7 @@ export type Database = {
           frequency?: Database["public"]["Enums"]["recurrence_freq"];
           id?: string;
           is_active?: boolean;
+          keywords?: string[];
           kind?: Database["public"]["Enums"]["entry_kind"];
           starts_on?: string;
           updated_at?: string;
@@ -728,6 +740,31 @@ export type Database = {
       is_admin: { Args: Record<PropertyKey, never>; Returns: boolean };
       materialize_recurring_occurrence: {
         Args: { p_occurs_on: string; p_rule_id: string; p_settled?: boolean };
+        Returns: string;
+      };
+      reconcile_import_row: {
+        Args: {
+          p_amount_cents: number;
+          p_due_on: string;
+          p_import_batch_id?: string;
+          p_import_key: string;
+          p_kind: Database["public"]["Enums"]["entry_kind"];
+          p_notes?: string;
+          p_occurred_on: string;
+          p_target: string;
+          p_target_id: string;
+        };
+        Returns: string;
+      };
+      record_goal_contribution: {
+        Args: {
+          p_amount_cents: number;
+          p_goal_id: string;
+          p_import_batch_id?: string;
+          p_import_key?: string;
+          p_note?: string;
+          p_occurred_on: string;
+        };
         Returns: string;
       };
       set_installments_paid: { Args: { p_paid_count: number; p_plan_id: string }; Returns: number };

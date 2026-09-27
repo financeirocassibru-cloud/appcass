@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { isISODate } from '@/lib/finance/date'
+import { keywordsField } from '@/lib/validation/keywords'
 
 /**
  * Validação de conta fixa.
@@ -8,6 +9,8 @@ import { isISODate } from '@/lib/finance/date'
  * 31`, `ends_on >= starts_on`). Elas continuam sendo a garantia — mas um erro de
  * constraint chega à tela como texto do Postgres em inglês. Estas regras existem
  * para o erro ser legível, não para substituir as do banco.
+ *
+ * v1.1 — 2026-09-27: `keywords`, para a linha do extrato liquidar a ocorrência (migration 0019).
  */
 
 const amountCentsSchema = z.coerce
@@ -50,6 +53,7 @@ const baseRecurringSchema = z.object({
     ),
   startsOn: isoDateSchema,
   endsOn: optionalIsoDate,
+  keywords: keywordsField,
 })
 
 /**

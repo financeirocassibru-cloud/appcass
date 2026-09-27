@@ -8,9 +8,11 @@ import {
   contributionIdSchema,
   createContributionSchema,
   createGoalSchema,
+  goalContributionSchema,
   goalIdSchema,
   updateGoalSchema,
 } from '@/lib/validation/goals'
+import { keywordsPatch } from '@/lib/validation/keywords'
 
 /**
  * Escrita de metas e aportes.
@@ -19,6 +21,11 @@ import {
  * `SUM(goal_contributions)`, lido de `v_goal_progress` (invariante 7). O app
  * antigo mantinha um acumulado gravado, e ele descolava da realidade no
  * primeiro aporte editado por fora.
+ *
+ * v1.1 — 2026-09-27: metas nascem no [+] (modo Meta), com palavras-chave (migration 0019), e
+ * o aporte feito por lá é uma **saída** — `recordGoalContribution` grava, numa transação, o
+ * lançamento (`source = 'goal'`) e o aporte amarrado a ele por `entry_id`. Excluir o aporte
+ * dessa forma exclui a saída, e o cascade leva o aporte junto.
  */
 
 export interface GoalActionState {
@@ -29,6 +36,11 @@ export interface GoalActionState {
 function revalidateGoalViews(): void {
   revalidatePath('/metas')
   revalidatePath('/analise')
+  // v1.1 — 2026-09-27: o aporte como saída aparece no saldo, no Histórico e no [+].
+  revalidatePath('/')
+  revalidatePath('/historico')
+  revalidatePath('/novo')
+  revalidatePath('/novo/lancamentos')
 }
 
 function readGoalForm(formData: FormData) {
@@ -37,6 +49,7 @@ function readGoalForm(formData: FormData) {
     targetAmountCents: formData.get('targetAmountCents'),
     targetDate: formData.get('targetDate') ?? '',
     monthlyContributionCents: formData.get('monthlyContributionCents') ?? '',
+    keywords: formData.get('keywords'),
   }
 }
 
@@ -58,6 +71,7 @@ export async function createGoal(
     target_amount_cents: parsed.data.targetAmountCents,
     target_date: parsed.data.targetDate,
     monthly_contribution_cents: parsed.data.monthlyContributionCents,
+    ...keywordsPatch(parsed.data.keywords),
   })
 
   if (error) return { error: `Não foi possível criar: ${error.message}` }
@@ -88,6 +102,7 @@ export async function updateGoal(
       target_amount_cents: parsed.data.targetAmountCents,
       target_date: parsed.data.targetDate,
       monthly_contribution_cents: parsed.data.monthlyContributionCents,
+      ...keywordsPatch(parsed.data.keywords),
     })
     .eq('id', parsed.data.id)
     .select('id')
@@ -205,6 +220,43 @@ export async function createContribution(
   return { success: parsed.data.isWithdrawal ? 'Resgate registrado.' : 'Aporte registrado.' }
 }
 
+/**
+ * Aporte como saída, pelo [+]. v1.0 — 2026-09-27.
+ *
+ * O dinheiro saiu da conta corrente para a meta: é uma saída (entra no saldo e no "guardado"
+ * da Análise) **e** um aporte (entra no progresso). `record_goal_contribution` grava os dois
+ * numa transação, com o `occurrence_key` do mês que faz o aporte previsto sumir da projeção.
+ */
+export async function recordGoalContribution(
+  _prev: GoalActionState,
+  formData: FormData,
+): Promise<GoalActionState> {
+  const parsed = goalContributionSchema.safeParse({
+    goalId: formData.get('goalId'),
+    amountCents: formData.get('amountCents'),
+    occurredOn: formData.get('occurredOn'),
+    note: formData.get('notes'),
+  })
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos' }
+  }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('record_goal_contribution', {
+    p_goal_id: parsed.data.goalId,
+    p_amount_cents: parsed.data.amountCents,
+    p_occurred_on: parsed.data.occurredOn,
+    ...(parsed.data.note === null ? {} : { p_note: parsed.data.note }),
+  })
+
+  if (error) return { error: `Não foi possível registrar: ${error.message}` }
+  if (!data) return { error: 'Não foi possível registrar o aporte.' }
+
+  revalidateGoalViews()
+  revalidatePath(`/metas/${parsed.data.goalId}`)
+  return { success: 'Aporte registrado.' }
+}
+
 export async function deleteContribution(
   _prev: GoalActionState,
   formData: FormData,
@@ -215,15 +267,24 @@ export async function deleteContribution(
   }
 
   const supabase = await createClient()
-  const { data, error } = await supabase
+
+  // v1.1 — 2026-09-27: aporte feito como saída? Exclui a saída — o cascade leva o aporte, e
+  // os dois somem juntos. Apagar só o aporte deixaria uma saída de "Meta" sem meta.
+  const found = await supabase
     .from('goal_contributions')
-    .delete()
+    .select('entry_id')
     .eq('id', parsed.data.id)
-    .select('id')
+    .maybeSingle()
+  if (found.error) return { error: `Não foi possível excluir: ${found.error.message}` }
+  if (!found.data) return { error: 'Aporte não encontrado.' }
+
+  const { data, error } = found.data.entry_id
+    ? await supabase.from('entries').delete().eq('id', found.data.entry_id).select('id')
+    : await supabase.from('goal_contributions').delete().eq('id', parsed.data.id).select('id')
 
   if (error) return { error: `Não foi possível excluir: ${error.message}` }
   if (!data || data.length === 0) return { error: 'Aporte não encontrado.' }
 
   revalidateGoalViews()
-  return { success: 'Aporte excluído.' }
+  return { success: found.data.entry_id ? 'Aporte e a saída dele excluídos.' : 'Aporte excluído.' }
 }

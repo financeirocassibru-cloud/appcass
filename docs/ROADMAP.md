@@ -405,3 +405,54 @@ Decisões:
   escolha de filtro e não mexe no padrão.
 - **Duplicar hábitos aceita o mês em aberto.** Não dobra nada: o destino continua começando no
   mês seguinte à origem, e do mês atual entra o que já foi lançado.
+
+## Fase 12 — O extrato liquida o que já foi cadastrado, e Meta no [+]
+
+v1.0 — 2026-09-27. O que a pessoa cadastrava no [+] ficava pendente até ela marcar à mão, e a
+importação do extrato não sabia disso: a mesma movimentação entrava como lançamento **novo**. O
+salário continuava "a receber" e aparecia de novo como "Pix de Empresa X", e o saldo contava os
+dois. Agora cada item cadastrado tem **palavras-chave**, e a linha do extrato que contém uma
+delas marca o item como pago em vez de criar outro.
+
+**Pronto quando:** uma renda fixa com a palavra "Empresa X" (escolhida na sugestão do que já
+foi importado) aparece paga, com o valor do extrato, depois de importar o extrato do mês — sem
+lançamento duplicado no Histórico e fora da agenda do Início; reimportar o mesmo extrato não
+grava nada; a parcela conectada mantém o valor dela; "Não é este" na conferência deixa o item
+pendente e grava a linha como lançamento novo; e um aporte pelo [+] sai do saldo e entra na meta.
+
+Decisões:
+
+- **Vale o valor do extrato** — é o que aconteceu. **Menos na parcela:** a soma das parcelas é o
+  total do plano (invariante 1), e a conferência só avisa a diferença. `occurred_on` vira a data
+  do extrato, porque o saldo soma por ela: com a data de vencimento, a conta vencida no dia 5 e
+  paga no dia 7 cairia antes de uma âncora de saldo do dia 6 e sairia do saldo. A competência da
+  conta fixa continua no `occurrence_key`, que sai do vencimento.
+- **A conexão aparece na conferência, já aceita.** Nada é liquidado sem a pessoa ver; um toque
+  solta. O casamento (`lib/finance/reconcile.ts`) é puro e roda no navegador, como o da
+  categoria, porque o texto original do banco não sai do aparelho. Mesmo tipo, palavra-chave no
+  texto e vencimento a até 15 dias; vence a palavra mais longa, depois a data mais perto, depois
+  o valor mais perto; cada item uma vez só, menos a meta, que recebe quantos aportes vierem.
+  Avulso pendente de mesmo dia, tipo e valor casa sem palavra-chave — era o "parece já lançado"
+  da fase 9, que só desmarcava a linha.
+- **Uma função por linha, e a recusa volta a ser lançamento novo.** `reconcile_import_row`
+  (migration 0019) é uma transação por linha e devolve `null` quando o item já não está pendente
+  (outra aba pagou, a pessoa marcou à mão). A linha nunca se perde: vira lançamento novo, como
+  antes desta fase. A `import_key` vai para a linha conectada, e é isso que faz reimportar não
+  criar nada.
+- **Parcela e ocorrência conectadas não recebem o lote da importação.** "Excluir esta
+  importação" em Ver todos não pode apagar a parcela ou o lançamento que a pessoa digitou. A
+  ocorrência de conta fixa e o aporte, que a importação cria, recebem — desfazer a importação os
+  devolve a "previsto".
+- **Palavras-chave em cada tabela, e a parcela usa a do plano** — copiar para cada parcela
+  duplicaria o dado (invariante 6). As sugestões são as descrições únicas já importadas, por
+  tipo e por frequência: quem cadastra o salário escolhe como o banco escreveu o nome da empresa
+  no mês passado, em vez de adivinhar.
+- **Aporte de meta é uma saída amarrada.** Pelo [+] (Saída › Meta) ou pela importação, o aporte
+  é um lançamento `source = 'goal'` e um `goal_contributions` com `entry_id`, numa transação
+  (`record_goal_contribution`). O progresso continua sendo `SUM(goal_contributions)`
+  (invariante 7); o `entry_id` virou `on delete cascade` e um trigger mantém valor e data iguais
+  aos da saída — excluir ou editar a saída no Histórico não deixa a meta mentindo. O
+  `occurrence_key` é o mês, o mesmo do aporte previsto por `expandGoal`, e por isso a projeção
+  descarta o previsto quando o real acontece. Resgate continua na tela da meta, sem saída.
+- **Metas saiu da aba Mais.** A lista mora no rodapé do [+] quando Saída está escolhida, como
+  Contas fixas; `/metas/nova` redireciona para `/novo?modo=meta`.

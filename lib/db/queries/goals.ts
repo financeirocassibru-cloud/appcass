@@ -12,6 +12,9 @@ import { createClient } from '@/lib/supabase/server'
  *
  * Como toda view, ela não tem `not null`: os totais chegam como `number | null`
  * e a conversão acontece aqui, uma vez.
+ *
+ * v1.1 — 2026-09-27: a meta traz `keywords` (migration 0019) — as palavras que, no extrato,
+ * registram um aporte nela.
  */
 
 export interface GoalProgress extends Goal {
@@ -19,6 +22,8 @@ export interface GoalProgress extends Goal {
   remainingCents: number
   /** 0 a 100, com duas casas. */
   pct: number
+  /** v1.1 — 2026-09-27: palavras que ligam a meta ao extrato. */
+  keywords: string[]
 }
 
 interface ViewRow {
@@ -47,7 +52,7 @@ export async function listGoals(includeArchived = false): Promise<GoalProgress[]
 
   const [progress, details] = await Promise.all([
     supabase.from('v_goal_progress').select(VIEW_COLUMNS),
-    supabase.from('goals').select('id, monthly_contribution_cents, archived_at, created_at'),
+    supabase.from('goals').select('id, monthly_contribution_cents, archived_at, created_at, keywords'),
   ])
 
   if (progress.error) throw new Error(`Falha ao listar metas: ${progress.error.message}`)
@@ -63,6 +68,7 @@ export async function listGoals(includeArchived = false): Promise<GoalProgress[]
         row,
         detail?.monthly_contribution_cents ?? null,
         detail?.archived_at ?? null,
+        detail?.keywords ?? [],
       )
     })
 
@@ -89,7 +95,7 @@ export async function getGoal(id: string): Promise<GoalProgress | null> {
     supabase.from('v_goal_progress').select(VIEW_COLUMNS).eq('goal_id', id).maybeSingle(),
     supabase
       .from('goals')
-      .select('monthly_contribution_cents, archived_at')
+      .select('monthly_contribution_cents, archived_at, keywords')
       .eq('id', id)
       .maybeSingle(),
   ])
@@ -102,6 +108,7 @@ export async function getGoal(id: string): Promise<GoalProgress | null> {
     progress.data as ViewRow & { goal_id: string },
     detail.data?.monthly_contribution_cents ?? null,
     detail.data?.archived_at ?? null,
+    detail.data?.keywords ?? [],
   )
 }
 
@@ -109,6 +116,7 @@ function toGoal(
   row: ViewRow & { goal_id: string },
   monthlyContributionCents: number | null,
   archivedAt: string | null,
+  keywords: string[],
 ): GoalProgress {
   return {
     id: row.goal_id,
@@ -121,6 +129,7 @@ function toGoal(
     archivedAt,
     remainingCents: Number(row.remaining_cents ?? 0),
     pct: Number(row.pct ?? 0),
+    keywords,
   }
 }
 

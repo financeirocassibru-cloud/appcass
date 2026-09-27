@@ -6,11 +6,14 @@
  * `deleteEntry` existiam em `lib/actions/entries.ts` sem nenhuma interface que os chamasse, e
  * corrigir um valor errado exigia excluir e lançar de novo — o que não era possível, porque
  * excluir também não tinha botão.
+ *
+ * v1.2 — 2026-09-27: as descrições já importadas vão para a edição, onde sugerem as
+ * palavras-chave que ligam um lançamento pendente ao extrato.
  */
 import Link from 'next/link'
 import type { Route } from 'next'
 import { listActiveCategories } from '@/lib/db/queries/categories'
-import { listEntriesByMonth, monthTotals } from '@/lib/db/queries/entries'
+import { listEntriesByMonth, listImportedDescriptions, monthTotals } from '@/lib/db/queries/entries'
 import { formatDayLabel, groupByDay } from '@/lib/finance/grouping'
 import { monthKey, todayISO } from '@/lib/finance/date'
 import type { EntryKind } from '@/lib/db/types'
@@ -61,11 +64,12 @@ export default async function LancamentosPage({
 
   // As listas por tipo são para o formulário de edição, que abre em cima da linha: alternar
   // saída/entrada dentro dele não deve ir ao banco de novo.
-  const [entries, categories, expenseCategories, incomeCategories] = await Promise.all([
+  const [entries, categories, expenseCategories, incomeCategories, imported] = await Promise.all([
     listEntriesByMonth({ month, categoryId: params.categoria, kind, settled }),
     listActiveCategories(),
     listActiveCategories('expense'),
     listActiveCategories('income'),
+    listImportedDescriptions(),
   ])
 
   const totals = monthTotals(entries)
@@ -146,6 +150,7 @@ export default async function LancamentosPage({
                     expenseCategories={expenseCategories}
                     incomeCategories={incomeCategories}
                     today={today}
+                    suggestions={imported}
                   />
                 ))}
               </ul>

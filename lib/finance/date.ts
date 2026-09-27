@@ -14,6 +14,9 @@
  * v1.1 — 2026-09-26: entraram `isoWeekday`, `startOfWeek` e `endOfWeek`, para a Análise poder
  * agrupar a série por semana. O dia da semana sai de uma congruência sobre ano/mês/dia, e não
  * de `new Date(iso).getDay()`, pelo mesmo motivo que todo o resto do arquivo existe.
+ *
+ * v1.2 — 2026-09-27: `daysBetween`, para a conexão do extrato medir a distância entre a data
+ * da linha e o vencimento do item cadastrado (`lib/finance/reconcile.ts`).
  */
 
 export const APP_TIMEZONE = 'America/Sao_Paulo'
@@ -206,6 +209,27 @@ export function monthsBetween(from: ISODate, to: ISODate): number {
   const a = parseISODate(from)
   const b = parseISODate(to)
   return (b.year - a.year) * 12 + (b.month - a.month)
+}
+
+/**
+ * Dias de `from` até `to` — negativo quando `to` vem antes. v1.2 — 2026-09-27.
+ *
+ * Conta pelo número do dia no calendário proleptico gregoriano (algoritmo "days from civil"),
+ * sem `Date`: `2026-02-28` → `2026-03-01` é 1, e `2028-02-28` → `2028-03-01` é 2.
+ */
+export function daysBetween(from: ISODate, to: ISODate): number {
+  return dayNumber(to) - dayNumber(from)
+}
+
+function dayNumber(date: ISODate): number {
+  const { year, month, day } = parseISODate(date)
+  const y = month <= 2 ? year - 1 : year
+  const era = Math.floor(y / 400)
+  const yoe = y - era * 400
+  const mp = (month + 9) % 12
+  const doy = Math.floor((153 * mp + 2) / 5) + day - 1
+  const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy
+  return era * 146097 + doe
 }
 
 /** Todos os dias do intervalo fechado `[from, to]`, em ordem. */

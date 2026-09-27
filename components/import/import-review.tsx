@@ -1,6 +1,7 @@
 'use client'
 
 import { memo, useCallback, useMemo, useState } from 'react'
+import type { ReconcileLink } from '@/lib/finance/reconcile'
 import type { CategoryOption } from '@/lib/import/suggest'
 import type { KeyedRow } from '@/lib/import/types'
 import { formatCents } from '@/lib/finance/money'
@@ -8,7 +9,11 @@ import { MoneyInput } from '@/components/finance/money-input'
 import { cn } from '@/lib/utils'
 
 /**
- * A conferência do extrato. v1.1 — 2026-09-27.
+ * A conferência do extrato. v1.2 — 2026-09-27.
+ *
+ * v1.2: a linha conectada a um item cadastrado diz o que vai marcar como pago ("Salário ·
+ * renda fixa · vence 05/10"), pela palavra-chave de quem, e com que diferença de valor. Um
+ * toque solta a conexão, outro a devolve; e há um filtro só para elas.
  *
  * Mesmo espírito do "Entendi assim" do assistente: nada é gravado antes de a pessoa ver, e
  * tudo que dá para errar dá para ajustar aqui — incluir ou não, descrição, tipo, valor, data
@@ -27,6 +32,10 @@ export interface ReviewRow extends KeyedRow {
   imported: boolean
   /** Bate com lançamento feito à mão (mesmo dia, tipo e valor): vem desmarcada. */
   duplicate: boolean
+  /** v1.2 — 2026-09-27: o item cadastrado que esta linha liquida. `null` = lançamento novo. */
+  link: ReconcileLink | null
+  /** A conexão que o casamento achou, para "Conectar" devolver depois de "Não é este". */
+  linkSuggestion: ReconcileLink | null
 }
 
 export interface RowPatch {
@@ -37,9 +46,11 @@ export interface RowPatch {
   occurredOn?: string
   categoryId?: string | null
   categorySource?: CategorySource
+  link?: ReconcileLink | null
+  linkSuggestion?: ReconcileLink | null
 }
 
-type Filter = 'all' | 'check' | 'uncategorized'
+type Filter = 'all' | 'check' | 'uncategorized' | 'linked'
 
 /** `2026-09-26` → `26/09`. Fatiamento de string, nunca `Date` (invariante 2). */
 export function diaEMes(iso: string): string {
@@ -76,7 +87,8 @@ export function ImportReview({
 
   const visible = rows.filter((row) => {
     if (filter === 'check') return row.kindInferred || row.duplicate
-    if (filter === 'uncategorized') return !row.imported && row.categoryId === null
+    if (filter === 'uncategorized') return !row.imported && !row.link && row.categoryId === null
+    if (filter === 'linked') return row.linkSuggestion !== null
     return true
   })
 
@@ -88,7 +100,8 @@ export function ImportReview({
   }
 
   const toCheck = rows.filter((r) => r.kindInferred || r.duplicate).length
-  const uncategorized = rows.filter((r) => !r.imported && r.categoryId === null).length
+  const uncategorized = rows.filter((r) => !r.imported && !r.link && r.categoryId === null).length
+  const linked = rows.filter((r) => r.linkSuggestion !== null).length
 
   return (
     <div className="flex flex-col gap-3">
@@ -96,6 +109,11 @@ export function ImportReview({
         <Chip active={filter === 'all'} onClick={() => setFilter('all')}>
           Todos ({rows.length})
         </Chip>
+        {linked > 0 && (
+          <Chip active={filter === 'linked'} onClick={() => setFilter('linked')}>
+            Conectados ({linked})
+          </Chip>
+        )}
         {toCheck > 0 && (
           <Chip active={filter === 'check'} onClick={() => setFilter('check')}>
             Conferir ({toCheck})
@@ -192,12 +210,15 @@ const Row = memo(function Row({
         <button type="button" onClick={onToggleOpen} className="flex min-w-0 flex-1 flex-col gap-0.5 text-left">
           <span className="truncate">{row.description}</span>
           <span className="text-muted-foreground flex flex-wrap gap-x-2 text-xs">
-            <span>
-              {categoryLabel ?? 'Sem categoria'}
-              {row.categorySource === 'keyword' && ' · pela palavra-chave'}
-              {row.categorySource === 'ai' && ' · sugerida pela IA'}
-              {row.categorySource === 'history' && ' · do histórico'}
-            </span>
+            {/* v1.2 — 2026-09-27: conectada, a categoria é a do item que ela liquida. */}
+            {row.link ? null : (
+              <span>
+                {categoryLabel ?? 'Sem categoria'}
+                {row.categorySource === 'keyword' && ' · pela palavra-chave'}
+                {row.categorySource === 'ai' && ' · sugerida pela IA'}
+                {row.categorySource === 'history' && ' · do histórico'}
+              </span>
+            )}
             {row.imported && <span className="font-medium">já importado</span>}
             {row.duplicate && !row.imported && <span className="font-medium">parece já lançado</span>}
             {row.kindInferred && <span className="font-medium">conferir entrada/saída</span>}
@@ -213,6 +234,10 @@ const Row = memo(function Row({
           {formatCents(row.amountCents)}
         </span>
       </div>
+
+      {row.linkSuggestion && !row.imported && (
+        <LinkNote row={row} link={row.linkSuggestion} onPatch={onPatch} />
+      )}
 
       {isOpen && !row.imported && (
         <RowEditor
@@ -232,6 +257,69 @@ const Row = memo(function Row({
     </li>
   )
 })
+
+const ORIGIN_LABEL: Record<ReconcileLink['origin'], string> = {
+  avulso: 'lançamento pendente',
+  parcela: 'parcela',
+  'conta fixa': 'conta fixa',
+  'renda fixa': 'renda fixa',
+  meta: 'aporte na meta',
+}
+
+/**
+ * A conexão de uma linha com o item cadastrado. v1.0 — 2026-09-27.
+ *
+ * Conectada: "Marca como paga: Salário · renda fixa · vence 05/10", a palavra que decidiu e a
+ * diferença de valor — que na parcela é só aviso, porque ela mantém o próprio valor. Solta:
+ * a mesma linha, apagada, com "Conectar" para voltar atrás.
+ */
+function LinkNote({
+  row,
+  link,
+  onPatch,
+}: {
+  row: ReviewRow
+  link: ReconcileLink
+  onPatch: (index: number, patch: RowPatch) => void
+}) {
+  const active = row.link !== null
+  const diff = link.amountDiffCents
+  const verb = link.origin === 'meta' ? 'Registra' : row.kind === 'income' ? 'Marca como recebida' : 'Marca como paga'
+
+  return (
+    <div
+      className={cn(
+        'mx-3 mb-3 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs',
+        active ? 'border-[var(--color-income)]/40 bg-card' : 'bg-transparent opacity-70',
+      )}
+    >
+      <p className="min-w-0 flex-1">
+        <span className="font-medium">{active ? verb : 'Não conectado'}:</span> {link.label} ·{' '}
+        {ORIGIN_LABEL[link.origin]}
+        {link.dueOn ? ` · vence ${diaEMes(link.dueOn)}` : ''}
+        {link.keyword ? (
+          <span className="text-muted-foreground"> · pela palavra-chave &ldquo;{link.keyword}&rdquo;</span>
+        ) : (
+          <span className="text-muted-foreground"> · mesmo dia e valor</span>
+        )}
+        {active && diff !== 0 ? (
+          <span className="text-muted-foreground block">
+            {link.keepsAmount
+              ? `A parcela continua ${formatCents(link.expectedCents)}; o extrato diz ${formatCents(row.amountCents)}.`
+              : `Previsto ${formatCents(link.expectedCents)}; fica o valor do extrato.`}
+          </span>
+        ) : null}
+      </p>
+      <button
+        type="button"
+        onClick={() => onPatch(row.index, { link: active ? null : link, include: true })}
+        className="min-h-8 shrink-0 rounded-full border px-3 font-medium"
+      >
+        {active ? 'Não é este' : 'Conectar'}
+      </button>
+    </div>
+  )
+}
 
 /**
  * O ajuste de uma linha.

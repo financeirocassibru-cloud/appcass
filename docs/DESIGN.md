@@ -21,7 +21,7 @@ o novo desenho:
 | 📋 Planejamento | **Análise** (janela passado+futuro + cenários) |
 | 💳 Gastos / 💵 Renda | **Histórico** unificado, com filtro por tipo |
 | 📅 Parcelas / 📌 Fixos | **[+]** — conta fixa e parcelado em Saída, renda fixa em Entrada; as listas ficam no rodapé do [+] (v1.2 — 2026-09-27) |
-| 🎯 Metas | **Mais → Metas** |
+| 🎯 Metas | **[+] → Saída → Meta**, com a lista no rodapé do [+] (v2.2 — 2026-09-27; antes, Mais → Metas) |
 | 📊 Histórico | **Início** (gráficos) + **Histórico** com filtro por período + **Análise** |
 
 A agenda de "próximos eventos" sai da aba Planejamento e vira um bloco fixo na tela Início,
@@ -53,6 +53,14 @@ calculado sempre — não pode depender da existência de um cenário ativo (bug
   disputar a largura do título; a lista tem modo seleção com exclusão em lote e o atalho que
   marca uma importação de extrato inteira. A descrição escolhe a categoria pela palavra-chave
   (Ajustes › Categorias) enquanto a pessoa não tocar num chip.
+  **v2.2 — 2026-09-27:** Saída ganhou **Meta** — chips com as metas ativas (registrar aporte,
+  que é uma saída) e "+ Nova meta" (cadastrar). E todo modo tem **Conectar ao extrato**, um
+  link recolhido que abre as palavras-chave em chips, com sugestões tiradas das descrições já
+  importadas: é por elas que a importação reconhece o item e o marca como pago. Recolhido
+  porque o avulso continua sendo dois toques. O mesmo campo (`components/finance/keyword-field.tsx`)
+  aparece na edição do lançamento, da conta/renda fixa, do parcelamento, da meta e da categoria.
+  Na conferência da importação, a linha conectada diz o que vai marcar como pago, pela palavra
+  de quem e com que diferença de valor, e tem **Não é este** para soltar.
 - **Análise (v2.0 — 2026-09-27):** a curva do saldo atravessando passado e futuro, com destaque
   (cor de alerta) onde o saldo fica negativo — informação que o app antigo calculava mas não
   destacava visualmente. O passado é traço cheio e o futuro é tracejado, porque tracejado lê como

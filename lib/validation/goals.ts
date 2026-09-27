@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { isISODate } from '@/lib/finance/date'
+import { keywordsField } from '@/lib/validation/keywords'
 
 /**
  * Validação de metas e aportes.
@@ -11,6 +12,9 @@ import { isISODate } from '@/lib/finance/date'
  *
  * Por isso o formulário manda a magnitude e o sentido em separado, como a tela
  * de âncora do saldo faz.
+ *
+ * v1.1 — 2026-09-27: `keywords` na meta, e `goalContributionSchema` — o aporte registrado
+ * pelo [+], que vira saída amarrada ao aporte (migration 0019).
  */
 
 const optionalIsoDate = z
@@ -40,6 +44,7 @@ export const createGoalSchema = z.object({
   targetAmountCents: centsSchema,
   targetDate: optionalIsoDate,
   monthlyContributionCents: optionalCents,
+  keywords: keywordsField,
 })
 
 export const updateGoalSchema = createGoalSchema.extend({
@@ -73,4 +78,16 @@ export const createContributionSchema = z.object({
 
 export const contributionIdSchema = z.object({
   id: z.string().uuid('Aporte inválido'),
+})
+
+/** v1.1 — 2026-09-27: aporte como saída, pelo [+]. Sempre positivo: resgate é na tela da meta. */
+export const goalContributionSchema = z.object({
+  goalId: z.string().uuid('Escolha uma meta'),
+  amountCents: centsSchema,
+  occurredOn: z.string().trim().refine(isISODate, 'Data inválida'),
+  note: z
+    .union([z.string(), z.null(), z.undefined()])
+    .transform((value) => (value ?? '').trim())
+    .refine((value) => value.length <= 200, 'Observação longa demais')
+    .transform((value) => (value === '' ? null : value)),
 })

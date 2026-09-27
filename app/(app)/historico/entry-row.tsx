@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { toggleSettled, type EntryActionState } from '@/lib/actions/entries'
 import type { Category } from '@/lib/db/queries/categories'
 import type { EntryWithCategory } from '@/lib/db/queries/entries'
+import type { EntryKind } from '@/lib/db/types'
 import { EntryForm } from '@/components/finance/entry-form'
 import { Money } from '@/components/finance/money'
 import {
@@ -30,17 +31,22 @@ const initialState: EntryActionState = {}
  * São dois alvos de toque separados, e isso é deliberado: o círculo à esquerda alterna
  * pago/pendente — a ação mais usada da tela, que não pode custar dois toques —, e o resto da
  * linha abre o painel de edição. Um alvo só obrigaria a escolher entre as duas.
+ *
+ * v1.2 — 2026-09-27: repassa ao formulário as sugestões de palavra-chave (descrições
+ * importadas).
  */
 export function EntryRow({
   entry,
   expenseCategories,
   incomeCategories,
   today,
+  suggestions,
 }: {
   entry: EntryWithCategory
   expenseCategories: Category[]
   incomeCategories: Category[]
   today: string
+  suggestions?: Record<EntryKind, string[]>
 }) {
   const router = useRouter()
   const [state, formAction, pending] = useActionState(toggleSettled, initialState)
@@ -110,6 +116,7 @@ export function EntryRow({
             expenseCategories={expenseCategories}
             incomeCategories={incomeCategories}
             today={today}
+            suggestions={suggestions}
             onDone={(result) => {
               toast.success(
                 result === 'deleted' ? 'Lançamento excluído.' : 'Lançamento atualizado.',
