@@ -9,6 +9,14 @@ export interface InstallmentPlanInput {
   totalAmountCents: number
   installmentsCount: number
   firstDueOn: ISODate
+  /**
+   * Dia de vencimento de todas as parcelas. Ausente, é o dia de `firstDueOn`.
+   *
+   * v1.1 — 2026-09-27: existe para o parcelamento em andamento. Quem cadastra informa a
+   * **próxima** parcela, e a primeira é calculada para trás; se a próxima vence dia 31 e a
+   * primeira caiu num mês de 30, o dia da primeira (30) arrastaria todas para o dia 30.
+   */
+  anchorDay?: number
 }
 
 /** Uma parcela, pronta para virar linha em `entries`. */
@@ -38,7 +46,7 @@ export interface PlannedInstallment {
  */
 export function planInstallments(plan: InstallmentPlanInput): PlannedInstallment[] {
   const amounts = splitCents(plan.totalAmountCents, plan.installmentsCount)
-  const anchorDay = parseISODate(plan.firstDueOn).day
+  const anchorDay = plan.anchorDay ?? parseISODate(plan.firstDueOn).day
 
   return amounts.map((amountCents, index) => {
     const monthDate = addMonths(plan.firstDueOn, index)
@@ -57,4 +65,22 @@ export function planInstallments(plan: InstallmentPlanInput): PlannedInstallment
       occurrenceKey: String(installmentNumber),
     }
   })
+}
+
+/**
+ * A primeira parcela de um parcelamento que já está em andamento.
+ *
+ * v1.1 — 2026-09-27. Quem cadastra uma compra antiga lembra da próxima fatura e de quantas
+ * já pagou, não da data da primeira. A primeira é a próxima recuada `paidCount` meses, e o dia
+ * de vencimento é o da próxima — devolvido junto, para ir como `anchorDay` a
+ * `planInstallments()`. Prévia e Server Action chamam esta função, e por isso não divergem.
+ */
+export function firstDueFromNext(
+  nextDueOn: ISODate,
+  paidCount: number,
+): { firstDueOn: ISODate; anchorDay: number } {
+  return {
+    firstDueOn: addMonths(nextDueOn, -paidCount),
+    anchorDay: parseISODate(nextDueOn).day,
+  }
 }

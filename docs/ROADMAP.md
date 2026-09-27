@@ -327,3 +327,44 @@ palavra de grupo em `groupKind` (`lib/import/pdf-layout.ts`) ou uma regra de des
 `lib/import/describe.ts` — não um parser por banco. Acrescente um teste com o layout novo,
 com dados inventados: extrato real tem dados de terceiros e não entra no repositório.
 
+
+## Fase 10 — Tudo nasce no [+], "Ver lançamentos" e "Duplicar hábitos"
+
+v1.0 — 2026-09-27. Conta fixa, renda fixa e parcelamento moravam na aba Mais, e cadastrar um
+deles custava quatro telas. Agora são um chip no [+]: Saída oferece Avulso · Conta fixa ·
+Parcelado; Entrada oferece Avulsa · Renda fixa. O avulso continua o padrão e em dois toques.
+Conta fixa e renda fixa passaram a ter listas próprias (`/compromissos` e `/rendas`), no rodapé
+do [+] conforme o tipo escolhido.
+
+**Pronto quando:** um parcelamento cadastrado "em andamento" com 3 de 12 pagas mostra "3 de 12" e
+as três pagas no Histórico na data de cada uma; "Ver lançamentos" lista o que foi cadastrado pela
+data de criação, com o parcelamento uma vez só; um cenário com "Duplicar hábitos" de agosto põe o
+gasto do 2º sábado no 2º sábado dos meses seguintes, nada antes de hoje, nenhuma regra duplicada,
+e cada item se edita sozinho.
+
+Decisões:
+
+- **Um formulário, e nenhum caminho de escrita novo.** `components/finance/launch-form.tsx`
+  chama `createEntry`, `createRecurring` ou `createInstallmentPlan` com os nomes de campo de cada
+  schema. Valor, categoria, descrição e data são compartilhados, e trocar de modo não perde o
+  que foi digitado. A conta fixa mensal vence no dia da data de início — um campo a menos.
+- **Parcelas já pagas vão na função do banco** (migration 0017, `p_paid_count`). Um `update`
+  depois da criação não sabe dar a cada linha a sua própria data de liquidação, e se falhasse
+  deixaria as pagas como pendentes, cobradas de novo pela agenda. A assinatura antiga é trocada
+  pela nova com `default 0`, e não sobrecarregada: com as duas, o PostgREST não saberia qual
+  escolher. Quem informa a *próxima* parcela ganha a primeira recuada por `firstDueFromNext`, e
+  o dia de vencimento viaja como `anchorDay` — sem ele, uma próxima no dia 31 arrastaria todas
+  para o dia 30.
+- **"Ver lançamentos" junta três tabelas** (lançamento avulso, regra, plano) por `created_at`,
+  com cursor de instante **e id**: uma importação grava dezenas de linhas no mesmo instante, e
+  um cursor só de instante pularia as que sobraram na virada da página. O dia de criação é o de
+  São Paulo (`todayISO(fuso, instante)`), e a ordenação respeita os microssegundos do Postgres.
+- **Hábito é hipótese, não cópia.** Os duplicados são `scenario_entries` datados em outros meses,
+  sem vínculo de escrita com `entries` (invariante 6): mudar agosto depois não muda o cenário, que
+  é justamente o retrato do hábito. Só `source = 'manual'` é hábito — conta fixa, renda fixa,
+  parcela e meta já entram na projeção pela própria regra, e duplicá-las contaria duas vezes.
+- **O dia da semana manda, não o dia do mês.** O lazer do 2º sábado de agosto vai para o 2º
+  sábado de setembro, e não para o dia 8, que é uma terça. O 5º que não existe cai no último.
+- **Nada antes de hoje.** A projeção aplica o cenário só à previsão; item datado no passado seria
+  gravado e nunca apareceria. A prévia diz isso, e pergunta — sem opção pré-marcada — se é tudo,
+  só saídas ou só entradas.

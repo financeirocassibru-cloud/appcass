@@ -20,7 +20,7 @@ o novo desenho:
 |---|---|
 | 📋 Planejamento | **Análise** (janela passado+futuro + cenários) |
 | 💳 Gastos / 💵 Renda | **Histórico** unificado, com filtro por tipo |
-| 📅 Parcelas / 📌 Fixos | **Mais → Compromissos** (recorrentes e parcelas) |
+| 📅 Parcelas / 📌 Fixos | **[+]** — conta fixa e parcelado em Saída, renda fixa em Entrada; as listas ficam no rodapé do [+] (v1.2 — 2026-09-27) |
 | 🎯 Metas | **Mais → Metas** |
 | 📊 Histórico | **Início** (gráficos) + **Histórico** com filtro por período + **Análise** |
 
@@ -43,6 +43,10 @@ calculado sempre — não pode depender da existência de um cenário ativo (bug
   que em celular ninguém descobre e teclado nenhum alcança.
 - **Lançamento rápido (`/novo`):** abre com teclado numérico focado, valor é o primeiro campo,
   categoria em chips horizontais, data pré-preenchida com hoje. Meta: salvar em dois toques.
+  **Quatro modos (v1.2 — 2026-09-27):** abaixo de Saída/Entrada, chips de modo — Saída: Avulso ·
+  Conta fixa · Parcelado; Entrada: Avulsa · Renda fixa. Avulso é o padrão e continua em dois
+  toques; os outros só acrescentam campos, e trocar de modo não perde o valor digitado. No topo,
+  **Ver lançamentos** (`/novo/lancamentos`): o que foi cadastrado, pela data de criação.
 - **Análise (v2.0 — 2026-09-27):** a curva do saldo atravessando passado e futuro, com destaque
   (cor de alerta) onde o saldo fica negativo — informação que o app antigo calculava mas não
   destacava visualmente. O passado é traço cheio e o futuro é tracejado, porque tracejado lê como

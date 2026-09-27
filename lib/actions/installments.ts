@@ -22,6 +22,10 @@ import {
  * função `create_installment_plan` (migration 0010), que grava plano e parcelas
  * numa transação só **e confere a soma de novo** — o cliente calcula, o banco
  * não acredita.
+ *
+ * v1.1 — 2026-09-27: parcelamento em andamento. `paidCount` vai para `p_paid_count`
+ * (migration 0017), e as primeiras nascem liquidadas na data de cada uma, na mesma transação.
+ * `/novo/lancamentos` passou a ser revalidado, porque o plano aparece lá.
  */
 
 export interface InstallmentActionState {
@@ -33,6 +37,8 @@ function revalidateInstallmentViews(): void {
   revalidatePath('/parcelas')
   revalidatePath('/')
   revalidatePath('/historico')
+  revalidatePath('/novo')
+  revalidatePath('/novo/lancamentos')
 }
 
 export async function createInstallmentPlan(
@@ -45,6 +51,8 @@ export async function createInstallmentPlan(
     installmentsCount: formData.get('installmentsCount'),
     firstDueOn: formData.get('firstDueOn'),
     categoryId: formData.get('categoryId') ?? '',
+    paidCount: formData.get('paidCount'),
+    anchorDay: formData.get('anchorDay'),
   })
 
   if (!parsed.success) {
@@ -61,8 +69,10 @@ export async function createInstallmentPlan(
     totalAmountCents: parsed.data.totalAmountCents,
     installmentsCount: parsed.data.installmentsCount,
     firstDueOn: parsed.data.firstDueOn,
+    anchorDay: parsed.data.anchorDay ?? undefined,
   })
 
+  const paidCount = parsed.data.paidCount ?? 0
   const supabase = await createClient()
 
   const { data, error } = await supabase.rpc('create_installment_plan', {
@@ -79,13 +89,19 @@ export async function createInstallmentPlan(
     // Omitido quando não há categoria: o parâmetro tem `default null` no banco,
     // e é assim que "sem categoria" se exprime no tipo gerado.
     ...(parsed.data.categoryId === null ? {} : { p_category_id: parsed.data.categoryId }),
+    p_paid_count: paidCount,
   })
 
   if (error) return { error: `Não foi possível criar: ${error.message}` }
   if (!data) return { error: 'Não foi possível criar o parcelamento.' }
 
   revalidateInstallmentViews()
-  return { success: `Parcelamento criado em ${parsed.data.installmentsCount}x.` }
+  return {
+    success:
+      paidCount > 0
+        ? `Parcelamento criado em ${parsed.data.installmentsCount}x, com ${paidCount} já ${paidCount === 1 ? 'paga' : 'pagas'}.`
+        : `Parcelamento criado em ${parsed.data.installmentsCount}x.`,
+  }
 }
 
 /**

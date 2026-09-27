@@ -37,6 +37,9 @@ export const dynamic = 'force-dynamic'
  * POSTada para a rota atual, então ela roda sob o orçamento desta página, e `runInsights` espera
  * até 40s pela resposta do modelo. Sem a linha, a plataforma corta a função no meio e a pessoa
  * recebe um erro de rede em vez do resumo.
+ *
+ * v2.1 — 2026-09-27: os itens hipotéticos recebem as categorias, porque passaram a ser
+ * editáveis — inclusive os que vieram de "Duplicar hábitos".
  */
 export const maxDuration = 60
 
@@ -230,7 +233,12 @@ export default async function AnalisePage({
         </p>
       ) : null}
 
-      {window.scenario ? <ScenarioEntries scenario={window.scenario} today={today} /> : null}
+      {window.scenario ? <ScenarioEntries
+          scenario={window.scenario}
+          today={today}
+          expenseCategories={expenseCategories}
+          incomeCategories={incomeCategories}
+        /> : null}
 
       <MonthlyAnalysis months={months} params={params} today={today} />
 

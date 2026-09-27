@@ -74,14 +74,19 @@ function toRuleWithCategory(row: JoinedRow): RecurringRuleWithCategory {
  * criando duas regras para a mesma conta, que é como o app antigo acumulava
  * lixo.
  */
-export async function listRecurringRules(): Promise<RecurringRuleWithCategory[]> {
+export async function listRecurringRules(kind?: EntryKind): Promise<RecurringRuleWithCategory[]> {
   const supabase = await createClient()
 
-  const { data, error } = await supabase
+  // v1.1 — 2026-09-27: `kind` opcional. Conta fixa (`expense`) e renda fixa (`income`) têm
+  // listas próprias desde a fase 10; sem o filtro, segue devolvendo as duas (a IA usa assim).
+  let query = supabase
     .from('recurring_rules')
     .select(COLUMNS_WITH_CATEGORY)
     .order('is_active', { ascending: false })
     .order('description', { ascending: true })
+  if (kind) query = query.eq('kind', kind)
+
+  const { data, error } = await query
 
   if (error) throw new Error(`Falha ao listar contas fixas: ${error.message}`)
 

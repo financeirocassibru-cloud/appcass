@@ -30,8 +30,15 @@ export interface RecurringActionState {
   success?: string
 }
 
+/**
+ * v1.1 — 2026-09-27: renda fixa ganhou lista própria (`/rendas`), e o que é cadastrado
+ * aparece em `/novo` (contadores) e em `/novo/lancamentos`.
+ */
 function revalidateRecurringViews(): void {
   revalidatePath('/compromissos')
+  revalidatePath('/rendas')
+  revalidatePath('/novo')
+  revalidatePath('/novo/lancamentos')
   revalidatePath('/')
   revalidatePath('/historico')
 }
