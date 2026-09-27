@@ -16,6 +16,9 @@ import { cn } from '@/lib/utils'
  *
  * O padrão é **visível**. Um app que abre escondendo o saldo cobra um toque a
  * mais de todo uso para proteger o caso raro.
+ *
+ * v1.1 — 2026-09-27: o convite "Você ainda não informou quanto tem" passou a ser
+ * só do primeiro uso (sem âncora salva **e** sem lançamento nenhum). Ver o rodapé.
  */
 
 const STORAGE_KEY = 'appcass:hide-amounts'
@@ -77,12 +80,15 @@ export function BalanceHero({
   cents,
   anchorOn,
   isAnchorConfigured,
+  hasEntries,
   incomeCents,
   expenseCents,
 }: {
   cents: number
   anchorOn: string
   isAnchorConfigured: boolean
+  /** v1.1 — 2026-09-27: se já existe algum lançamento; decide se é primeiro uso. */
+  hasEntries: boolean
   incomeCents: number
   expenseCents: number
 }) {
@@ -143,7 +149,12 @@ export function BalanceHero({
       {/* A âncora fica à vista sempre: é a premissa do número acima, e o app
           antigo errava por guardar um saldo solto que ninguém sabia de quando
           era. Sem âncora informada, o texto convida a informá-la em vez de
-          apresentar o número como certo. */}
+          apresentar o número como certo.
+
+          v1.1 — 2026-09-27: o convite é só do primeiro uso. Quem já tem
+          lançamentos e nunca salvou a âncora vê apenas o atalho para ajustar —
+          sem data, porque não há saldo informado de que partir. Salvar saldo
+          zero conta como informado (migration 0015). */}
       <p className="text-xs text-[var(--foreground-muted)]">
         {isAnchorConfigured ? (
           <>
@@ -152,6 +163,10 @@ export function BalanceHero({
               Ajustar
             </Link>
           </>
+        ) : hasEntries ? (
+          <Link href="/ajustes/saldo" className="text-[var(--brand)] underline">
+            Ajustar saldo
+          </Link>
         ) : (
           <>
             Você ainda não informou quanto tem.{' '}

@@ -55,6 +55,8 @@ export default async function InicioPage() {
         cents={balance.currentCents}
         anchorOn={balance.openingBalanceOn}
         isAnchorConfigured={balance.isAnchorConfigured}
+        // v1.3 — 2026-09-27: o convite para informar o saldo é só do primeiro uso.
+        hasEntries={balance.hasEntries}
         incomeCents={balance.settledIncomeCents}
         expenseCents={balance.settledExpenseCents}
       />
