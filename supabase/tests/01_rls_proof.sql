@@ -307,6 +307,31 @@ begin
    where id = '22222222-2222-2222-2222-222222222222';
 end $$;
 
+-- === Âncora do saldo informada, mesmo zerada (migration 0015) — 2026-09-27 ===
+-- "Nunca informou" e "informou zero" tinham a mesma cara (`opening_balance_cents = 0`),
+-- e o convite para informar o saldo não sumia nunca para quem não tem nada na conta.
+do $$
+begin
+  update public.profiles set opening_balance_set_at = null
+   where id = '22222222-2222-2222-2222-222222222222';
+  raise exception 'member conseguiu escrever opening_balance_set_at direto';
+exception
+  when insufficient_privilege then null;  -- esperado: só o trigger escreve a coluna
+end $$;
+
+do $$
+declare marcado timestamptz;
+begin
+  update public.profiles set opening_balance_cents = 0
+   where id = '22222222-2222-2222-2222-222222222222';
+
+  select opening_balance_set_at into marcado from public.profiles
+   where id = '22222222-2222-2222-2222-222222222222';
+  if marcado is null then
+    raise exception 'salvar saldo zero deveria marcar opening_balance_set_at';
+  end if;
+end $$;
+
 reset role;
 
 -- === Promoção do primeiro usuário ===
