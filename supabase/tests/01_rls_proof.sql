@@ -5,6 +5,7 @@
 -- v1.4 — 2026-09-27: palavras-chave, lote de importação e período da Análise (migration 0018) no fim.
 -- v1.5 — 2026-09-27: conexão do extrato ao que foi cadastrado e aporte como saída (migration 0019) no fim.
 -- v1.6 — 2026-09-27: cartões e empréstimos (migrations 0020/0021) no fim.
+-- v1.7 — 2026-09-27: `is_admin()` como invoker (migration 0022) no fim.
 -- Roda como um papel sem BYPASSRLS, alternando o "usuário logado" via GUC,
 -- que é o que a função auth.uid() do shim lê.
 
@@ -1908,5 +1909,47 @@ begin
     raise exception 'anon não deveria executar as funções da 0021';
   end if;
 end $$;
+
+-- === Advisor de segurança (migration 0022) — v1.7 — 2026-09-27 ===
+--
+-- `is_admin()` virou security invoker e continua dizendo a mesma coisa: a admin (Ana, que
+-- nasceu admin) é admin e lê os convites; Bruno não é e não lê; sem sessão, ninguém é.
+
+do $$
+begin
+  if (select prosecdef from pg_proc where oid = 'public.is_admin()'::regprocedure) then
+    raise exception 'is_admin() deveria ser security invoker (0022)';
+  end if;
+  if has_function_privilege('anon', 'public.is_admin()', 'execute') then
+    raise exception 'anon não deveria executar is_admin()';
+  end if;
+end $$;
+
+-- Ana volta a admin (as seções anteriores mexeram no papel dela como postgres).
+update public.profiles set role = 'admin' where id = '11111111-1111-1111-1111-111111111111';
+update public.profiles set role = 'member' where id = '22222222-2222-2222-2222-222222222222';
+
+set role authenticated;
+set request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
+
+do $$
+declare n int;
+begin
+  if not public.is_admin() then raise exception 'Ana é admin e is_admin() disse que não'; end if;
+  select count(*) into n from public.invites;
+  if n = 0 then raise exception 'a admin deveria ler os convites pela policy com is_admin()'; end if;
+end $$;
+
+set request.jwt.claim.sub = '22222222-2222-2222-2222-222222222222';
+
+do $$
+declare n int;
+begin
+  if public.is_admin() then raise exception 'ESCALADA: Bruno não é admin e is_admin() disse que é'; end if;
+  select count(*) into n from public.invites;
+  if n <> 0 then raise exception 'VAZAMENTO: Bruno leu % convite(s)', n; end if;
+end $$;
+
+reset role;
 
 select 'TODAS AS ASSERÇÕES DE RLS E CONSTRAINTS PASSARAM' as resultado;

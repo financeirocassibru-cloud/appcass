@@ -331,9 +331,12 @@ uma vez por consulta (InitPlan) em vez de uma vez por linha.
 
 Exceções ao padrão:
 - `profiles`: cada usuário só lê/edita a própria linha.
-- `invites`: leitura e escrita só para `role = 'admin'`, via função `is_admin()` marcada
-  `security definer stable` (evita recursão de policy ao consultar `profiles` dentro dela
-  mesma).
+- `invites`: leitura e escrita só para `role = 'admin'`, via função `is_admin()` (`stable`).
+  v1.5 — 2026-09-27 (migration 0022): era `security definer` para evitar uma recursão que não
+  existe — nenhuma policy de `profiles` chama `is_admin()`. Agora é `security invoker`: lê o
+  próprio perfil pela policy "ler o próprio", com o mesmo resultado, e deixa de ser uma função
+  que ignora a RLS exposta em `/rest/v1/rpc`. `rls_auto_enable()` (do event trigger
+  `ensure_rls`, criado pelo Supabase) perdeu o EXECUTE de `anon`/`authenticated`.
 
 ## Motor de projeção
 
