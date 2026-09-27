@@ -32,6 +32,16 @@ import type { DayProjection, Occurrence } from './types'
 
 export type Granularity = 'day' | 'week' | 'month'
 
+/**
+ * Teto de extensão da janela, em dias.
+ *
+ * Um `?de=1900-01-01` computaria dezenas de milhares de `DayProjection`. Mora aqui, e não na
+ * camada de query, porque a tela precisa dele para validar o que veio da URL — e a camada de
+ * query importa `lib/supabase/server`, que é `server-only`: uma constante compartilhada dali
+ * arrastaria o cliente do servidor para o bundle do navegador (invariante 4).
+ */
+export const MAX_WINDOW_DAYS = 1_095
+
 export interface BucketPoint {
   /**
    * Estável e ordenável: `2026-09-26`, `w:2026-09-21`, `m:2026-09`. Serve de `key` no React e

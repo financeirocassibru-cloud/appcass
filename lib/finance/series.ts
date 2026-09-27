@@ -19,6 +19,15 @@ import { addMonths, monthKey, parseISODate, type ISODate } from './date'
 /** Chave de mês `YYYY-MM`. */
 export type MonthKey = string
 
+/**
+ * Períodos que a Análise oferece, em meses.
+ *
+ * Mora no módulo puro pelo mesmo motivo de `MAX_WINDOW_DAYS`: a tela valida `?meses=` com ele, e
+ * importá-lo da camada de query traria `lib/supabase/server` para o bundle do cliente.
+ */
+export const ANALYSIS_MONTHS = [3, 6, 12] as const
+export type AnalysisMonths = (typeof ANALYSIS_MONTHS)[number]
+
 const MONTH_KEY = /^(\d{4})-(\d{2})$/
 
 export interface MonthlyTotals {

@@ -4,6 +4,7 @@ import { listActiveRecurringRules } from '@/lib/db/queries/recurring'
 import { listGoalsForProjection } from '@/lib/db/queries/goals'
 import { getScenario } from '@/lib/db/queries/scenarios'
 import { addDays, todayISO, type ISODate } from '@/lib/finance/date'
+import { MAX_WINDOW_DAYS } from '@/lib/finance/buckets'
 import {
   entriesAheadOf,
   projectRange,
@@ -180,8 +181,9 @@ function toProjectionEntry(row: {
  * vai ser", numa curva só.
  * ──────────────────────────────────────────────────────────────────────────── */
 
-/** Teto da janela. Um `?de=1900-01-01` computaria 46 mil dias sem este limite. */
-export const MAX_WINDOW_DAYS = 1_095
+// O teto da janela mora em `lib/finance/buckets`, que a tela pode importar; reexportado aqui
+// para quem já lê este módulo.
+export { MAX_WINDOW_DAYS }
 
 export interface ProjectionWindow {
   days: DayProjection[]

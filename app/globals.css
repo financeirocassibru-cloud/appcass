@@ -131,6 +131,21 @@
     --chart-income: #10a373;
     --chart-expense: #c2181d;
     --chart-magnitude: var(--brand);
+
+    /* v1.1 — 2026-09-27: polo frio do divergente de "fora da curva". O quente é
+       --chart-expense; a skill recusa dois polos frios, porque aí o meio deixa de ler como
+       "nada". Verde está fora de propósito: no app ele significa dinheiro entrando, e gastar
+       menos que a média não é uma entrada. */
+    --chart-below: #2a78d6;
+
+    /* Rampa ordinal do comprometimento da renda, do mais preso ao mais livre. É uma rampa de
+       um só matiz, e não quatro cores: a ordem das faixas É a informação — quanto menos escolha
+       a pessoa tem sobre aquele dinheiro, mais escura a faixa. Quatro matizes gastariam o canal
+       de identidade recodificando o que a largura da faixa já mostra. */
+    --chart-commit-fixed: #3b1478;
+    --chart-commit-installment: #5b21b6;
+    --chart-commit-saved: #7c3aed;
+    --chart-commit-variable: #a78bfa;
   }
 
   @media (prefers-color-scheme: dark) {
@@ -150,6 +165,14 @@
       --chart-income: #15ad7c;
       --chart-expense: #bf3b3b;
       --chart-magnitude: var(--brand);
+      --chart-below: #3987e5;
+      /* A rampa inverte no escuro: o mais preso continua sendo o de maior contraste, que num
+         fundo escuro é o passo mais claro. Não é o claro virado do avesso — são os mesmos
+         passos de violeta escolhidos para a faixa do tema escuro e validados contra ele. */
+      --chart-commit-fixed: #ede9fe;
+      --chart-commit-installment: #c4b5fd;
+      --chart-commit-saved: #a78bfa;
+      --chart-commit-variable: #8b5cf6;
     }
   }
 
@@ -169,6 +192,26 @@
     --chart-income: #15ad7c;
     --chart-expense: #bf3b3b;
     --chart-magnitude: var(--brand);
+    --chart-below: #3987e5;
+    --chart-commit-fixed: #ede9fe;
+    --chart-commit-installment: #c4b5fd;
+    --chart-commit-saved: #a78bfa;
+    --chart-commit-variable: #8b5cf6;
+  }
+
+  /**
+   * Paisagem em tela baixa.
+   *
+   * v1.1 — 2026-09-27: o manifest passou a permitir giro (a tela cheia do gráfico da Análise
+   * precisa disso), então o app pode aparecer em paisagem — onde sobram uns duzentos pixels de
+   * altura depois da barra de navegação e do `py-8` de cada página. Isto não é um passe de
+   * paisagem: é só devolver altura ao conteúdo para ele não ficar ilegível.
+   */
+  @media (orientation: landscape) and (max-height: 500px) {
+    main {
+      padding-top: 1rem;
+      padding-bottom: 1rem;
+    }
   }
 
   html {

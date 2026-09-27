@@ -1,132 +1,179 @@
 import Link from 'next/link'
 import { AlertTriangle, TrendingUp } from 'lucide-react'
-import { getProjection } from '@/lib/db/queries/projection'
+import { getWindow } from '@/lib/db/queries/projection'
 import { getActiveScenarioId, listScenarios } from '@/lib/db/queries/scenarios'
-import { overrideTargetOf } from '@/lib/finance/projection'
+import { listActiveCategories } from '@/lib/db/queries/categories'
+import { listEntriesInRange } from '@/lib/db/queries/entries'
 import { formatDayLabel } from '@/lib/finance/grouping'
 import { formatCents } from '@/lib/finance/money'
-import { todayISO } from '@/lib/finance/date'
+import { addDays, todayISO } from '@/lib/finance/date'
+import { bucketCountBetween } from '@/lib/finance/buckets'
+import type { EntryWithCategory } from '@/lib/db/queries/entries'
 import { isAiConfigured } from '@/lib/ai/env'
 import { createClient } from '@/lib/supabase/server'
 import { InsightsPanel } from '@/components/ai/insights-panel'
-import { BalanceArea } from '@/components/finance/charts/balance-area'
-import { Balance, Money } from '@/components/finance/money'
-import { HorizonTabs } from './horizon-tabs'
-import { OccurrenceActions } from './occurrence-actions'
-import { ScenarioPicker } from './scenario-picker'
+import { Balance } from '@/components/finance/money'
+import { AnalysisWindow } from './analysis-window'
+import { MonthlyAnalysis } from './monthly-analysis'
+import { parseAnalysisParams, SCALE_PARAM, type RawAnalysisParams } from './params'
+import { PeriodPicker } from './period-picker'
+import { ScaleTabs } from './scale-tabs'
+import { ScenarioBar } from './scenario-bar'
 import { ScenarioEntries } from './scenario-entries'
 
-export const metadata = { title: 'Projeção · Finanças' }
+export const metadata = { title: 'Análise · Finanças' }
 /** Depende de "hoje" e do banco: prerenderizada, congelaria os dois. */
 export const dynamic = 'force-dynamic'
 
 /**
- * v1.1 — 2026-09-26: o resumo da IA passou a morar nesta tela, e trouxe isto com ele.
+ * A Análise.
  *
- * Não é zelo. A Server Action do resumo é POSTada para a rota atual, então ela roda sob
- * o orçamento de `/projecao`, e `runInsights` espera até 40s pela resposta do modelo.
- * Sem esta linha a plataforma corta a função no meio e a pessoa recebe um erro de rede
- * em vez do resumo. `/assistente` declara o mesmo, pelo mesmo motivo.
+ * v2.0 — 2026-09-27: era a Projeção, em `/projecao`, e olhava só para frente — `?dias=30|90|180`
+ * a partir de hoje, num gráfico de largura fixa sem clique e sem arrasto. Agora a janela
+ * atravessa passado e futuro numa curva só, a escala é dia/semana/mês, arrastar navega pelo
+ * período, e tocar num ponto abre o detalhamento daquele período com lançar, alterar e excluir.
+ *
+ * `maxDuration = 60` continua aqui pelo motivo de sempre: a Server Action do diagnóstico é
+ * POSTada para a rota atual, então ela roda sob o orçamento desta página, e `runInsights` espera
+ * até 40s pela resposta do modelo. Sem a linha, a plataforma corta a função no meio e a pessoa
+ * recebe um erro de rede em vez do resumo.
  */
 export const maxDuration = 60
 
-const HORIZONS = [30, 90, 180] as const
-type Horizon = (typeof HORIZONS)[number]
-
-function parseHorizon(value: string | undefined): Horizon {
-  const parsed = Number(value)
-  return (HORIZONS as readonly number[]).includes(parsed) ? (parsed as Horizon) : 90
-}
-
-export default async function ProjecaoPage({
+export default async function AnalisePage({
   searchParams,
 }: {
   // Next 16: `searchParams` é assíncrono (invariante 12).
-  searchParams: Promise<{ dias?: string; cenario?: string }>
+  searchParams: Promise<RawAnalysisParams>
 }) {
-  const params = await searchParams
-  const horizon = parseHorizon(params.dias)
+  const raw = await searchParams
   const today = todayISO()
+  const { focusFrom, focusTo, granularity, scenarioParam, months } = parseAnalysisParams(raw, today)
 
   const supabase = await createClient()
 
   const [scenarios, activeId, { data: profile }] = await Promise.all([
     listScenarios(),
     getActiveScenarioId(),
-    // Desligado nos ajustes, o resumo não aparece acinzentado: ele não é renderizado.
+    // Desligado nos ajustes, o diagnóstico não aparece acinzentado: ele não é renderizado.
     supabase.from('profiles').select('ai_insights_enabled').maybeSingle(),
   ])
 
-  // `cenario=real` é a escolha explícita de ver a projeção sem cenário; sem o
-  // parâmetro, abre o cenário marcado como padrão. Sem essa distinção não
-  // haveria como voltar à projeção real depois de marcar um padrão.
+  // `cenario=real` é a escolha explícita de ver a projeção sem cenário; sem o parâmetro, abre o
+  // cenário marcado como padrão. Sem essa distinção não haveria como voltar à projeção real
+  // depois de marcar um padrão.
   const selectedId =
-    params.cenario === 'real'
-      ? undefined
-      : (params.cenario ?? activeId ?? undefined)
+    scenarioParam === 'real' ? undefined : (scenarioParam ?? activeId ?? undefined)
 
-  const projection = await getProjection(horizon, today, selectedId)
+  // A janela é buscada com folga de uma tela para cada lado: arrastar uma extensão inteira passa
+  // a custar zero requisição, e só ao chegar perto da borda da folga é que a URL muda.
+  const pad = Math.min(Math.max(bucketCountBetween(focusFrom, focusTo, 'day'), 30), 180)
 
-  // Os alvos que já têm ajuste, para a linha mostrar o desfazer.
-  const adjusted = new Set(
-    (projection.scenario?.overrides ?? []).map(
-      (o) => `${o.targetType}:${o.targetId}:${o.occurrenceKey ?? ''}`,
-    ),
+  const window = await getWindow({
+    from: addDays(focusFrom, -pad),
+    to: addDays(focusTo, pad),
+    today,
+    scenarioId: selectedId,
+  })
+
+  // Os lançamentos reais da janela, para o formulário de edição abrir preenchido. O motor entrega
+  // ocorrências, que não carregam categoria nem `notes`; quem tem isso é a linha de `entries`.
+  const [entries, expenseCategories, incomeCategories] = await Promise.all([
+    listEntriesInRange(window.from, window.to, 2_000),
+    listActiveCategories('expense'),
+    listActiveCategories('income'),
+  ])
+
+  const entriesById: Record<string, EntryWithCategory> = {}
+  for (const entry of entries) entriesById[entry.id] = entry
+
+  const adjustedTargets = (window.scenario?.overrides ?? []).map(
+    (override) =>
+      `${override.targetType}:${override.targetId}:${override.occurrenceKey ?? ''}`,
   )
 
-  // Só os dias com movimento: uma lista de 90 dias em que 70 estão vazios não é
-  // um fluxo, é um rolo. O gráfico já mostra a continuidade.
-  const activeDays = projection.days.filter((day) => day.occurrences.length > 0)
-  const hasAnything = activeDays.length > 0
+  // A escala efetiva volta para a URL dos controles, senão trocar de período com a escala
+  // implícita a faria pular de dia para mês sem ninguém ter pedido.
+  const params: RawAnalysisParams = { ...raw, escala: SCALE_PARAM[granularity] }
 
   return (
     <main className="mx-auto flex max-w-md flex-col gap-6 px-6 py-8">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold tracking-tight">Projeção</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Análise</h1>
         <p className="text-sm text-[var(--foreground-muted)]">
-          Parte do seu saldo de hoje e soma o que está por vir.
+          O que já aconteceu e o que está por vir, na mesma curva.
         </p>
       </div>
 
-      <ScenarioPicker
-        scenarios={scenarios}
-        selectedId={projection.scenario?.id ?? null}
-        horizon={horizon}
-      />
-
-      <HorizonTabs current={horizon} options={HORIZONS} />
+      {/* Uma fileira de controles acima de tudo que eles recortam — nunca um por gráfico. */}
+      <div className="flex flex-col gap-3">
+        <PeriodPicker
+          params={params}
+          today={today}
+          focusFrom={focusFrom}
+          focusTo={focusTo}
+          historyStartsOn={window.historyStartsOn}
+        />
+        <ScaleTabs current={granularity} params={params} />
+        <ScenarioBar
+          scenarios={scenarios}
+          selectedId={window.scenario?.id ?? null}
+          params={params}
+          today={today}
+          // O cenário novo nasce cobrindo o período que está na tela: é o que a pessoa está
+          // olhando quando decide simular.
+          defaultEnd={focusTo}
+        />
+      </div>
 
       <section className="flex flex-col gap-3 rounded-2xl bg-[var(--surface)] p-5">
         <div className="flex items-baseline justify-between gap-3">
           <div>
             <p className="text-xs text-[var(--foreground-muted)]">Saldo hoje</p>
-            <Balance cents={projection.openingBalanceCents} className="text-xl" />
+            <Balance cents={window.currentBalanceCents} className="text-xl" />
           </div>
           <div className="text-right">
             <p className="text-xs text-[var(--foreground-muted)]">
-              Em {horizon} dias
+              Em {formatDayLabel(focusTo, today)}
             </p>
             <Balance
-              cents={projection.days.at(-1)?.balanceCents ?? projection.openingBalanceCents}
+              cents={
+                window.days.find((day) => day.date === focusTo)?.balanceCents ??
+                window.days.at(-1)?.balanceCents ??
+                window.currentBalanceCents
+              }
               className="text-xl"
             />
           </div>
         </div>
 
-        <BalanceArea days={projection.days} firstNegativeDay={projection.firstNegativeDay} />
+        <AnalysisWindow
+          days={window.days}
+          realDays={window.realDays}
+          granularity={granularity}
+          today={today}
+          windowFrom={window.from}
+          focusFrom={focusFrom}
+          focusTo={focusTo}
+          historyStartsOn={window.historyStartsOn}
+          firstNegativeDay={window.firstNegativeDay}
+          entriesById={entriesById}
+          expenseCategories={expenseCategories}
+          incomeCategories={incomeCategories}
+          scenarioId={window.scenario?.id ?? null}
+          adjustedTargets={adjustedTargets}
+        />
       </section>
 
-      {/* O alerta é texto, não só a cor do gráfico: quem não distingue a área
-          vermelha tem de receber o mesmo aviso. */}
-      {projection.firstNegativeDay ? (
+      {/* O alerta é texto, não só a cor do gráfico: quem não distingue a área vermelha tem de
+          receber o mesmo aviso. E ele nomeia o DIA, mesmo na escala mensal — sai da série diária,
+          antes de qualquer agrupamento. */}
+      {window.firstNegativeDay ? (
         <p className="flex items-start gap-2 rounded-xl bg-[var(--surface)] p-4 text-sm">
-          <AlertTriangle
-            className="mt-0.5 size-4 shrink-0 text-[var(--expense)]"
-            aria-hidden
-          />
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-[var(--expense)]" aria-hidden />
           <span>
             <span className="font-semibold text-[var(--expense)]">
-              O saldo fica negativo em {formatDayLabel(projection.firstNegativeDay, today)}
+              O saldo fica negativo em {formatDayLabel(window.firstNegativeDay, today)}
             </span>
             . Dá para adiar ou cancelar algo antes disso?
           </span>
@@ -134,113 +181,58 @@ export default async function ProjecaoPage({
       ) : (
         <p className="flex items-start gap-2 rounded-xl bg-[var(--surface)] p-4 text-sm">
           <TrendingUp className="mt-0.5 size-4 shrink-0 text-[var(--income)]" aria-hidden />
-          <span>O saldo não fica negativo nos próximos {horizon} dias.</span>
+          <span>O saldo não fica negativo neste período.</span>
         </p>
       )}
 
-      {/* Contas vencidas foram empurradas para hoje. É uma suposição, e dizer
-          isso importa mais que escondê-la: sem ela a projeção pareceria melhor
-          do que é. */}
-      {projection.overdueCents !== 0 ? (
+      {/* O corte à esquerda é dito, não escondido: antes da âncora o app não sabe qual era o
+          saldo, e desenhar zero ali seria inventar. */}
+      {window.isTruncatedAtAnchor ? (
         <p className="text-xs text-[var(--foreground-muted)]">
-          Inclui <span className="tabular">{formatCents(Math.abs(projection.overdueCents))}</span>{' '}
-          de contas já vencidas, contadas no primeiro dia —{' '}
-          <Link href="/historico?status=pendente" className="text-[var(--brand)] underline">
-            ver quais
-          </Link>
-          .
+          O histórico começa em {formatDayLabel(window.historyStartsOn, today)}, o dia em que você
+          informou quanto tinha. Antes disso o app não sabe qual era o seu saldo
+          {window.isAnchorConfigured ? (
+            '.'
+          ) : (
+            <>
+              {' — '}
+              <Link href="/ajustes/saldo" className="text-[var(--brand)] underline">
+                ajuste o saldo
+              </Link>
+              .
+            </>
+          )}
         </p>
       ) : null}
 
-      <section className="flex flex-col gap-3">
-        <h2 className="text-base font-semibold">Dia a dia</h2>
-
-        {!hasAnything ? (
-          <p className="rounded-xl bg-[var(--surface)] p-4 text-sm text-[var(--foreground-muted)]">
-            Nenhum movimento previsto nos próximos {horizon} dias. Cadastre uma{' '}
-            <Link href="/compromissos" className="text-[var(--brand)] underline">
-              conta fixa
-            </Link>{' '}
-            para a projeção ter o que somar.
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-3">
-            {activeDays.map((day) => (
-              <li key={day.date} className="flex flex-col gap-2 rounded-xl bg-[var(--surface)] p-4">
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-sm font-medium">{formatDayLabel(day.date, today)}</span>
-                  <span className="text-xs text-[var(--foreground-muted)]">
-                    saldo{' '}
-                    <span
-                      className={`tabular font-semibold ${
-                        day.balanceCents < 0 ? 'text-[var(--expense)]' : 'text-[var(--foreground)]'
-                      }`}
-                    >
-                      {formatCents(day.balanceCents)}
-                    </span>
-                  </span>
-                </div>
-
-                <ul className="flex flex-col gap-1">
-                  {day.occurrences.map((occurrence) => {
-                    // O mesmo alvo que a action grava e o motor lê de volta.
-                    const target = overrideTargetOf(occurrence)
-                    const isAdjusted = adjusted.has(
-                      `${target.targetType}:${target.targetId}:${target.occurrenceKey ?? ''}`,
-                    )
-                    const isHypothetical = occurrence.origin === 'scenario'
-
-                    return (
-                      <li key={occurrence.key} className="flex flex-wrap items-center gap-x-3 text-sm">
-                        <span className="text-muted-foreground min-w-0 flex-1 truncate">
-                          {occurrence.description}
-                          {/* Previsto, realizado e hipotético são três coisas
-                              diferentes, e a diferença muda o que a pessoa faz
-                              com a informação. */}
-                          {isHypothetical
-                            ? ' · hipotético'
-                            : occurrence.isRealized
-                              ? ''
-                              : ' · previsto'}
-                          {isAdjusted ? ' · ajustado' : ''}
-                        </span>
-                        <Money
-                          cents={occurrence.amountCents}
-                          kind={occurrence.kind}
-                          className="shrink-0 text-sm"
-                        />
-                        {projection.scenario && !isHypothetical ? (
-                          <OccurrenceActions
-                            scenarioId={projection.scenario.id}
-                            target={target}
-                            description={occurrence.description}
-                            currentAmountCents={occurrence.amountCents}
-                            currentDate={occurrence.date}
-                            isAdjusted={isAdjusted}
-                          />
-                        ) : null}
-                      </li>
-                    )
-                  })}
-                </ul>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {projection.scenario ? (
-        <ScenarioEntries scenario={projection.scenario} today={today} />
-      ) : (
+      {window.overdueCents !== 0 ? (
         <p className="text-xs text-[var(--foreground-muted)]">
-          Quer simular? Crie um{' '}
-          <Link href="/cenarios" className="text-[var(--brand)] underline">
-            cenário
-          </Link>{' '}
-          para adiar uma conta, mudar um valor ou somar um gasto que ainda não existe — sem mexer
-          nos seus lançamentos.
+          {window.overdueIsOutsideWindow ? (
+            <>
+              Não mostrado aqui:{' '}
+              <span className="tabular">{formatCents(Math.abs(window.overdueCents))}</span> de
+              contas vencidas neste período e ainda não pagas. Elas contam a partir de hoje.
+            </>
+          ) : (
+            <>
+              Inclui{' '}
+              <span className="tabular">{formatCents(Math.abs(window.overdueCents))}</span> de
+              contas já vencidas, contadas no primeiro dia —{' '}
+              <Link
+                href="/historico?status=pendente"
+                className="text-[var(--brand)] underline"
+              >
+                ver quais
+              </Link>
+              .
+            </>
+          )}
         </p>
-      )}
+      ) : null}
+
+      {window.scenario ? <ScenarioEntries scenario={window.scenario} today={today} /> : null}
+
+      <MonthlyAnalysis months={months} params={params} today={today} />
 
       {isAiConfigured() && profile?.ai_insights_enabled && <InsightsPanel />}
     </main>

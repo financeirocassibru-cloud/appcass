@@ -12,6 +12,8 @@ import {
   type MonthKey,
   type MonthlyTotals,
   type SourceTotal,
+  ANALYSIS_MONTHS,
+  type AnalysisMonths,
 } from '@/lib/finance/series'
 import type { EntryKind } from '@/lib/db/types'
 import { createClient } from '@/lib/supabase/server'
@@ -30,9 +32,9 @@ import { createClient } from '@/lib/supabase/server'
 
 /** Quantos meses o gráfico de barras mostra. */
 export const MONTHS_IN_CHART = 6
-/** Períodos que a Análise oferece, em meses. */
-export const ANALYSIS_MONTHS = [3, 6, 12] as const
-export type AnalysisMonths = (typeof ANALYSIS_MONTHS)[number]
+// Reexportados de `lib/finance/series` para quem já lê este módulo; a definição mora lá porque
+// a tela também precisa deles e não pode importar daqui (invariante 4).
+export { ANALYSIS_MONTHS, type AnalysisMonths }
 /** Fatias da rosca antes de agrupar a cauda em "Outros". */
 const MAX_SLICES = 6
 
