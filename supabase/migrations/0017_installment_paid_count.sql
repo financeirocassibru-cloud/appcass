@@ -1,4 +1,6 @@
 -- v1.0 — 2026-09-27: parcelamento cadastrado já em andamento.
+-- v1.1 — 2026-09-27 (antes de ser aplicada): `set_installments_paid`, para declarar quantas já
+-- foram pagas num parcelamento que JÁ está no app. Ver a seção 2, no fim.
 --
 -- Quem cadastra uma compra feita há meses já pagou parte das parcelas. Sem isto, a pessoa
 -- teria de criar o plano e depois marcar as primeiras como pagas uma a uma — e, pelo
@@ -124,3 +126,61 @@ revoke execute on function public.create_installment_plan(text, bigint, smallint
   from public, anon;
 grant execute on function public.create_installment_plan(text, bigint, smallint, date, jsonb, uuid, smallint)
   to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 2. Declarar quantas parcelas já foram pagas num parcelamento já cadastrado.
+--
+-- v1.1 — 2026-09-27. Quem cadastrou uma compra antiga antes de existir `p_paid_count` ficou
+-- com todas as parcelas pendentes, e o único caminho era marcar uma a uma pelo Histórico — cada
+-- uma com `settled_on = hoje`, e não a data em que foi paga. Aqui a pessoa diz "já paguei N" e
+-- o banco acerta tudo de uma vez:
+--
+--   - parcelas 1..N ficam liquidadas. As que já estavam pagas **mantêm** o `settled_on` delas
+--     (é o que aconteceu de verdade); as que viram pagas agora recebem a própria data;
+--   - parcelas depois de N voltam a pendentes. "Já paguei 3" com a 4ª marcada é uma correção,
+--     e a declaração é o estado que a pessoa afirma — não um piso.
+--
+-- Mesmo motivo da seção 1 para ser função: cada linha recebe a sua data, numa transação só.
+-- `security invoker`: o plano de outra pessoa não é encontrado, e o `update` passa pela RLS.
+create function public.set_installments_paid(p_plan_id uuid, p_paid_count smallint)
+returns int
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_plan    public.installment_plans;
+  v_changed int;
+begin
+  select * into v_plan from public.installment_plans where id = p_plan_id;
+
+  if not found then
+    raise exception 'Parcelamento não encontrado' using errcode = 'no_data_found';
+  end if;
+
+  if p_paid_count is null or p_paid_count < 0 or p_paid_count > v_plan.installments_count then
+    raise exception 'Parcelas pagas deve ficar entre 0 e % (recebido %)',
+      v_plan.installments_count, p_paid_count
+      using errcode = 'check_violation';
+  end if;
+
+  with mudadas as (
+    update public.entries
+       set is_settled = installment_number <= p_paid_count,
+           settled_on = case
+             when installment_number <= p_paid_count then coalesce(settled_on, occurred_on)
+           end
+     where source = 'installment'
+       and source_id = p_plan_id
+       and is_settled is distinct from (installment_number <= p_paid_count)
+    returning 1
+  )
+  select count(*) into v_changed from mudadas;
+
+  -- Quantas parcelas mudaram de estado, para a tela dizer o que houve.
+  return v_changed;
+end;
+$$;
+
+revoke execute on function public.set_installments_paid(uuid, smallint) from public, anon;
+grant execute on function public.set_installments_paid(uuid, smallint) to authenticated;

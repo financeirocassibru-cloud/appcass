@@ -10,6 +10,9 @@ import { isISODate } from '@/lib/finance/date'
  *
  * v1.1 — 2026-09-27: `paidCount` e `anchorDay`, para o parcelamento cadastrado já em
  * andamento. Ausentes, valem 0 e "o dia da primeira" — o formulário antigo segue válido.
+ *
+ * v1.2 — 2026-09-27: `setPaidCountSchema`, para declarar quantas já foram pagas num
+ * parcelamento que já está no app.
  */
 
 /** `''` ou ausente vira `fallback`; o resto precisa ser inteiro. */
@@ -61,6 +64,19 @@ export const createInstallmentSchema = z
     message: 'Ao menos uma parcela precisa estar por pagar — se já pagou todas, não há o que parcelar',
     path: ['paidCount'],
   })
+
+/**
+ * v1.2 — 2026-09-27: "já paguei N" num parcelamento existente. O teto real (o número de
+ * parcelas do plano) é conferido pelo banco, que é quem conhece o plano (migration 0017).
+ */
+export const setPaidCountSchema = z.object({
+  id: z.string().uuid('Parcelamento inválido'),
+  paidCount: z.coerce
+    .number()
+    .int('Número de parcelas inválido')
+    .min(0, 'Número de parcelas inválido')
+    .max(360, 'Máximo de 360 parcelas'),
+})
 
 export const installmentPlanIdSchema = z.object({
   id: z.string().uuid('Parcelamento inválido'),

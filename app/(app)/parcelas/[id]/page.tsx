@@ -4,8 +4,15 @@ import { Check, ChevronLeft, Clock } from 'lucide-react'
 import { getInstallmentPlan, listPlanInstallments } from '@/lib/db/queries/installments'
 import { formatCents } from '@/lib/finance/money'
 import { todayISO } from '@/lib/finance/date'
-import { PlanActions } from './actions'
+import { PaidCountForm, PlanActions } from './actions'
 import { cn } from '@/lib/utils'
+
+/**
+ * Um parcelamento. v1.1 — 2026-09-27.
+ *
+ * v1.1: "Quantas já foram pagas?" (`PaidCountForm`), para o parcelamento que entrou no app já
+ * em andamento, sem precisar marcar parcela por parcela.
+ */
 
 export const metadata = { title: 'Parcelamento · Finanças' }
 export const dynamic = 'force-dynamic'
@@ -104,10 +111,17 @@ export default async function ParcelamentoPage({
           ))}
         </ul>
         <p className="text-muted-foreground text-xs">
-          Marque como paga pela agenda do Início ou pelo extrato — cada parcela é um lançamento
-          como qualquer outro.
+          Marque como paga pela agenda do Início ou pelo Histórico — cada parcela é um lançamento
+          como qualquer outro. Para várias de uma vez, use o campo abaixo.
         </p>
       </section>
+
+      <PaidCountForm
+        key={plan.paidCount}
+        id={plan.planId}
+        paidCount={plan.paidCount}
+        installmentsCount={plan.installmentsCount}
+      />
 
       <PlanActions
         id={plan.planId}
