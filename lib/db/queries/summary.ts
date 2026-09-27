@@ -14,6 +14,9 @@ import {
   type SourceTotal,
   ANALYSIS_MONTHS,
   type AnalysisMonths,
+  INTEREST_CATEGORY_COLOR,
+  INTEREST_CATEGORY_ID,
+  INTEREST_CATEGORY_NAME,
 } from '@/lib/finance/series'
 import type { EntryKind } from '@/lib/db/types'
 import { createClient } from '@/lib/supabase/server'
@@ -28,7 +31,36 @@ import { createClient } from '@/lib/supabase/server'
  * Um detalhe de tipo que a fase 3a já mostrou ser real: view não tem `not null`,
  * então tudo chega como `string | null` / `number | null`. A conversão para o
  * tipo do domínio acontece aqui, uma vez, e não espalhada pelos componentes.
+ *
+ * v1.2 — 2026-09-27 (Fase 13): as views seguem a competência (migration 0021) — a compra no
+ * cartão conta na categoria dela, a fatura não conta por cima. Os juros e encargos de cartão e
+ * empréstimo (`v_interest_by_month`) entram aqui como a categoria virtual "Juros e encargos" e
+ * como gasto no comprometimento da renda.
  */
+
+/** v1.2 — 2026-09-27: juros e encargos por mês, `YYYY-MM-01` a `YYYY-MM-01`. */
+async function listInterestByMonth(from: string, to: string): Promise<{ month: MonthKey; cents: number }[]> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('v_interest_by_month')
+    .select('month, interest_cents')
+    .gte('month', from)
+    .lte('month', to)
+  if (error) throw new Error(`Falha ao ler os juros: ${error.message}`)
+  return (data ?? [])
+    .filter((row): row is typeof row & { month: string } => row.month !== null)
+    .map((row) => ({ month: monthKeyOf(row.month), cents: Number(row.interest_cents ?? 0) }))
+    .filter((row) => row.cents > 0)
+}
+
+function interestSlice(cents: number): CategorySlice {
+  return {
+    categoryId: INTEREST_CATEGORY_ID,
+    name: INTEREST_CATEGORY_NAME,
+    color: INTEREST_CATEGORY_COLOR,
+    totalCents: cents,
+  }
+}
 
 /** Quantos meses o gráfico de barras mostra. */
 export const MONTHS_IN_CHART = 6
@@ -98,11 +130,14 @@ export async function getCategoryBreakdown(
   const month = monthKeyOf(today)
   const monthStart = startOfMonth(today)
 
-  const { data, error } = await supabase
-    .from('v_category_breakdown')
-    .select('category_id, category_name, category_color, total_cents')
-    .eq('month', monthStart)
-    .eq('kind', kind)
+  const [{ data, error }, interest] = await Promise.all([
+    supabase
+      .from('v_category_breakdown')
+      .select('category_id, category_name, category_color, total_cents')
+      .eq('month', monthStart)
+      .eq('kind', kind),
+    kind === 'expense' ? listInterestByMonth(monthStart, monthStart) : Promise.resolve([]),
+  ])
 
   if (error) throw new Error(`Falha ao ler as saídas por categoria: ${error.message}`)
 
@@ -112,6 +147,8 @@ export async function getCategoryBreakdown(
     color: row.category_color ?? '#94a3b8',
     totalCents: Number(row.total_cents ?? 0),
   }))
+  // v1.2 — 2026-09-27: os juros do mês, como categoria virtual.
+  for (const row of interest) slices.push(interestSlice(row.cents))
 
   // O total sai das fatias antes do corte: `topCategories` agrupa a cauda em
   // "Outros" sem perder centavo, então os dois números continuam batendo.
@@ -160,16 +197,19 @@ async function listCategoryTotalsByMonth(
 ): Promise<MonthlyCategoryRow[]> {
   const supabase = await createClient()
 
-  const { data, error } = await supabase
-    .from('v_category_breakdown')
-    .select('month, category_id, category_name, category_color, total_cents')
-    .eq('kind', kind)
-    .gte('month', `${from}-01`)
-    .lte('month', `${to}-01`)
+  const [{ data, error }, interest] = await Promise.all([
+    supabase
+      .from('v_category_breakdown')
+      .select('month, category_id, category_name, category_color, total_cents')
+      .eq('kind', kind)
+      .gte('month', `${from}-01`)
+      .lte('month', `${to}-01`),
+    kind === 'expense' ? listInterestByMonth(`${from}-01`, `${to}-01`) : Promise.resolve([]),
+  ])
 
   if (error) throw new Error(`Falha ao ler as categorias do período: ${error.message}`)
 
-  return (data ?? [])
+  const rows = (data ?? [])
     .filter((row): row is typeof row & { month: string } => row.month !== null)
     .map((row) => ({
       month: monthKeyOf(row.month),
@@ -180,6 +220,8 @@ async function listCategoryTotalsByMonth(
       color: row.category_color ?? '#94a3b8',
       totalCents: Number(row.total_cents ?? 0),
     }))
+  // v1.2 — 2026-09-27: "Juros e encargos", mês a mês — soma com `v_monthly_summary`.
+  return [...rows, ...interest.map((row) => ({ month: row.month, ...interestSlice(row.cents) }))]
 }
 
 /** Soma as fatias de vários meses numa só, por categoria. */
@@ -247,11 +289,14 @@ export async function getCommitment(period: AnalysisPeriod): Promise<CommitmentM
   if (first === undefined || last === undefined) return []
 
   const supabase = await createClient()
-  const { data, error } = await supabase
-    .from('v_source_breakdown')
-    .select('month, kind, source, total_cents')
-    .gte('month', `${first}-01`)
-    .lte('month', `${last}-01`)
+  const [{ data, error }, interest] = await Promise.all([
+    supabase
+      .from('v_source_breakdown')
+      .select('month, kind, source, total_cents')
+      .gte('month', `${first}-01`)
+      .lte('month', `${last}-01`),
+    listInterestByMonth(`${first}-01`, `${last}-01`),
+  ])
 
   if (error) throw new Error(`Falha ao ler o comprometimento da renda: ${error.message}`)
 
@@ -263,6 +308,10 @@ export async function getCommitment(period: AnalysisPeriod): Promise<CommitmentM
       source: row.source as SourceTotal['source'],
       totalCents: Number(row.total_cents ?? 0),
     }))
+  // v1.2 — 2026-09-27: os juros são gasto do mês.
+  for (const row of interest) {
+    rows.push({ month: row.month, kind: 'expense', source: 'interest', totalCents: row.cents })
+  }
 
   return buildCommitment(rows, period.months)
 }

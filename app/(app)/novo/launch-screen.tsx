@@ -6,6 +6,7 @@ import type { Route } from 'next'
 import { ArrowRight, ChevronRight } from 'lucide-react'
 import type { Category } from '@/lib/db/queries/categories'
 import type { EntryKind } from '@/lib/db/types'
+import type { CreditOption } from '@/lib/finance/credit'
 import { LaunchForm, type LaunchGoal, type LaunchMode } from '@/components/finance/launch-form'
 
 /**
@@ -20,6 +21,9 @@ import { LaunchForm, type LaunchGoal, type LaunchMode } from '@/components/finan
  *
  * v1.2 — 2026-09-27. Metas saiu da aba Mais e mora aqui, no rodapé de Saída, como Contas
  * fixas. O formulário recebe as metas (modo Meta) e as sugestões de palavra-chave.
+ *
+ * v1.3 — 2026-09-27 (Fase 13). "Cartões e empréstimos" nos atalhos dos dois tipos — dinheiro
+ * de empréstimo também é entrada —, e as contas vão para o "Pago com" do formulário.
  */
 export function LaunchScreen({
   expenseCategories,
@@ -30,19 +34,34 @@ export function LaunchScreen({
   counts,
   goals,
   suggestions,
+  creditAccounts,
 }: {
   expenseCategories: Category[]
   incomeCategories: Category[]
   today: string
   initialKind: EntryKind
   initialMode: LaunchMode
-  counts: { fixedExpenses: number; fixedIncomes: number; openPlans: number; activeGoals: number }
+  counts: {
+    fixedExpenses: number
+    fixedIncomes: number
+    openPlans: number
+    activeGoals: number
+    creditAccounts: number
+  }
   goals: LaunchGoal[]
   suggestions: Record<EntryKind, string[]>
+  creditAccounts: CreditOption[]
 }) {
   const [kind, setKind] = useState<EntryKind>(initialKind)
 
-  const shortcuts: { href: Route; label: string; note: string }[] =
+  const cards: { href: Route; label: string; note: string } = {
+    href: '/cartoes',
+    label: 'Cartões e empréstimos',
+    note: counts.creditAccounts === 1 ? '1 cadastrado' : `${counts.creditAccounts} cadastrados`,
+  }
+
+  type Shortcut = { href: Route; label: string; note: string }
+  const byKind: Shortcut[] =
     kind === 'expense'
       ? [
           {
@@ -68,6 +87,7 @@ export function LaunchScreen({
             note: counts.fixedIncomes === 1 ? '1 ativa' : `${counts.fixedIncomes} ativas`,
           },
         ]
+  const shortcuts: Shortcut[] = [...byKind, cards]
 
   return (
     <>
@@ -91,6 +111,7 @@ export function LaunchScreen({
         initialMode={initialMode}
         goals={goals}
         suggestions={suggestions}
+        creditAccounts={creditAccounts}
         onKindChange={setKind}
       />
 

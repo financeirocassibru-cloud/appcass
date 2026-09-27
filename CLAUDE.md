@@ -65,6 +65,11 @@ Cada uma existe porque o app antigo errou exatamente ali. O catálogo dos bugs e
 17. **`update` que precisa casar linha usa `.select()` e verifica o resultado.** O
     `supabase-js` devolve sucesso quando nada casou; foi esse silêncio que deixou a primeira
     conta sem virar admin, em produção, sem nenhum erro aparecer.
+18. **Saída no cartão/empréstimo não é caixa; a fatura é.** Competência nunca soma o principal
+    de `credit_bill`/`credit_carry` nem o dinheiro que veio de cartão/empréstimo. A regra mora
+    em `lib/finance/credit.ts` (`isCashEntry`, `competenceCents`) e nas views da 0021 — não a
+    reescreva numa tela. Faturas são derivadas por `getCreditLedger`, nunca gravadas.
+    (v1.1 — 2026-09-27, Fase 13)
 
 ## Convenções
 

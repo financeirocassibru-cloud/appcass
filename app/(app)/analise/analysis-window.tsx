@@ -105,6 +105,8 @@ export function AnalysisWindow({
     (occurrence: Occurrence) => {
       if (!scenarioId) return null
       if (occurrence.origin === 'scenario') return null
+      // v1.1 — 2026-09-27 (Fase 13): a fatura é derivada das compras — não tem alvo de ajuste.
+      if (occurrence.origin === 'credit_bill') return null
       if (occurrence.date < today) return null
 
       const target = overrideTargetOf(occurrence)

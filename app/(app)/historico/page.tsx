@@ -9,16 +9,22 @@
  *
  * v1.2 — 2026-09-27: as descrições já importadas vão para a edição, onde sugerem as
  * palavras-chave que ligam um lançamento pendente ao extrato.
+ *
+ * v1.3 — 2026-09-27 (Fase 13): a compra no cartão/empréstimo leva o selo da conta e da fatura
+ * (paga ou não — derivado das faturas, invariante 7), e os totais do mês seguem a competência:
+ * o pagamento da fatura não conta por cima das compras.
  */
 import Link from 'next/link'
 import type { Route } from 'next'
 import { listActiveCategories } from '@/lib/db/queries/categories'
+import { getCreditLedger } from '@/lib/db/queries/credit'
+import { entryCreditStatus, toCreditOptions } from '@/lib/finance/credit'
 import { listEntriesByMonth, listImportedDescriptions, monthTotals } from '@/lib/db/queries/entries'
 import { formatDayLabel, groupByDay } from '@/lib/finance/grouping'
 import { monthKey, todayISO } from '@/lib/finance/date'
 import type { EntryKind } from '@/lib/db/types'
 import { Balance, Money } from '@/components/finance/money'
-import { EntryRow } from './entry-row'
+import { EntryRow, type EntryCreditBadge } from './entry-row'
 import { Filters } from './filters'
 
 // v1.2 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
@@ -65,13 +71,32 @@ export default async function LancamentosPage({
 
   // As listas por tipo são para o formulário de edição, que abre em cima da linha: alternar
   // saída/entrada dentro dele não deve ir ao banco de novo.
-  const [entries, categories, expenseCategories, incomeCategories, imported] = await Promise.all([
+  const [entries, categories, expenseCategories, incomeCategories, imported, ledger] = await Promise.all([
     listEntriesByMonth({ month, categoryId: params.categoria, kind, settled }),
     listActiveCategories(),
     listActiveCategories('expense'),
     listActiveCategories('income'),
     listImportedDescriptions(),
+    getCreditLedger(today),
   ])
+  const creditAccounts = toCreditOptions(ledger.accounts, ledger.bills, true)
+
+  // v1.3 — 2026-09-27: o selo de cada lançamento que veio de cartão ou empréstimo.
+  const badges = new Map<string, EntryCreditBadge>()
+  for (const entry of entries) {
+    if (!entry.creditAccountId) continue
+    const account = ledger.accounts.find((a) => a.id === entry.creditAccountId)
+    if (!account) continue
+    const status = entryCreditStatus(entry.id, ledger.bills)
+    badges.set(entry.id, {
+      accountName: account.name,
+      accountKind: account.kind,
+      dueOn: status?.dueOn ?? entry.chargeFirstDueOn,
+      isPaid: status?.isPaid ?? false,
+      paidCount: status?.settled ?? 0,
+      chargeCount: status?.total ?? entry.chargeCount,
+    })
+  }
 
   const totals = monthTotals(entries)
   const groups = groupByDay(entries, (entry) => entry.occurredOn)
@@ -152,6 +177,8 @@ export default async function LancamentosPage({
                     incomeCategories={incomeCategories}
                     today={today}
                     suggestions={imported}
+                    credit={badges.get(entry.id) ?? null}
+                    creditAccounts={creditAccounts}
                   />
                 ))}
               </ul>

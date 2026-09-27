@@ -8,8 +8,10 @@ export const metadata = { title: 'Mais' }
 // v1.1 — 2026-09-26: fase 7, a tela do assistente.
 // v1.2 — 2026-09-27: Contas fixas e Parcelas saíram daqui para o [+], junto com Renda fixa.
 // v1.3 — 2026-09-27: Metas também — virou Saída › Meta no [+], com a lista no rodapé dele.
+// v1.4 — 2026-09-27 (Fase 13): Cartões e empréstimos — também no rodapé do [+].
 const ITENS = [
   { href: '/assistente', label: 'Assistente', nota: null },
+  { href: '/cartoes', label: 'Cartões e empréstimos', nota: null },
   { href: '/ajustes', label: 'Ajustes', nota: null },
   { href: '/ajustes/categorias', label: 'Categorias', nota: null },
   { href: '/cenarios', label: 'Cenários', nota: null },

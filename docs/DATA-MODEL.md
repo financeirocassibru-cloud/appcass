@@ -237,6 +237,49 @@ create table scenario_entries (
   pendente — a importação então grava a linha como lançamento novo. O casamento em si é puro,
   no navegador: `lib/finance/reconcile.ts`.
 
+## Cartões e empréstimos (migrations 0020/0021) — v1.4 — 2026-09-27
+
+```sql
+create type credit_account_kind as enum ('card', 'loan');
+-- entry_source ganhou 'credit_bill' (pagamento da fatura) e 'credit_carry' (parcelamento da
+-- fatura) — em arquivo próprio (0020): valor novo de enum não pode ser usado na transação em
+-- que nasceu.
+
+create table credit_accounts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  kind credit_account_kind not null,
+  name text not null,
+  limit_cents bigint,          -- null = sem limite; só avisa, não bloqueia
+  closing_day smallint,        -- cartão: fecha neste dia
+  due_day smallint,            -- cartão: vence neste dia; empréstimo: dia fixo das parcelas
+  due_on date,                 -- empréstimo de vencimento único
+  keywords text[] not null default '{}',   -- a linha do extrato que paga a fatura
+  archived_at timestamptz,
+  unique (id, user_id)         -- alvo das FKs compostas
+);
+
+alter table entries
+  add column credit_account_id uuid,       -- FK (credit_account_id, user_id): nunca a conta alheia
+  add column charge_first_due_on date,     -- "será pago em": 1ª cobrança
+  add column charge_count smallint not null default 1,   -- em quantas vezes
+  add column interest_cents bigint not null default 0;   -- valor a pagar − valor
+-- check: saída financiada nunca is_settled (quem conclui é a fatura, derivado)
+-- installment_plans.credit_account_id e recurring_rules.credit_account_id: no cartão.
+```
+
+- Cobranças e faturas são **derivadas** em `lib/finance/credit.ts` (`chargesOf`, `buildBills`);
+  nenhuma tabela de fatura.
+- `pay_credit_bill(conta, vencimento, valor, pago_em, juros?, import_key?, lote?)` — o pagamento
+  como saída liquidada `source = 'credit_bill'`, chave = vencimento (`:2`… para o segundo).
+- `carry_credit_bill(conta, vencimento, restante, total, parcelas, 1º vencimento)` — o
+  parcelamento do restante, `source = 'credit_carry'`, idempotente pelo vencimento.
+- `set_installment_plan_credit(plano, conta?)` — põe/tira do cartão as parcelas pendentes.
+- `credit_first_due(...)` — o ciclo do cartão em SQL, igual a `defaultFirstDue()`.
+- `v_monthly_summary`, `v_category_breakdown`, `v_source_breakdown` seguem a **competência**: sem
+  o principal de `credit_bill`/`credit_carry` e sem o dinheiro que veio de cartão/empréstimo;
+  `interest_cents` soma como saída. `v_interest_by_month` alimenta "Juros e encargos".
+
 ## Views (dashboard)
 
 Criar com `security_invoker = on` para que a RLS das tabelas-base seja respeitada por quem

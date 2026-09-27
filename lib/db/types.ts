@@ -29,6 +29,12 @@ export type AiJobInsert = TablesInsert<'ai_jobs'>
 export type AiJobUpdate = TablesUpdate<'ai_jobs'>
 export type PushSubscriptionRow = Tables<'push_subscriptions'>
 
+// v1.2 — 2026-09-27: fase 13, cartões e empréstimos (migrations 0020/0021).
+export type CreditAccountRow = Tables<'credit_accounts'>
+export type CreditAccountInsert = TablesInsert<'credit_accounts'>
+export type CreditAccountUpdate = TablesUpdate<'credit_accounts'>
+export type CreditAccountKind = Enums<'credit_account_kind'>
+
 /**
  * As únicas colunas de `profiles` que a tela de IA escreve.
  *

@@ -2,7 +2,8 @@
 
 import { useActionState } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, CalendarClock, Check, Repeat } from 'lucide-react'
+import { AlertTriangle, CalendarClock, Check, CreditCard, Repeat } from 'lucide-react'
+import { payCreditBill } from '@/lib/actions/credit'
 import { toggleSettled, type EntryActionState } from '@/lib/actions/entries'
 import { materializeRecurring, type RecurringActionState } from '@/lib/actions/recurring'
 import {
@@ -25,6 +26,9 @@ import { cn } from '@/lib/utils'
  * fixas que ainda não viraram lançamento. Quem junta e deduplica é
  * `lib/db/queries/agenda.ts`; aqui a diferença só decide **qual ação** o botão
  * dispara.
+ *
+ * v1.1 — 2026-09-27 (Fase 13): a fatura de cartão/empréstimo entra como terceira origem, e o
+ * botão dela paga o restante hoje (`payCreditBill`). Pagar só uma parte é na tela do cartão.
  *
  * Calculada sempre, nunca condicionada a existir cenário ativo — era o bug do
  * `getUpcomingEvents()` antigo, em que a lista sumia inteira sem aviso.
@@ -129,7 +133,12 @@ function AgendaRow({
   // As duas actions têm a mesma assinatura de propósito, e o tipo abaixo diz
   // isso ao compilador em vez de um cast: se um dia uma delas mudar de forma,
   // o erro aparece aqui e não em produção.
-  const action: AgendaAction = item.source === 'entry' ? toggleSettled : materializeRecurring
+  const action: AgendaAction =
+    item.source === 'entry'
+      ? toggleSettled
+      : item.source === 'recurring'
+        ? materializeRecurring
+        : payCreditBill
   const [state, formAction, pending] = useActionState(action, {})
 
   const late = daysOverdue(item.occurredOn, today)
@@ -142,10 +151,17 @@ function AgendaRow({
             <input type="hidden" name="id" value={item.id} />
             <input type="hidden" name="isSettled" value="true" />
           </>
-        ) : (
+        ) : item.source === 'recurring' ? (
           <>
             <input type="hidden" name="ruleId" value={item.ruleId} />
             <input type="hidden" name="occursOn" value={item.occurredOn} />
+          </>
+        ) : (
+          <>
+            <input type="hidden" name="accountId" value={item.accountId} />
+            <input type="hidden" name="dueOn" value={item.dueOn} />
+            <input type="hidden" name="amountCents" value={item.amountCents} />
+            <input type="hidden" name="paidOn" value={today} />
           </>
         )}
         <button
@@ -170,7 +186,19 @@ function AgendaRow({
           {item.source === 'recurring' ? (
             <Repeat className="text-muted-foreground size-3.5 shrink-0" aria-label="Conta fixa" />
           ) : null}
-          <span className="truncate">{item.description}</span>
+          {item.source === 'credit_bill' ? (
+            <CreditCard className="text-muted-foreground size-3.5 shrink-0" aria-label="Fatura" />
+          ) : null}
+          {item.source === 'credit_bill' ? (
+            <Link
+              href={{ pathname: '/cartoes/[id]', query: { id: item.accountId } }}
+              className="truncate underline-offset-2 hover:underline"
+            >
+              {item.description}
+            </Link>
+          ) : (
+            <span className="truncate">{item.description}</span>
+          )}
         </p>
         <p className="text-muted-foreground truncate text-xs">
           {overdue ? (

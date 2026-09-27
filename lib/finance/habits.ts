@@ -133,10 +133,10 @@ export function duplicateHabits({
   from,
   to,
 }: {
-  entries: readonly Pick<
+  entries: readonly (Pick<
     Entry,
     'kind' | 'description' | 'amountCents' | 'occurredOn' | 'categoryId' | 'source'
-  >[]
+  > & { creditAccountId?: string | null })[]
   sourceMonth: string
   targetMonths: readonly string[]
   kinds: HabitKinds
@@ -146,6 +146,10 @@ export function duplicateHabits({
   const habits = entries.filter(
     (entry) =>
       entry.source === 'manual' &&
+      // v1.2 — 2026-09-27 (Fase 13): o dinheiro que veio de empréstimo/cartão não é hábito de
+      // renda. A compra no cartão continua sendo hábito — o gasto se repete, e no cenário ele
+      // entra no dia dele (a fatura real é que o junta no vencimento).
+      !(entry.kind === 'income' && entry.creditAccountId) &&
       monthKey(entry.occurredOn) === sourceMonth &&
       (kinds === 'all' || entry.kind === kinds),
   )

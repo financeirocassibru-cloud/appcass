@@ -1,10 +1,14 @@
 import { z } from 'zod'
 import { isISODate } from '@/lib/finance/date'
 import { parseKeywords } from '@/lib/finance/keywords'
+import { checkCreditFields, creditFieldsShape } from '@/lib/validation/credit'
 import { keywordsField } from '@/lib/validation/keywords'
 
 // v1.1 — 2026-09-27: `keywords` no lançamento, para a importação do extrato liquidá-lo
 // (migration 0019).
+// v1.2 — 2026-09-27 (Fase 13): "pago com" cartão/empréstimo — `creditAccountId`, "será pago
+// em", "em quantas vezes" e "valor a pagar" (migration 0021). O objeto-base fica separado do
+// refinamento porque o Zod 4 não estende objeto com refinamento.
 
 /** O valor chega do formulário em centavos, como inteiro — nunca como texto decimal. */
 const amountCentsSchema = z.coerce
@@ -33,7 +37,7 @@ const optionalText = z
   .max(500, 'Observação longa demais')
   .transform((value) => (value === '' ? null : value))
 
-export const createEntrySchema = z.object({
+const entryBase = z.object({
   kind: kindSchema,
   amountCents: amountCentsSchema,
   occurredOn: isoDateSchema,
@@ -49,11 +53,14 @@ export const createEntrySchema = z.object({
     .union([z.literal('on'), z.literal('true'), z.literal('false'), z.undefined(), z.null()])
     .transform((value) => value === 'on' || value === 'true'),
   keywords: keywordsField,
+  ...creditFieldsShape,
 })
 
-export const updateEntrySchema = createEntrySchema.extend({
-  id: z.string().uuid('Lançamento inválido'),
-})
+export const createEntrySchema = entryBase.superRefine(checkCreditFields)
+
+export const updateEntrySchema = entryBase
+  .extend({ id: z.string().uuid('Lançamento inválido') })
+  .superRefine(checkCreditFields)
 
 export const entryIdSchema = z.object({
   id: z.string().uuid('Lançamento inválido'),

@@ -4,6 +4,7 @@ import { ChevronLeft } from 'lucide-react'
 import type { EntryKind } from '@/lib/db/types'
 import { listActiveCategories } from '@/lib/db/queries/categories'
 import { listImportedDescriptions } from '@/lib/db/queries/entries'
+import { listCreditAccounts } from '@/lib/db/queries/credit'
 import { countMaterialized, getRecurringRule } from '@/lib/db/queries/recurring'
 import { RecurringForm } from './form'
 import { RuleActions } from './[id]/actions'
@@ -16,6 +17,8 @@ import { RuleActions } from './[id]/actions'
  * redireciona para a rota certa, em vez de mostrar o salário sob o título "Contas fixas".
  *
  * v1.1 — 2026-09-27: carrega as descrições importadas, que sugerem as palavras-chave.
+ *
+ * v1.2 — 2026-09-27 (Fase 13): e os cartões, para "Pago no cartão" na conta fixa.
  */
 export async function RuleDetail({ id, kind }: { id: string; kind: EntryKind }) {
   const rule = await getRecurringRule(id)
@@ -25,11 +28,13 @@ export async function RuleDetail({ id, kind }: { id: string; kind: EntryKind }) 
     redirect(rule.kind === 'income' ? `/rendas/${rule.id}` : `/compromissos/${rule.id}`)
   }
 
-  const [categories, materializedCount, imported] = await Promise.all([
+  const [categories, materializedCount, imported, accounts] = await Promise.all([
     listActiveCategories(rule.kind),
     countMaterialized(rule.id),
     listImportedDescriptions(),
+    listCreditAccounts(),
   ])
+  const cards = accounts.filter((a) => a.kind === 'card').map((a) => ({ id: a.id, name: a.name }))
 
   const isIncome = rule.kind === 'income'
 
@@ -48,7 +53,12 @@ export async function RuleDetail({ id, kind }: { id: string; kind: EntryKind }) 
         </h1>
       </div>
 
-      <RecurringForm categories={categories} rule={rule} suggestions={imported[rule.kind]} />
+      <RecurringForm
+        categories={categories}
+        rule={rule}
+        suggestions={imported[rule.kind]}
+        cards={cards}
+      />
 
       <RuleActions
         id={rule.id}

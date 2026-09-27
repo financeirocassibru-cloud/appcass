@@ -1,14 +1,19 @@
 import { listActiveCategories } from '@/lib/db/queries/categories'
+import { getCreditLedger } from '@/lib/db/queries/credit'
 import { listImportedDescriptions } from '@/lib/db/queries/entries'
 import { listGoals } from '@/lib/db/queries/goals'
 import { listInstallmentPlans } from '@/lib/db/queries/installments'
 import { listRecurringRules } from '@/lib/db/queries/recurring'
+import { toCreditOptions } from '@/lib/finance/credit'
 import { todayISO } from '@/lib/finance/date'
 import type { LaunchMode } from '@/components/finance/launch-form'
 import { LaunchScreen } from './launch-screen'
 
 /**
- * O [+]. v1.2 — 2026-09-27.
+ * O [+]. v1.3 — 2026-09-27.
+ *
+ * v1.3 (Fase 13): os cartões e empréstimos, com o limite disponível, para o "Pago com"; e o
+ * atalho "Cartões e empréstimos" no rodapé.
  *
  * v1.2: Saída › Meta (`?modo=meta`) registra aporte ou cria meta, e as metas ativas vêm junto;
  * as descrições já importadas alimentam as sugestões de palavra-chave.
@@ -36,22 +41,26 @@ export default async function NovoPage({
   searchParams: Promise<{ tipo?: string; modo?: string }>
 }) {
   const params = await searchParams
+  const today = todayISO()
 
   // As duas listas de uma vez: alternar saída/entrada não deve ir ao banco de novo.
-  const [expense, income, rules, plans, goals, imported] = await Promise.all([
+  const [expense, income, rules, plans, goals, imported, ledger] = await Promise.all([
     listActiveCategories('expense'),
     listActiveCategories('income'),
     listRecurringRules(),
     listInstallmentPlans(),
     listGoals(false),
     listImportedDescriptions(),
+    getCreditLedger(today),
   ])
+  const creditAccounts = toCreditOptions(ledger.accounts, ledger.bills)
 
   const counts = {
     fixedExpenses: rules.filter((rule) => rule.isActive && rule.kind === 'expense').length,
     fixedIncomes: rules.filter((rule) => rule.isActive && rule.kind === 'income').length,
     openPlans: plans.filter((plan) => plan.paidCount < plan.installmentsCount).length,
     activeGoals: goals.filter((goal) => goal.remainingCents > 0).length,
+    creditAccounts: creditAccounts.length,
   }
 
   return (
@@ -59,7 +68,7 @@ export default async function NovoPage({
       <LaunchScreen
         expenseCategories={expense}
         incomeCategories={income}
-        today={todayISO()}
+        today={today}
         initialKind={params.tipo === 'entrada' ? 'income' : 'expense'}
         initialMode={MODES[params.modo ?? ''] ?? 'single'}
         counts={counts}
@@ -70,6 +79,7 @@ export default async function NovoPage({
           targetAmountCents: goal.targetAmountCents,
         }))}
         suggestions={imported}
+        creditAccounts={creditAccounts}
       />
     </main>
   )

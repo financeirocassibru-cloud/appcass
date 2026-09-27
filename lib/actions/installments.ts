@@ -7,6 +7,7 @@ import {
   createInstallmentSchema,
   installmentPlanIdSchema,
   setPaidCountSchema,
+  setPlanCreditSchema,
   updateInstallmentKeywordsSchema,
 } from '@/lib/validation/installments'
 
@@ -37,6 +38,11 @@ import {
  * logo depois da função: são um complemento, e mudar a assinatura de `create_installment_plan`
  * de novo custaria o mesmo drop/create da 0017 por uma coluna que não precisa da transação.
  * `updateInstallmentKeywords` edita depois.
+ *
+ * v1.4 — 2026-09-27 (Fase 13): parcelamento no cartão. `creditAccountId` vai para
+ * `p_credit_account_id` (migration 0021): as parcelas pendentes nascem financiadas, cada uma na
+ * fatura em que a data dela cai (o banco calcula, por `credit_first_due`). `setPlanCredit` põe
+ * ou tira do cartão um parcelamento que já existe.
  */
 
 export interface InstallmentActionState {
@@ -50,6 +56,7 @@ function revalidateInstallmentViews(): void {
   revalidatePath('/historico')
   revalidatePath('/novo')
   revalidatePath('/novo/lancamentos')
+  revalidatePath('/cartoes', 'layout')
 }
 
 export async function createInstallmentPlan(
@@ -65,6 +72,7 @@ export async function createInstallmentPlan(
     paidCount: formData.get('paidCount'),
     anchorDay: formData.get('anchorDay'),
     keywords: formData.get('keywords'),
+    creditAccountId: formData.get('creditAccountId'),
   })
 
   if (!parsed.success) {
@@ -102,6 +110,7 @@ export async function createInstallmentPlan(
     // e é assim que "sem categoria" se exprime no tipo gerado.
     ...(parsed.data.categoryId === null ? {} : { p_category_id: parsed.data.categoryId }),
     p_paid_count: paidCount,
+    ...(parsed.data.creditAccountId ? { p_credit_account_id: parsed.data.creditAccountId } : {}),
   })
 
   if (error) return { error: `Não foi possível criar: ${error.message}` }
@@ -239,5 +248,44 @@ export async function deleteInstallmentPlan(
         : `Parcelamento excluído: ${removed} ${
             removed === 1 ? 'parcela pendente removida' : 'parcelas pendentes removidas'
           }. As já pagas continuam no extrato.`,
+  }
+}
+
+/**
+ * Põe (ou tira) um parcelamento já cadastrado no cartão. v1.0 — 2026-09-27 (Fase 13).
+ *
+ * Só as parcelas pendentes mudam — as pagas já saíram do saldo. RPC porque cada parcela
+ * recebe o seu vencimento de fatura (`set_installment_plan_credit`, migration 0021).
+ */
+export async function setPlanCredit(
+  _prev: InstallmentActionState,
+  formData: FormData,
+): Promise<InstallmentActionState> {
+  const parsed = setPlanCreditSchema.safeParse({
+    id: formData.get('id'),
+    creditAccountId: formData.get('creditAccountId') ?? '',
+  })
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos' }
+  }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('set_installment_plan_credit', {
+    p_plan_id: parsed.data.id,
+    // `null` tira do cartão; o tipo gerado não aceita `null` no parâmetro, e por isso o cast
+    // explícito para o que o PostgREST de fato recebe.
+    p_credit_account_id: parsed.data.creditAccountId as string,
+  })
+
+  if (error) return { error: `Não foi possível salvar: ${error.message}` }
+
+  revalidateInstallmentViews()
+  revalidatePath(`/parcelas/${parsed.data.id}`)
+
+  const changed = Number(data ?? 0)
+  return {
+    success: parsed.data.creditAccountId
+      ? `No cartão: ${changed} ${changed === 1 ? 'parcela pendente' : 'parcelas pendentes'} nas faturas.`
+      : 'Fora do cartão: as parcelas pendentes voltam a ser pagas uma a uma.',
   }
 }

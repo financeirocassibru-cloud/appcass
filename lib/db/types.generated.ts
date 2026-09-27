@@ -103,17 +103,66 @@ export type Database = {
         };
         Relationships: [];
       };
+      credit_accounts: {
+        Row: {
+          archived_at: string | null;
+          closing_day: number | null;
+          created_at: string;
+          due_day: number | null;
+          due_on: string | null;
+          id: string;
+          keywords: string[];
+          kind: Database["public"]["Enums"]["credit_account_kind"];
+          limit_cents: number | null;
+          name: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          archived_at?: string | null;
+          closing_day?: number | null;
+          created_at?: string;
+          due_day?: number | null;
+          due_on?: string | null;
+          id?: string;
+          keywords?: string[];
+          kind: Database["public"]["Enums"]["credit_account_kind"];
+          limit_cents?: number | null;
+          name: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          archived_at?: string | null;
+          closing_day?: number | null;
+          created_at?: string;
+          due_day?: number | null;
+          due_on?: string | null;
+          id?: string;
+          keywords?: string[];
+          kind?: Database["public"]["Enums"]["credit_account_kind"];
+          limit_cents?: number | null;
+          name?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       entries: {
         Row: {
           amount_cents: number;
           category_id: string | null;
+          charge_count: number;
+          charge_first_due_on: string | null;
           created_at: string;
+          credit_account_id: string | null;
           description: string;
           id: string;
           import_batch_id: string | null;
           import_key: string | null;
           installment_number: number | null;
           installment_total: number | null;
+          interest_cents: number;
           is_settled: boolean;
           keywords: string[];
           kind: Database["public"]["Enums"]["entry_kind"];
@@ -129,13 +178,17 @@ export type Database = {
         Insert: {
           amount_cents: number;
           category_id?: string | null;
+          charge_count?: number;
+          charge_first_due_on?: string | null;
           created_at?: string;
+          credit_account_id?: string | null;
           description: string;
           id?: string;
           import_batch_id?: string | null;
           import_key?: string | null;
           installment_number?: number | null;
           installment_total?: number | null;
+          interest_cents?: number;
           is_settled?: boolean;
           keywords?: string[];
           kind: Database["public"]["Enums"]["entry_kind"];
@@ -151,13 +204,17 @@ export type Database = {
         Update: {
           amount_cents?: number;
           category_id?: string | null;
+          charge_count?: number;
+          charge_first_due_on?: string | null;
           created_at?: string;
+          credit_account_id?: string | null;
           description?: string;
           id?: string;
           import_batch_id?: string | null;
           import_key?: string | null;
           installment_number?: number | null;
           installment_total?: number | null;
+          interest_cents?: number;
           is_settled?: boolean;
           keywords?: string[];
           kind?: Database["public"]["Enums"]["entry_kind"];
@@ -177,6 +234,13 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: "categories";
             referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "entries_credit_account_fkey";
+            columns: ["credit_account_id", "user_id"];
+            isOneToOne: false;
+            referencedRelation: "credit_accounts";
+            referencedColumns: ["id", "user_id"];
           },
         ];
       };
@@ -278,6 +342,7 @@ export type Database = {
         Row: {
           category_id: string | null;
           created_at: string;
+          credit_account_id: string | null;
           description: string;
           first_due_on: string;
           id: string;
@@ -290,6 +355,7 @@ export type Database = {
         Insert: {
           category_id?: string | null;
           created_at?: string;
+          credit_account_id?: string | null;
           description: string;
           first_due_on: string;
           id?: string;
@@ -302,6 +368,7 @@ export type Database = {
         Update: {
           category_id?: string | null;
           created_at?: string;
+          credit_account_id?: string | null;
           description?: string;
           first_due_on?: string;
           id?: string;
@@ -318,6 +385,13 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: "categories";
             referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "installment_plans_credit_account_fkey";
+            columns: ["credit_account_id", "user_id"];
+            isOneToOne: false;
+            referencedRelation: "credit_accounts";
+            referencedColumns: ["id", "user_id"];
           },
         ];
       };
@@ -464,6 +538,7 @@ export type Database = {
           amount_cents: number;
           category_id: string | null;
           created_at: string;
+          credit_account_id: string | null;
           day_of_month: number | null;
           description: string;
           ends_on: string | null;
@@ -480,6 +555,7 @@ export type Database = {
           amount_cents: number;
           category_id?: string | null;
           created_at?: string;
+          credit_account_id?: string | null;
           day_of_month?: number | null;
           description: string;
           ends_on?: string | null;
@@ -496,6 +572,7 @@ export type Database = {
           amount_cents?: number;
           category_id?: string | null;
           created_at?: string;
+          credit_account_id?: string | null;
           day_of_month?: number | null;
           description?: string;
           ends_on?: string | null;
@@ -515,6 +592,13 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: "categories";
             referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "recurring_rules_credit_account_fkey";
+            columns: ["credit_account_id", "user_id"];
+            isOneToOne: false;
+            referencedRelation: "credit_accounts";
+            referencedColumns: ["id", "user_id"];
           },
         ];
       };
@@ -689,6 +773,7 @@ export type Database = {
       };
       v_installment_progress: {
         Row: {
+          credit_account_id: string | null;
           description: string | null;
           installments_count: number | null;
           next_due_on: string | null;
@@ -696,6 +781,22 @@ export type Database = {
           plan_id: string | null;
           remaining_cents: number | null;
           total_amount_cents: number | null;
+          user_id: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "installment_plans_credit_account_fkey";
+            columns: ["credit_account_id", "user_id"];
+            isOneToOne: false;
+            referencedRelation: "credit_accounts";
+            referencedColumns: ["id", "user_id"];
+          },
+        ];
+      };
+      v_interest_by_month: {
+        Row: {
+          interest_cents: number | null;
+          month: string | null;
           user_id: string | null;
         };
         Relationships: [];
@@ -724,9 +825,21 @@ export type Database = {
     };
     Functions: {
       activate_scenario: { Args: { p_scenario_id: string }; Returns: undefined };
+      carry_credit_bill: {
+        Args: {
+          p_account_id: string;
+          p_due_on: string;
+          p_first_due_on: string;
+          p_installments: number;
+          p_remaining_cents: number;
+          p_total_cents: number;
+        };
+        Returns: string;
+      };
       create_installment_plan: {
         Args: {
           p_category_id?: string;
+          p_credit_account_id?: string;
           p_description: string;
           p_first_due_on: string;
           p_installments: Json;
@@ -736,10 +849,32 @@ export type Database = {
         };
         Returns: string;
       };
+      credit_first_due: {
+        Args: {
+          p_closing_day: number;
+          p_due_day: number;
+          p_due_on: string;
+          p_kind: Database["public"]["Enums"]["credit_account_kind"];
+          p_on: string;
+        };
+        Returns: string;
+      };
       delete_installment_plan: { Args: { p_plan_id: string }; Returns: number };
       is_admin: { Args: Record<PropertyKey, never>; Returns: boolean };
       materialize_recurring_occurrence: {
         Args: { p_occurs_on: string; p_rule_id: string; p_settled?: boolean };
+        Returns: string;
+      };
+      pay_credit_bill: {
+        Args: {
+          p_account_id: string;
+          p_amount_cents: number;
+          p_due_on: string;
+          p_import_batch_id?: string;
+          p_import_key?: string;
+          p_interest_cents?: number;
+          p_paid_on: string;
+        };
         Returns: string;
       };
       reconcile_import_row: {
@@ -767,6 +902,10 @@ export type Database = {
         };
         Returns: string;
       };
+      set_installment_plan_credit: {
+        Args: { p_credit_account_id: string; p_plan_id: string };
+        Returns: number;
+      };
       set_installments_paid: { Args: { p_paid_count: number; p_plan_id: string }; Returns: number };
       set_scenario_override: {
         Args: {
@@ -785,8 +924,15 @@ export type Database = {
       ai_job_kind: "interpret" | "apply" | "insights";
       ai_job_status: "queued" | "running" | "completed" | "failed" | "canceled";
       app_role: "admin" | "member";
+      credit_account_kind: "card" | "loan";
       entry_kind: "expense" | "income";
-      entry_source: "manual" | "recurring" | "installment" | "goal";
+      entry_source:
+        | "manual"
+        | "recurring"
+        | "installment"
+        | "goal"
+        | "credit_bill"
+        | "credit_carry";
       invite_status: "pending" | "accepted" | "revoked";
       override_target: "entry" | "recurring_rule" | "installment_plan" | "goal";
       recurrence_freq: "monthly" | "weekly" | "yearly";
@@ -908,8 +1054,9 @@ export const Constants = {
       ai_job_kind: ["interpret", "apply", "insights"],
       ai_job_status: ["queued", "running", "completed", "failed", "canceled"],
       app_role: ["admin", "member"],
+      credit_account_kind: ["card", "loan"],
       entry_kind: ["expense", "income"],
-      entry_source: ["manual", "recurring", "installment", "goal"],
+      entry_source: ["manual", "recurring", "installment", "goal", "credit_bill", "credit_carry"],
       invite_status: ["pending", "accepted", "revoked"],
       override_target: ["entry", "recurring_rule", "installment_plan", "goal"],
       recurrence_freq: ["monthly", "weekly", "yearly"],

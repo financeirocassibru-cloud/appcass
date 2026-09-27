@@ -33,6 +33,9 @@ const FREQUENCIES: { value: RecurrenceFrequency; label: string }[] = [
  * v1.2 — 2026-09-27: palavras-chave do extrato (migration 0019) — a linha importada que
  * contém uma delas marca a ocorrência do mês como paga/recebida, com o valor do extrato.
  *
+ * v1.3 — 2026-09-27 (Fase 13): "Pago no cartão", só na conta fixa. A ocorrência deixa de sair
+ * do saldo e entra na fatura do cartão; vira lançamento quando a fatura é paga.
+ *
  * O dia do vencimento só aparece quando a frequência é mensal — numa semanal ou
  * anual o vencimento sai da data de início, e um campo que não governa nada só
  * confunde. A validação no servidor recusa a combinação de qualquer forma.
@@ -41,12 +44,15 @@ export function RecurringForm({
   categories,
   rule,
   suggestions = [],
+  cards = [],
 }: {
   /** As categorias do tipo da regra. */
   categories: Category[]
   rule: RecurringRule & { keywords: string[] }
   /** Descrições já importadas do mesmo tipo, para sugerir palavra-chave. */
   suggestions?: string[]
+  /** v1.3 — 2026-09-27: cartões ativos, para "Pago no cartão". */
+  cards?: { id: string; name: string }[]
 }) {
   const router = useRouter()
   const kind = rule.kind
@@ -193,6 +199,28 @@ export function RecurringForm({
         {kind === 'income' ? 'recebido' : 'pago'} fica como está — é histórico, e mexer nele
         mudaria o saldo de meses fechados.
       </p>
+
+      {kind === 'expense' && (cards.length > 0 || rule.creditAccountId) ? (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="campo-cartao">Pago no cartão</Label>
+          <select
+            id="campo-cartao"
+            name="creditAccountId"
+            defaultValue={rule.creditAccountId ?? ''}
+            className="border-input bg-card min-h-11 rounded-md border px-3 text-base"
+          >
+            <option value="">Não — sai do saldo no vencimento</option>
+            {cards.map((card) => (
+              <option key={card.id} value={card.id}>
+                {card.name}
+              </option>
+            ))}
+          </select>
+          <p className="text-muted-foreground text-xs">
+            No cartão, cada ocorrência entra na fatura do mês dela e sai do saldo com a fatura.
+          </p>
+        </div>
+      ) : null}
 
       <KeywordField
         label="Palavras-chave do extrato"

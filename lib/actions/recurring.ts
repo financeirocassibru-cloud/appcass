@@ -27,7 +27,17 @@ import {
  *
  * v1.2 — 2026-09-27: criar e editar gravam `keywords` (migration 0019) — a linha do extrato
  * que contém uma delas liquida a ocorrência do mês na importação.
+ *
+ * v1.3 — 2026-09-27 (Fase 13): conta fixa no cartão (`credit_account_id`, migration 0021). A
+ * ocorrência deixa de sair do saldo: entra na fatura, e vira lançamento quando a fatura é paga.
+ * Só saída — renda não "vem" de cartão.
  */
+
+/** v1.3 — 2026-09-27: ausente não mexe; renda nunca fica num cartão. */
+function creditRulePatch(kind: 'expense' | 'income', creditAccountId: string | null | undefined) {
+  if (creditAccountId === undefined) return {}
+  return { credit_account_id: kind === 'expense' ? creditAccountId : null }
+}
 
 export interface RecurringActionState {
   error?: string
@@ -45,6 +55,7 @@ function revalidateRecurringViews(): void {
   revalidatePath('/novo/lancamentos')
   revalidatePath('/')
   revalidatePath('/historico')
+  revalidatePath('/cartoes', 'layout')
 }
 
 /** Os campos do formulário, na forma que os schemas esperam. */
@@ -59,6 +70,7 @@ function readForm(formData: FormData) {
     startsOn: formData.get('startsOn'),
     endsOn: formData.get('endsOn') ?? '',
     keywords: formData.get('keywords'),
+    creditAccountId: formData.get('creditAccountId'),
   }
 }
 
@@ -87,6 +99,7 @@ export async function createRecurring(
     starts_on: parsed.data.startsOn,
     ends_on: parsed.data.endsOn,
     ...keywordsPatch(parsed.data.keywords),
+    ...creditRulePatch(parsed.data.kind, parsed.data.creditAccountId),
   })
 
   if (error) return { error: `Não foi possível salvar: ${error.message}` }
@@ -124,6 +137,7 @@ export async function updateRecurring(
       starts_on: parsed.data.startsOn,
       ends_on: parsed.data.endsOn,
       ...keywordsPatch(parsed.data.keywords),
+      ...creditRulePatch(parsed.data.kind, parsed.data.creditAccountId),
     })
     .eq('id', parsed.data.id)
     .select('id')

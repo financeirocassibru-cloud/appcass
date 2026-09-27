@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import {
   deleteInstallmentPlan,
   setInstallmentsPaid,
+  setPlanCredit,
   updateInstallmentKeywords,
   type InstallmentActionState,
 } from '@/lib/actions/installments'
@@ -27,6 +28,7 @@ const initialState: InstallmentActionState = {}
  *
  * v1.1 — 2026-09-27: `PaidCountForm`, abaixo, para declarar quantas já foram pagas.
  * v1.2 — 2026-09-27: `PlanKeywordsForm`, as palavras-chave do plano.
+ * v1.3 — 2026-09-27 (Fase 13): `PlanCreditForm`, pôr ou tirar o parcelamento de um cartão.
  */
 export function PlanActions({
   id,
@@ -215,6 +217,72 @@ export function PlanKeywordsForm({
       <Button type="submit" variant="outline" disabled={pending} className="min-h-11">
         {pending ? 'Salvando…' : 'Salvar palavras-chave'}
       </Button>
+    </form>
+  )
+}
+
+/**
+ * "Pago no cartão" — v1.0 — 2026-09-27 (Fase 13).
+ *
+ * Põe as parcelas pendentes nas faturas de um cartão (cada uma na fatura do mês dela), ou as
+ * devolve a "a pagar" uma a uma. As já pagas não mudam: já saíram do saldo.
+ */
+export function PlanCreditForm({
+  id,
+  creditAccountId,
+  cards,
+}: {
+  id: string
+  creditAccountId: string | null
+  cards: { id: string; name: string }[]
+}) {
+  const router = useRouter()
+  const [value, setValue] = useState(creditAccountId ?? '')
+  const [state, formAction, pending] = useActionState(
+    async (prev: InstallmentActionState, formData: FormData) => {
+      const result = await setPlanCredit(prev, formData)
+      if (result.success) {
+        toast.success(result.success)
+        router.refresh()
+      }
+      return result
+    },
+    initialState,
+  )
+
+  return (
+    <form action={formAction} className="flex flex-col gap-2 rounded-xl bg-[var(--surface)] p-4">
+      <input type="hidden" name="id" value={id} />
+      <Label htmlFor="campo-cartao">Pago no cartão</Label>
+      <div className="flex gap-2">
+        <select
+          id="campo-cartao"
+          name="creditAccountId"
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          className="border-input bg-card min-h-11 flex-1 rounded-md border px-3 text-base"
+        >
+          <option value="">Não — cada parcela sai do saldo</option>
+          {cards.map((card) => (
+            <option key={card.id} value={card.id}>
+              {card.name}
+            </option>
+          ))}
+        </select>
+        <Button
+          type="submit"
+          variant="outline"
+          disabled={pending || value === (creditAccountId ?? '')}
+          className="min-h-11"
+        >
+          {pending ? 'Salvando…' : 'Salvar'}
+        </Button>
+      </div>
+      <p className="text-muted-foreground text-xs">
+        No cartão, cada parcela pendente entra na fatura do mês dela e fica paga quando a fatura for
+        paga. As já pagas não mudam.
+      </p>
+      {state.error ? <p className="text-[var(--destructive)] text-xs">{state.error}</p> : null}
     </form>
   )
 }

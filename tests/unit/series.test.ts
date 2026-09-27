@@ -443,3 +443,18 @@ describe('buildCommitment', () => {
     expect(mes?.leftoverCents).toBe(700_000)
   })
 })
+
+// v1.1 — 2026-09-27 (Fase 13): os juros de cartão e empréstimo são gasto do mês.
+describe('buildCommitment — juros', () => {
+  it('juros entram como gasto do mês, e a sobra desconta', () => {
+    const [mes] = buildCommitment(
+      [
+        { month: '2026-09', kind: 'income', source: 'manual', totalCents: 100_000 },
+        { month: '2026-09', kind: 'expense', source: 'manual', totalCents: 30_000 },
+        { month: '2026-09', kind: 'expense', source: 'interest', totalCents: 8_000 },
+      ],
+      ['2026-09'],
+    )
+    expect(mes).toMatchObject({ variableCents: 38_000, leftoverCents: 62_000 })
+  })
+})

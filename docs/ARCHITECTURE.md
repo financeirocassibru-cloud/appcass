@@ -169,6 +169,7 @@ app/
   (app)/compromissos/         # contas fixas (recurring_rules, kind = expense)
   (app)/rendas/               # renda fixa (recurring_rules, kind = income)
   (app)/parcelas/
+  (app)/cartoes/              # cartões e empréstimos: faturas, limite, pagar, parcelar (v1.2 — 2026-09-27)
   (app)/metas/
   (app)/analise/              # janela passado+futuro, escala dia/semana/mês, cenários, análises mensais
   (app)/ajustes/{perfil,categorias,convites}/
@@ -536,6 +537,27 @@ npm run dev
 40. Cenário de hoje até dezembro, "Duplicar hábitos" de agosto, "Só saídas": o gasto do 2º
     sábado de agosto aparece no 2º sábado de cada mês, nenhum item antes de hoje, nenhuma conta
     fixa ou parcela duplicada; editar um item muda a curva do cenário e não toca em `entries`.
+
+**Cartões e empréstimos (Fase 13, v1.2 — 2026-09-27):**
+
+41. Uber de R$ 30 hoje "Pago com" um cartão que fecha dia 3 e vence dia 10: o saldo do Início
+    não muda; Transporte conta R$ 30 hoje; a Análise mostra R$ 30 saindo no dia 10; o Histórico
+    mostra o selo "Nubank · paga em 10/xx" e não deixa marcar como pago.
+42. Importar o extrato com "PAGAMENTO FATURA" de R$ 1.000: a linha conecta com a fatura (e com
+    nenhuma compra); o saldo cai R$ 1.000 uma vez só; o total de saídas do mês por categoria não
+    soma a fatura.
+43. Pagar R$ 300 de uma fatura de R$ 1.000: vencida, os R$ 700 aparecem na seguinte. Pagar a
+    seguinte com R$ 80 a mais: os R$ 80 aparecem em "Juros e encargos".
+44. "Parcelar restante" de R$ 700 em 6× de R$ 130: seis cobranças nas faturas seguintes e R$ 80
+    de juros.
+45. Entrada de R$ 5.000 "Veio de" um empréstimo, a pagar em 12× (total R$ 5.760): o saldo sobe
+    R$ 5.000 hoje; 12 saídas previstas; nenhuma renda de R$ 5.000 no mês; R$ 760 de juros.
+46. Parcelado 10× no cartão: cada parcela cai na fatura do mês; `/parcelas` conta as pagas pelas
+    faturas pagas; "Quantas já foram pagas?" não aparece.
+47. Conta fixa no cartão: não aparece na agenda, entra na fatura como prevista e aparece no
+    Histórico quando a fatura é paga.
+48. "+ Cartão" no [+] cadastra sem perder o que já foi digitado; um gasto acima do limite avisa e
+    salva.
 
 **Produção:** deploy na Vercel com preview por PR; `Site URL`/`Redirect URLs` do Supabase
 apontando para produção e para os previews; `supabase db push` no projeto remoto; conferir

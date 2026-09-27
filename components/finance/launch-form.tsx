@@ -14,6 +14,8 @@ import { firstDueFromNext, planInstallments } from '@/lib/finance/installments'
 import { matchCategoryByKeywords } from '@/lib/finance/keywords'
 import { formatCents } from '@/lib/finance/money'
 import type { RecurrenceFrequency } from '@/lib/finance/types'
+import { defaultFirstDue, type CreditOption } from '@/lib/finance/credit'
+import { CreditSourceField } from '@/components/finance/credit-source'
 import { KeywordField } from '@/components/finance/keyword-field'
 import { MoneyInput } from '@/components/finance/money-input'
 import { Button } from '@/components/ui/button'
@@ -37,6 +39,11 @@ import { cn } from '@/lib/utils'
  * E todo modo ganhou "Conectar ao extrato" — as palavras-chave com que a importação reconhece
  * este item e o marca como pago (migration 0019), sugeridas a partir do que já foi importado.
  * Fica recolhido para o avulso continuar em dois toques.
+ *
+ * v1.3 — 2026-09-27 (Fase 13). "Pago com": Avulso (Saída e Entrada), Conta fixa e Parcelado
+ * podem vir de um cartão ou de um empréstimo (`CreditSourceField`). A data continua sendo a do
+ * gasto — a categoria conta nela —, e a dívida sai do saldo no vencimento. Na saída no cartão
+ * o "Já paguei" some: quem paga é a fatura.
  *
  * O avulso continua sendo o padrão e o caminho mais curto: o valor já com foco, dois toques
  * para salvar (meta de `docs/DESIGN.md`). Os outros modos só **acrescentam** campos — valor,
@@ -98,6 +105,7 @@ export function LaunchForm({
   initialMode = 'single',
   goals = [],
   suggestions = { expense: [], income: [] },
+  creditAccounts = [],
   onKindChange,
 }: {
   expenseCategories: Category[]
@@ -109,6 +117,8 @@ export function LaunchForm({
   goals?: LaunchGoal[]
   /** Descrições já importadas, por tipo, para sugerir palavra-chave. */
   suggestions?: Record<EntryKind, string[]>
+  /** v1.3 — 2026-09-27: cartões e empréstimos ativos, para o "Pago com". */
+  creditAccounts?: CreditOption[]
   /** Para a tela mostrar os atalhos do tipo escolhido. */
   onKindChange?: (kind: EntryKind) => void
 }) {
@@ -145,6 +155,13 @@ export function LaunchForm({
 
   // "Conectar ao extrato": o campo de palavras-chave só aparece a pedido.
   const [showKeywords, setShowKeywords] = useState(false)
+
+  // v1.3 — 2026-09-27: "Pago com" — `''` é o saldo.
+  const [creditAccountId, setCreditAccountId] = useState('')
+  const creditAccount = creditAccounts.find((a) => a.id === creditAccountId) ?? null
+  // Renda fixa e meta não vêm de cartão; o seletor nem aparece nelas.
+  const creditAllowed = mode === 'single' || (kind === 'expense' && (mode === 'recurring' || mode === 'installment'))
+  const fundedExpense = creditAllowed && creditAccountId !== '' && kind === 'expense'
 
   const [state, formAction, pending] = useActionState(
     async (previous: ActionState, formData: FormData): Promise<ActionState> => {
@@ -227,6 +244,14 @@ export function LaunchForm({
     if (option === 'income' && (mode === 'installment' || mode === 'goal')) setMode('single')
   }
 
+  /** v1.3 — 2026-09-27: conta fixa e parcelamento só vão para cartão; empréstimo sai. */
+  function chooseMode(option: LaunchMode) {
+    setMode(option)
+    if (option !== 'single' && creditAccounts.find((a) => a.id === creditAccountId)?.kind !== 'card') {
+      setCreditAccountId('')
+    }
+  }
+
   function onDescriptionChange(description: string) {
     if (categoryTouched) return
     const match = matchCategoryByKeywords(
@@ -304,7 +329,7 @@ export function LaunchForm({
             type="button"
             role="radio"
             aria-checked={mode === option.value}
-            onClick={() => setMode(option.value)}
+            onClick={() => chooseMode(option.value)}
             className={cn(
               'min-h-11 shrink-0 rounded-full border px-4 text-sm font-medium transition-colors',
               mode === option.value
@@ -544,12 +569,16 @@ export function LaunchForm({
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="campo-data">
             {mode === 'single' || mode === 'goal'
-              ? 'Data'
+              ? fundedExpense
+                ? 'Data do gasto'
+                : 'Data'
               : mode === 'recurring'
                 ? 'Começa em'
                 : ongoing
                   ? 'Próxima parcela vence em'
-                  : 'Primeira parcela vence em'}
+                  : fundedExpense
+                    ? 'Data da compra (1ª parcela)'
+                    : 'Primeira parcela vence em'}
           </Label>
           <Input
             id="campo-data"
@@ -619,7 +648,24 @@ export function LaunchForm({
         </>
       ) : null}
 
-      {mode === 'single' ? (
+      {creditAllowed ? (
+        <CreditSourceField
+          key={`${kind}-${mode === 'single' ? 'avulso' : 'regra'}`}
+          accounts={creditAccounts}
+          kind={kind}
+          occurredOn={date}
+          amountCents={mode === 'installment' ? totalCents : cents}
+          value={creditAccountId}
+          onChange={setCreditAccountId}
+          allowLoan={mode === 'single'}
+          allowCount={mode === 'single'}
+          detail={mode === 'single'}
+          suggestions={suggestions.expense}
+        />
+      ) : null}
+
+      {/* A saída no cartão não se paga sozinha: quem a conclui é a fatura. */}
+      {mode === 'single' && !fundedExpense ? (
         <label className="flex min-h-11 items-center gap-3">
           <input type="checkbox" name="isSettled" defaultChecked className="accent-primary size-5" />
           <span className="text-sm">{kind === 'expense' ? 'Já paguei' : 'Já recebi'}</span>
@@ -627,7 +673,11 @@ export function LaunchForm({
       ) : null}
 
       {mode === 'installment' && preview.length > 0 ? (
-        <InstallmentPreview preview={preview} paidCount={safePaid} />
+        <InstallmentPreview
+          preview={preview}
+          paidCount={safePaid}
+          card={fundedExpense ? creditAccount : null}
+        />
       ) : null}
 
       {mode === 'installment' && totalCents > MAX_CENTS ? (
@@ -786,9 +836,12 @@ function recurrenceHint(frequency: RecurrenceFrequency, date: string): string {
 function InstallmentPreview({
   preview,
   paidCount,
+  card = null,
 }: {
   preview: ReturnType<typeof planInstallments>
   paidCount: number
+  /** v1.3 — 2026-09-27: no cartão, cada parcela mostra a fatura em que cai. */
+  card?: CreditOption | null
 }) {
   const total = preview.reduce((sum, parcel) => sum + parcel.amountCents, 0)
 
@@ -803,6 +856,11 @@ function InstallmentPreview({
               <span className="text-muted-foreground">
                 {parcel.installmentNumber}/{parcel.installmentTotal} · {formatShort(parcel.dueOn)}
                 {paid ? <span className="ml-2 text-xs text-[var(--income)]">paga</span> : null}
+                {!paid && card ? (
+                  <span className="ml-2 text-xs">
+                    fatura {formatShort(defaultFirstDue(card, parcel.dueOn) ?? parcel.dueOn)}
+                  </span>
+                ) : null}
               </span>
               <span className={cn('tabular font-medium', paid && 'text-muted-foreground')}>
                 {formatCents(parcel.amountCents)}

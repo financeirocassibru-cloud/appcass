@@ -1,5 +1,7 @@
+import { getCreditLedger } from '@/lib/db/queries/credit'
 import type { EntryKind } from '@/lib/db/types'
-import { addDays, type ISODate } from '@/lib/finance/date'
+import { billLabel, isBillDue } from '@/lib/finance/credit'
+import { addDays, todayISO, type ISODate } from '@/lib/finance/date'
 import { dedupeAgainstEntries } from '@/lib/finance/projection'
 import { RECONCILE_WINDOW_DAYS, type ReconcileCandidate } from '@/lib/finance/reconcile'
 import { expandRecurringRule } from '@/lib/finance/recurrence'
@@ -18,6 +20,12 @@ import { createClient } from '@/lib/supabase/server'
  * 2. **Ocorrências de conta/renda fixa** que ainda não viraram lançamento, expandidas pelo
  *    motor puro e deduplicadas com `dedupeAgainstEntries` — a mesma junção da projeção.
  * 3. **Metas** ativas com palavra-chave. Não vencem: cada linha que casa é um aporte.
+ *
+ * v1.1 — 2026-09-27 (Fase 13): 4. as **faturas** de cartão e empréstimo ainda devidas, pela
+ * palavra-chave da conta. E o que foi pago no cartão — a compra, a conta fixa no cartão, o
+ * parcelamento da fatura — nunca entra: quem o conclui é a fatura. É a primeira das três
+ * barreiras; as outras são a reserva por valor (só `avulso`) e a guarda de
+ * `reconcile_import_row` (migration 0021).
  *
  * Sem filtro de usuário: quem restringe é a RLS (invariante 3). Item sem nenhuma palavra-chave
  * (fora o avulso) nem entra, e a lista fica pequena mesmo para quem tem muita conta.
@@ -46,6 +54,7 @@ interface RuleRow {
   ends_on: string | null
   is_active: boolean
   keywords: string[]
+  credit_account_id: string | null
 }
 
 /** Teto de sanidade: um extrato de um mês tem dezenas de pendências, não milhares. */
@@ -56,13 +65,15 @@ export async function listReconcileCandidates(from: ISODate, to: ISODate): Promi
   const lo = addDays(from, -RECONCILE_WINDOW_DAYS)
   const hi = addDays(to, RECONCILE_WINDOW_DAYS)
 
-  const [pendingResult, rulesResult, plansResult, goalsResult] = await Promise.all([
+  const [pendingResult, rulesResult, plansResult, goalsResult, ledger] = await Promise.all([
     supabase
       .from('entries')
       .select('id, kind, occurred_on, description, amount_cents, source, source_id, keywords')
       .eq('is_settled', false)
       .is('import_key', null)
       .neq('source', 'goal')
+      // v1.1 — 2026-09-27: a compra no cartão é paga pela fatura, nunca pela linha do extrato.
+      .is('credit_account_id', null)
       .gte('occurred_on', lo)
       .lte('occurred_on', hi)
       .order('occurred_on')
@@ -70,7 +81,7 @@ export async function listReconcileCandidates(from: ISODate, to: ISODate): Promi
     supabase
       .from('recurring_rules')
       .select(
-        'id, kind, description, amount_cents, category_id, frequency, day_of_month, starts_on, ends_on, is_active, keywords',
+        'id, kind, description, amount_cents, category_id, frequency, day_of_month, starts_on, ends_on, is_active, keywords, credit_account_id',
       )
       .eq('is_active', true),
     supabase.from('installment_plans').select('id, keywords'),
@@ -78,6 +89,7 @@ export async function listReconcileCandidates(from: ISODate, to: ISODate): Promi
       .from('goals')
       .select('id, name, monthly_contribution_cents, keywords')
       .is('archived_at', null),
+    getCreditLedger(todayISO()),
   ])
 
   for (const result of [pendingResult, rulesResult, plansResult, goalsResult]) {
@@ -121,8 +133,8 @@ export async function listReconcileCandidates(from: ISODate, to: ISODate): Promi
     })
   }
 
-  // 2. Ocorrências previstas das regras com palavra-chave.
-  const withKeywords = rules.filter((r) => r.keywords.length > 0)
+  // 2. Ocorrências previstas das regras com palavra-chave. A conta fixa no cartão, não.
+  const withKeywords = rules.filter((r) => r.keywords.length > 0 && !r.credit_account_id)
   if (withKeywords.length > 0) {
     const expanded = withKeywords.flatMap((row) => expandRecurringRule(toRule(row), lo, hi))
 
@@ -188,6 +200,24 @@ export async function listReconcileCandidates(from: ISODate, to: ISODate): Promi
       keywords: goal.keywords,
       label: `Meta: ${goal.name}`,
       origin: 'meta',
+    })
+  }
+
+  // 4. Faturas ainda devidas, das contas com palavra-chave. v1.1 — 2026-09-27.
+  const accountById = new Map(ledger.accounts.map((a) => [a.id, a]))
+  for (const bill of ledger.bills) {
+    const account = accountById.get(bill.accountId)
+    if (!account || account.keywords.length === 0 || !isBillDue(bill)) continue
+    if (bill.dueOn < lo || bill.dueOn > hi) continue
+    candidates.push({
+      target: 'credit_bill',
+      id: account.id,
+      kind: 'expense',
+      dueOn: bill.dueOn,
+      amountCents: bill.remainingCents,
+      keywords: account.keywords,
+      label: billLabel(bill),
+      origin: 'fatura',
     })
   }
 

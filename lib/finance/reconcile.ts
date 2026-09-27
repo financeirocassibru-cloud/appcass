@@ -37,9 +37,12 @@ import type { EntryKind } from './types'
  * original do extrato não sai do aparelho.
  */
 
-export type ReconcileTarget = 'entry' | 'recurring' | 'goal'
+// v1.1 — 2026-09-27 (Fase 13): `credit_bill` — a fatura do cartão (ou a parcela do empréstimo)
+// é o que o extrato paga; a compra no cartão nunca é candidata. O `id` é o da conta, e `dueOn`
+// o vencimento da fatura. Casa só por palavra-chave: a reserva por valor é do avulso.
+export type ReconcileTarget = 'entry' | 'recurring' | 'goal' | 'credit_bill'
 
-export type ReconcileOrigin = 'avulso' | 'parcela' | 'conta fixa' | 'renda fixa' | 'meta'
+export type ReconcileOrigin = 'avulso' | 'parcela' | 'conta fixa' | 'renda fixa' | 'meta' | 'fatura'
 
 /** Um item cadastrado que ainda espera acontecer. */
 export interface ReconcileCandidate {
