@@ -1,7 +1,15 @@
 import type { ISODate } from './date'
 
 export type EntryKind = 'expense' | 'income'
-export type EntrySource = 'manual' | 'recurring' | 'installment' | 'goal'
+// v1.2 — 2026-09-27 (Fase 13): `credit_bill` (pagamento da fatura) e `credit_carry`
+// (parcelamento da fatura) — migration 0020.
+export type EntrySource =
+  | 'manual'
+  | 'recurring'
+  | 'installment'
+  | 'goal'
+  | 'credit_bill'
+  | 'credit_carry'
 export type RecurrenceFrequency = 'monthly' | 'weekly' | 'yearly'
 export type OverrideTarget = 'entry' | 'recurring_rule' | 'installment_plan' | 'goal'
 
@@ -19,6 +27,13 @@ export interface Entry {
   occurrenceKey: string | null
   installmentNumber: number | null
   installmentTotal: number | null
+  // v1.2 — 2026-09-27 (Fase 13): de onde veio o dinheiro, quando não foi do saldo, e como a
+  // dívida é paga. Opcionais para que quem não lê a conta (testes antigos, IA) continue igual:
+  // ausente é o mesmo que nulo — lançamento do saldo. Ver lib/finance/credit.ts.
+  creditAccountId?: string | null
+  chargeFirstDueOn?: ISODate | null
+  chargeCount?: number
+  interestCents?: number
 }
 
 /** Custo fixo ou renda recorrente. Uma regra, não um lançamento. */
@@ -33,6 +48,8 @@ export interface RecurringRule {
   startsOn: ISODate
   endsOn: ISODate | null
   isActive: boolean
+  /** v1.2 — 2026-09-27 (Fase 13): conta fixa no cartão — cobrada na fatura, não no saldo. */
+  creditAccountId?: string | null
 }
 
 export interface Goal {
@@ -76,7 +93,8 @@ export interface Scenario {
   entries: readonly ScenarioEntry[]
 }
 
-export type OccurrenceOrigin = 'entry' | 'recurring' | 'goal' | 'scenario'
+// v1.2 — 2026-09-27 (Fase 13): `credit_bill` é a fatura ainda não paga, derivada das compras.
+export type OccurrenceOrigin = 'entry' | 'recurring' | 'goal' | 'scenario' | 'credit_bill'
 
 /** Um evento financeiro num dia, real ou projetado. */
 export interface Occurrence {
@@ -108,6 +126,27 @@ export interface ProjectionData {
   entries: readonly Entry[]
   recurringRules: readonly RecurringRule[]
   goals: readonly Goal[]
+  /**
+   * v1.2 — 2026-09-27 (Fase 13): as faturas de cartão/empréstimo já montadas por
+   * `buildBills` (lib/finance/credit.ts). O restante de cada uma é a saída de caixa prevista
+   * no vencimento — é por ela, e não pelas compras, que o gasto no cartão sai do saldo.
+   */
+  creditBills?: readonly CreditBillLike[]
+}
+
+/**
+ * O mínimo de uma fatura que a projeção precisa. O tipo completo mora em
+ * lib/finance/credit.ts; este existe para `types.ts` não importar de lá (credit.ts importa
+ * daqui).
+ */
+export interface CreditBillLike {
+  accountId: string
+  accountName: string
+  accountKind: 'card' | 'loan'
+  dueOn: ISODate
+  remainingCents: number
+  /** Só `open`, `closed`, `overdue` e `partial` ainda são devidas no próprio vencimento. */
+  status: 'open' | 'closed' | 'overdue' | 'partial' | 'paid' | 'rolled' | 'carried'
 }
 
 export interface ProjectRangeOptions {

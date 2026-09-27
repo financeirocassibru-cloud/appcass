@@ -4,6 +4,7 @@
 -- v1.3 — 2026-09-27: `set_installments_paid` (migration 0017) no fim.
 -- v1.4 — 2026-09-27: palavras-chave, lote de importação e período da Análise (migration 0018) no fim.
 -- v1.5 — 2026-09-27: conexão do extrato ao que foi cadastrado e aporte como saída (migration 0019) no fim.
+-- v1.6 — 2026-09-27: cartões e empréstimos (migrations 0020/0021) no fim.
 -- Roda como um papel sem BYPASSRLS, alternando o "usuário logado" via GUC,
 -- que é o que a função auth.uid() do shim lê.
 
@@ -1593,6 +1594,318 @@ begin
      or has_function_privilege('anon',
        'public.record_goal_contribution(uuid, bigint, date, text, text, uuid)', 'execute') then
     raise exception 'anon não deveria executar as funções da 0019';
+  end if;
+end $$;
+
+-- === Fase 13 (migrations 0020/0021) — v1.6 — 2026-09-27 ===
+--
+-- Cartões e empréstimos: cada um só vê os seus; o lançamento não aponta para o cartão de outra
+-- pessoa (FK composta); a compra no cartão nunca fica liquidada nem é paga pelo extrato; o
+-- pagamento da fatura é idempotente pela import_key; e as views de competência não contam a
+-- fatura por cima das compras.
+
+set role authenticated;
+set request.jwt.claim.sub = '22222222-2222-2222-2222-222222222222';
+
+insert into public.credit_accounts (user_id, kind, name, closing_day, due_day)
+values ('22222222-2222-2222-2222-222222222222', 'card', 'Cartão do Bruno', 3, 10);
+
+set request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
+
+do $$
+declare
+  ana     uuid := '11111111-1111-1111-1111-111111111111';
+  cartao  uuid;
+  emprest uuid;
+  compra  uuid;
+  regra   uuid;
+  plano   uuid;
+  v_id    uuid;
+  n       int;
+  total   numeric;
+  juros   numeric;
+begin
+  -- Isolamento: Ana não vê o cartão de Bruno.
+  select count(*) into n from public.credit_accounts;
+  if n <> 0 then raise exception 'VAZAMENTO: Ana viu % cartão(ões) de Bruno', n; end if;
+
+  -- Cartão exige fechamento e vencimento.
+  begin
+    insert into public.credit_accounts (user_id, kind, name) values (ana, 'card', 'Sem ciclo');
+    raise exception 'cartão sem fechamento/vencimento deveria ser recusado';
+  exception when check_violation then null;
+  end;
+
+  insert into public.credit_accounts (user_id, kind, name, limit_cents, closing_day, due_day, keywords)
+  values (ana, 'card', 'Nubank', 500000, 3, 10, array['pagamento fatura'])
+  returning id into cartao;
+
+  insert into public.credit_accounts (user_id, kind, name)
+  values (ana, 'loan', 'Empréstimo do banco')
+  returning id into emprest;
+
+  -- O ciclo do cartão: a mesma regra de lib/finance/credit.ts (tests/unit/credit.test.ts).
+  if public.credit_first_due('card', 3::smallint, 10::smallint, null, '2026-09-03') <> '2026-09-10'
+     or public.credit_first_due('card', 3::smallint, 10::smallint, null, '2026-09-04') <> '2026-10-10'
+     or public.credit_first_due('card', 25::smallint, 5::smallint, null, '2026-09-20') <> '2026-10-05'
+     or public.credit_first_due('card', 25::smallint, 5::smallint, null, '2026-09-26') <> '2026-11-05'
+     or public.credit_first_due('card', 31::smallint, 10::smallint, null, '2026-02-28') <> '2026-03-10'
+     or public.credit_first_due('card', 30::smallint, 31::smallint, null, '2026-02-10') <> '2026-03-31'
+     or public.credit_first_due('loan', null, 15::smallint, null, '2026-09-15') <> '2026-10-15'
+     or public.credit_first_due('loan', null, null, '2026-12-01', '2026-09-15') <> '2026-12-01'
+     or public.credit_first_due('loan', null, null, null, '2026-09-15') is not null then
+    raise exception 'credit_first_due divergiu da regra de lib/finance/credit.ts';
+  end if;
+
+  -- A compra no cartão nasce aberta. Liquidada é recusada: quem a conclui é a fatura.
+  begin
+    insert into public.entries (user_id, kind, occurred_on, description, amount_cents,
+                                credit_account_id, charge_first_due_on, is_settled, settled_on)
+    values (ana, 'expense', '2026-09-05', 'Uber', 3000, cartao, '2026-10-10', true, '2026-09-05');
+    raise exception 'compra no cartão não pode nascer liquidada';
+  exception when check_violation then null;
+  end;
+
+  -- Cartão sem data de pagamento (e vice-versa) é recusado.
+  begin
+    insert into public.entries (user_id, kind, occurred_on, description, amount_cents, credit_account_id)
+    values (ana, 'expense', '2026-09-05', 'Sem vencimento', 3000, cartao);
+    raise exception 'lançamento no cartão sem vencimento deveria ser recusado';
+  exception when check_violation then null;
+  end;
+
+  -- Juros só em dívida.
+  begin
+    insert into public.entries (user_id, kind, occurred_on, description, amount_cents, interest_cents)
+    values (ana, 'expense', '2026-09-05', 'Juros soltos', 3000, 100);
+    raise exception 'juros num lançamento comum deveriam ser recusados';
+  exception when check_violation then null;
+  end;
+
+  insert into public.entries (user_id, kind, occurred_on, description, amount_cents,
+                              credit_account_id, charge_first_due_on, keywords)
+  values (ana, 'expense', '2026-09-05', 'Uber', 3000, cartao, '2026-10-10', array['uber'])
+  returning id into compra;
+
+  -- O extrato não paga a compra do cartão, nem com a palavra-chave dela.
+  if public.reconcile_import_row('entry', compra, '2026-09-05', '2026-09-05', 'expense',
+                                 3000, repeat('c1', 32)) is not null then
+    raise exception 'o extrato não pode liquidar uma compra do cartão';
+  end if;
+
+  -- Nem marcar como pago à mão.
+  begin
+    update public.entries set is_settled = true, settled_on = '2026-09-05' where id = compra;
+    raise exception 'compra no cartão não pode ser marcada como paga';
+  exception when check_violation then null;
+  end;
+
+  -- O dinheiro que veio do empréstimo entra (liquidado), com juros e 12 cobranças.
+  insert into public.entries (user_id, kind, occurred_on, description, amount_cents,
+                              is_settled, settled_on, credit_account_id, charge_first_due_on,
+                              charge_count, interest_cents)
+  values (ana, 'income', '2026-09-05', 'Empréstimo', 500000, true, '2026-09-05', emprest,
+          '2026-10-05', 12, 76000);
+
+  -- Pagar a fatura: saída liquidada, chave do vencimento; o segundo pagamento ganha :2.
+  v_id := public.pay_credit_bill(cartao, '2026-10-10', 1000, '2026-10-10');
+  v_id := public.pay_credit_bill(cartao, '2026-10-10', 2000, '2026-10-12', 0, repeat('c2', 32));
+  select count(*) into n from public.entries
+   where source = 'credit_bill' and source_id = cartao
+     and occurrence_key in ('2026-10-10', '2026-10-10:2') and is_settled and credit_account_id is null;
+  if n <> 2 then raise exception 'os dois pagamentos da fatura deveriam existir (%)', n; end if;
+
+  -- A mesma linha do extrato não paga duas vezes.
+  if public.pay_credit_bill(cartao, '2026-10-10', 2000, '2026-10-12', 0, repeat('c2', 32)) is not null then
+    raise exception 'a mesma linha do extrato não pode pagar a fatura duas vezes';
+  end if;
+
+  -- Juros maiores que o pagamento são recusados.
+  begin
+    perform public.pay_credit_bill(cartao, '2026-11-10', 100, '2026-11-10', 200);
+    raise exception 'juros maiores que o pagamento deveriam ser recusados';
+  exception when check_violation then null;
+  end;
+
+  -- O pagamento da fatura não é um lançamento que o extrato conecta de novo.
+  if public.reconcile_import_row('entry', v_id, '2026-10-12', '2026-10-12', 'expense',
+                                 2000, repeat('c3', 32)) is not null then
+    raise exception 'pagamento de fatura não pode ser conectado de novo';
+  end if;
+
+  -- Parcelar o restante: idempotente pelo vencimento de origem.
+  v_id := public.carry_credit_bill(cartao, '2026-10-10', 70000, 78000, 6::smallint, '2026-11-10');
+  if v_id is null then raise exception 'o parcelamento da fatura deveria ser criado'; end if;
+  if public.carry_credit_bill(cartao, '2026-10-10', 70000, 78000, 6::smallint, '2026-11-10') is not null then
+    raise exception 'a mesma fatura não pode ser parcelada duas vezes';
+  end if;
+
+  -- Competência: em setembro, só o Uber (3000) conta como saída + os 76000 de juros do
+  -- empréstimo; o empréstimo não é renda. Em outubro: pagamentos fora, parcelamento fora, juros
+  -- do parcelamento (8000) dentro.
+  select expense_cents, income_cents into total, juros from public.v_monthly_summary
+   where month = '2026-09-01' and user_id = ana;
+  -- Setembro de Ana também tem os lançamentos das seções anteriores; confere pela diferença.
+  select coalesce(sum(amount_cents), 0) into n from public.entries
+   where user_id = ana and date_trunc('month', occurred_on) = '2026-09-01' and kind = 'expense'
+     and source not in ('credit_bill', 'credit_carry');
+  if total <> n + 76000 then
+    raise exception 'setembro deveria somar as saídas + 76000 de juros (%, %)', total, n;
+  end if;
+  select coalesce(sum(amount_cents), 0) into n from public.entries
+   where user_id = ana and date_trunc('month', occurred_on) = '2026-09-01' and kind = 'income'
+     and credit_account_id is null;
+  if juros <> n then raise exception 'o empréstimo não pode contar como renda (%, %)', juros, n; end if;
+
+  select expense_cents into total from public.v_monthly_summary
+   where month = '2026-10-01' and user_id = ana;
+  select coalesce(sum(amount_cents), 0) into n from public.entries
+   where user_id = ana and date_trunc('month', occurred_on) = '2026-10-01' and kind = 'expense'
+     and source not in ('credit_bill', 'credit_carry');
+  if total <> n + 8000 then
+    raise exception 'outubro: pagamentos e parcelamento fora, só 8000 de juros a mais (%, %)', total, n;
+  end if;
+
+  select interest_cents into juros from public.v_interest_by_month
+   where month = '2026-10-01' and user_id = ana;
+  if juros <> 8000 then raise exception 'v_interest_by_month de outubro deveria ser 8000 (%)', juros; end if;
+
+  -- Por categoria, outubro soma só as saídas que não são fatura (sem juros: esses são a
+  -- categoria virtual de v_interest_by_month).
+  select coalesce(sum(total_cents), 0) into total from public.v_category_breakdown
+   where month = '2026-10-01' and user_id = ana and kind = 'expense';
+  if total <> n then raise exception 'a fatura não pode aparecer por categoria (%, %)', total, n; end if;
+
+  -- Conta fixa no cartão: a ocorrência nasce aberta, na fatura, e o extrato não a paga.
+  insert into public.recurring_rules (user_id, kind, description, amount_cents, frequency,
+                                      day_of_month, starts_on, credit_account_id)
+  values (ana, 'expense', 'Streaming', 5590, 'monthly', 15, '2026-01-01', cartao)
+  returning id into regra;
+
+  v_id := public.materialize_recurring_occurrence(regra, '2026-09-15');
+  select count(*) into n from public.entries
+   where id = v_id and not is_settled and credit_account_id = cartao
+     and charge_first_due_on = '2026-10-10';
+  if n <> 1 then raise exception 'a conta fixa no cartão deveria nascer aberta na fatura de 10/10'; end if;
+
+  if public.reconcile_import_row('recurring', regra, '2026-10-15', '2026-10-15', 'expense',
+                                 5590, repeat('c4', 32)) is not null then
+    raise exception 'o extrato não pode pagar a conta fixa no cartão';
+  end if;
+
+  -- Parcelamento no cartão: as pendentes nascem financiadas, as pagas não; e "quantas já
+  -- foram pagas" é recusado.
+  plano := public.create_installment_plan(
+    'Geladeira', 30000::bigint, 3::smallint, '2026-08-05'::date,
+    '[{"number":"1","amount_cents":10000,"due_on":"2026-08-05","description":"Geladeira (1/3)"},
+      {"number":"2","amount_cents":10000,"due_on":"2026-09-05","description":"Geladeira (2/3)"},
+      {"number":"3","amount_cents":10000,"due_on":"2026-10-05","description":"Geladeira (3/3)","charge_due_on":"2026-11-10"}]'::jsonb,
+    null, 1::smallint, cartao
+  );
+  select count(*) into n from public.entries
+   where source_id = plano and credit_account_id = cartao and not is_settled;
+  if n <> 2 then raise exception 'as 2 parcelas pendentes deveriam estar no cartão (%)', n; end if;
+  select count(*) into n from public.entries
+   where source_id = plano and occurrence_key = '2' and charge_first_due_on = '2026-10-10';
+  if n <> 1 then raise exception 'a parcela 2 deveria cair na fatura de 10/10 (calculada no banco)'; end if;
+  select count(*) into n from public.entries
+   where source_id = plano and occurrence_key = '3' and charge_first_due_on = '2026-11-10';
+  if n <> 1 then raise exception 'a parcela 3 deveria usar o charge_due_on enviado'; end if;
+
+  begin
+    perform public.set_installments_paid(plano, 2::smallint);
+    raise exception 'set_installments_paid não vale para parcelamento no cartão';
+  exception when check_violation then null;
+  end;
+
+  -- Tirar o plano do cartão devolve as pendentes a "a pagar" comuns.
+  n := public.set_installment_plan_credit(plano, null);
+  if n <> 2 then raise exception 'set_installment_plan_credit deveria mudar 2 parcelas (%)', n; end if;
+  select count(*) into n from public.entries where source_id = plano and credit_account_id is not null;
+  if n <> 0 then raise exception 'nenhuma parcela deveria continuar no cartão'; end if;
+
+  -- Cartão com lançamento não é excluído: arquiva.
+  begin
+    delete from public.credit_accounts where id = cartao;
+    raise exception 'cartão com lançamentos não pode ser excluído';
+  exception when foreign_key_violation then null;
+  end;
+end $$;
+
+-- Bruno não usa o cartão de Ana, nem paga a fatura dela.
+reset role;
+
+create temp table alvos_cartao as
+  select
+    (select id from public.credit_accounts where name = 'Nubank') as cartao_ana,
+    (select id from public.credit_accounts where name = 'Cartão do Bruno') as cartao_bruno,
+    (select id from public.installment_plans where description = 'Geladeira') as plano_ana;
+grant select on alvos_cartao to authenticated;
+
+set role authenticated;
+set request.jwt.claim.sub = '22222222-2222-2222-2222-222222222222';
+
+do $$
+declare a record; n int;
+begin
+  select * into a from alvos_cartao;
+
+  select count(*) into n from public.credit_accounts;
+  if n <> 1 then raise exception 'Bruno deveria ver só o próprio cartão (%)', n; end if;
+
+  -- A FK composta: o lançamento de Bruno não aponta para o cartão de Ana, mesmo com o uuid.
+  begin
+    insert into public.entries (user_id, kind, occurred_on, description, amount_cents,
+                                credit_account_id, charge_first_due_on)
+    values ('22222222-2222-2222-2222-222222222222', 'expense', '2026-09-05', 'Invasão', 100,
+            a.cartao_ana, '2026-10-10');
+    raise exception 'VAZAMENTO: Bruno lançou no cartão de Ana';
+  exception when foreign_key_violation then null;
+  end;
+
+  begin
+    perform public.pay_credit_bill(a.cartao_ana, '2026-10-10', 100, '2026-10-10');
+    raise exception 'VAZAMENTO: Bruno pagou a fatura de Ana';
+  exception when no_data_found then null;
+  end;
+
+  begin
+    perform public.carry_credit_bill(a.cartao_ana, '2026-10-10', 100, 100, 1::smallint, '2026-11-10');
+    raise exception 'VAZAMENTO: Bruno parcelou a fatura de Ana';
+  exception when no_data_found then null;
+  end;
+
+  begin
+    perform public.set_installment_plan_credit(a.plano_ana, a.cartao_bruno);
+    raise exception 'VAZAMENTO: Bruno mexeu no parcelamento de Ana';
+  exception when no_data_found then null;
+  end;
+
+  update public.credit_accounts set name = 'Tomado' where id = a.cartao_ana;
+  delete from public.credit_accounts where id = a.cartao_ana;
+end $$;
+
+reset role;
+
+do $$
+declare n int;
+begin
+  select count(*) into n from public.credit_accounts where name = 'Nubank';
+  if n <> 1 then raise exception 'o cartão de Ana deveria continuar intacto (%)', n; end if;
+
+  select count(*) into n from public.entries where description = 'Invasão';
+  if n <> 0 then raise exception 'Bruno não deveria ter gravado nada'; end if;
+end $$;
+
+-- anon não executa as funções novas.
+do $$
+begin
+  if has_function_privilege('anon', 'public.pay_credit_bill(uuid, date, bigint, date, bigint, text, uuid)', 'execute')
+     or has_function_privilege('anon', 'public.carry_credit_bill(uuid, date, bigint, bigint, smallint, date)', 'execute')
+     or has_function_privilege('anon', 'public.set_installment_plan_credit(uuid, uuid)', 'execute')
+     or has_function_privilege('anon', 'public.credit_first_due(public.credit_account_kind, smallint, smallint, date, date)', 'execute')
+     or has_function_privilege('anon', 'public.create_installment_plan(text, bigint, smallint, date, jsonb, uuid, smallint, uuid)', 'execute') then
+    raise exception 'anon não deveria executar as funções da 0021';
   end if;
 end $$;
 

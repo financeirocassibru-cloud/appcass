@@ -1,3 +1,4 @@
+import { billOccurrences, isCashEntry } from './cash'
 import { compareISO, eachDay, isWithin, type ISODate } from './date'
 import { expandGoal } from './goals'
 import { expandRecurringRule } from './recurrence'
@@ -6,6 +7,7 @@ import type {
   Entry,
   Occurrence,
   OverrideTarget,
+  ProjectionData,
   ProjectRangeOptions,
   ProjectWindowOptions,
   Scenario,
@@ -34,9 +36,24 @@ import type {
  *   Quem o coloca no primeiro dia da janela é `rollOverdueTo`, abaixo.
  * - **Liquidado com data futura entra.** É raro, mas acontece: `computeBalance`
  *   só olha até hoje, então esse lançamento ainda não está no saldo.
+ *
+ * v1.2 — 2026-09-27 (Fase 13): **a saída no cartão/empréstimo não entra.** Ela nunca é
+ * liquidada (constraint `entries_credit_expense_open`, migration 0021) e por isso nunca está no
+ * saldo — mas também não é caixa futuro: quem sai do saldo é a fatura, que a projeção soma
+ * por `billOccurrences`. Contar as duas seria o gasto saindo duas vezes.
  */
 export function entriesAheadOf(entries: readonly Entry[], today: ISODate): Entry[] {
-  return entries.filter((entry) => !(entry.isSettled && entry.occurredOn <= today))
+  return entries.filter(
+    (entry) => !(entry.isSettled && entry.occurredOn <= today) && isCashEntry(entry),
+  )
+}
+
+/**
+ * v1.2 — 2026-09-27 (Fase 13): a conta fixa no cartão não é caixa — ela é cobrança da fatura,
+ * já somada em `creditBills`. Expandi-la aqui a tiraria do saldo duas vezes.
+ */
+function cashRules(rules: ProjectionData['recurringRules']): ProjectionData['recurringRules'] {
+  return rules.filter((rule) => !rule.creditAccountId)
 }
 
 /**
@@ -118,7 +135,7 @@ export function projectRange(options: ProjectRangeOptions): DayProjection[] {
 
   // 2. Expandir recorrências.
   const projected: Occurrence[] = []
-  for (const rule of data.recurringRules) {
+  for (const rule of cashRules(data.recurringRules)) {
     projected.push(...expandRecurringRule(rule, from, to))
   }
 
@@ -134,6 +151,10 @@ export function projectRange(options: ProjectRangeOptions): DayProjection[] {
   const all = scenario
     ? applyScenario([...realized, ...deduped], scenario, from, to)
     : [...realized, ...deduped]
+
+  // v1.2 — 2026-09-27 (Fase 13): as faturas ainda devidas saem do saldo no vencimento. Depois
+  // do cenário, de propósito: a fatura é derivada das compras, e não tem alvo de override.
+  all.push(...billOccurrences(data.creditBills ?? [], from, to))
 
   // 6. Acumular por dia.
   return accumulate(all, from, to, openingBalanceCents)
@@ -205,7 +226,7 @@ export function projectWindow(options: ProjectWindowOptions): DayProjection[] {
   //    lançamento real para `dedupeAgainstEntries` casar com ela.
   const projected: Occurrence[] = []
   if (hasFuture) {
-    for (const rule of data.recurringRules) {
+    for (const rule of cashRules(data.recurringRules)) {
       projected.push(...expandRecurringRule(rule, futureFrom, to))
     }
     for (const goal of data.goals) {
@@ -219,6 +240,11 @@ export function projectWindow(options: ProjectWindowOptions): DayProjection[] {
   const future = scenario
     ? applyScenario([...ahead, ...deduped], scenario, futureFrom, to)
     : [...ahead, ...deduped]
+
+  // v1.2 — 2026-09-27 (Fase 13): as faturas ainda devidas, só na metade "previsão". A vencida
+  // vai para `futureFrom`, como o pendente atrasado; o que já foi pago é um `credit_bill`
+  // liquidado e está em `history`.
+  if (hasFuture) future.push(...billOccurrences(data.creditBills ?? [], futureFrom, to))
 
   return accumulate([...history, ...future], from, to, openingBalanceCents)
 }
