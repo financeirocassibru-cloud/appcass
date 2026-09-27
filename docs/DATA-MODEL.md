@@ -88,6 +88,7 @@ create table entries (
   occurrence_key text,          -- 'YYYY-MM' para recorrência; nº da parcela para parcelamento
   installment_number smallint,
   installment_total smallint,
+  import_key text,              -- sha256 da linha do extrato importado (0016); nulo se digitado
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   check (is_settled = false or settled_on is not null),
@@ -98,6 +99,10 @@ create table entries (
 create unique index entries_generated_uniq
   on entries (user_id, source, source_id, occurrence_key)
   where (source <> 'manual');
+-- v1.1 — 2026-09-27: importar o mesmo extrato duas vezes não duplica (migration 0016).
+-- Não parcial de propósito: NULL não colide, e o upsert do supabase-js precisa do índice
+-- inteiro para usar `on_conflict=user_id,import_key`.
+create unique index entries_import_key_uniq on entries (user_id, import_key);
 create index entries_user_date_idx on entries (user_id, occurred_on desc);
 create index entries_user_pending_idx on entries (user_id, occurred_on) where (is_settled = false);
 

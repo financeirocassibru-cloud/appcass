@@ -1,4 +1,5 @@
 -- Prova de isolamento por RLS com dois usuários reais.
+-- v1.1 — 2026-09-27: asserções da import_key (migration 0016) no fim.
 -- Roda como um papel sem BYPASSRLS, alternando o "usuário logado" via GUC,
 -- que é o que a função auth.uid() do shim lê.
 
@@ -1060,6 +1061,50 @@ declare n int;
 begin
   select count(*) into n from public.v_source_breakdown;
   if n <> 0 then raise exception 'sem sessão a view deveria devolver 0 linhas, devolveu %', n; end if;
+end $$;
+
+-- === import_key (0016) — v1.1 — 2026-09-27 ===
+-- Importar o mesmo extrato duas vezes não duplica; a chave é por pessoa, não global; e só
+-- aceita o formato do sha256 que lib/import/fingerprint.ts gera.
+set request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
+
+do $$
+declare n int; chave text := repeat('ab', 32);
+begin
+  insert into public.entries (user_id, kind, occurred_on, description, amount_cents, import_key)
+  values ('11111111-1111-1111-1111-111111111111', 'expense', '2026-09-01', 'Pix para Fulano', 1000, chave);
+
+  -- Segunda importação da mesma linha: o upsert do app vira `on conflict do nothing`.
+  insert into public.entries (user_id, kind, occurred_on, description, amount_cents, import_key)
+  values ('11111111-1111-1111-1111-111111111111', 'expense', '2026-09-01', 'Pix para Fulano', 1000, chave)
+  on conflict (user_id, import_key) do nothing;
+
+  select count(*) into n from public.entries where import_key = chave;
+  if n <> 1 then raise exception 'reimportar duplicou: % linhas com a mesma import_key', n; end if;
+
+  begin
+    insert into public.entries (user_id, kind, occurred_on, description, amount_cents, import_key)
+    values ('11111111-1111-1111-1111-111111111111', 'expense', '2026-09-01', 'x', 1, 'nao-e-hash');
+    raise exception 'import_key fora do formato deveria ser recusada';
+  exception when check_violation then null;
+  end;
+end $$;
+
+-- Bruno importando um extrato com a mesma linha não colide com a de Ana, e não a enxerga.
+set request.jwt.claim.sub = '22222222-2222-2222-2222-222222222222';
+
+do $$
+declare n int; chave text := repeat('ab', 32);
+begin
+  select count(*) into n from public.entries where import_key = chave;
+  if n <> 0 then raise exception 'VAZAMENTO: Bruno viu a import_key de Ana'; end if;
+
+  insert into public.entries (user_id, kind, occurred_on, description, amount_cents, import_key)
+  values ('22222222-2222-2222-2222-222222222222', 'expense', '2026-09-01', 'Pix para Fulano', 1000, chave)
+  on conflict (user_id, import_key) do nothing;
+
+  select count(*) into n from public.entries where import_key = chave;
+  if n <> 1 then raise exception 'a chave de Ana impediu a importação de Bruno (% linhas)', n; end if;
 end $$;
 
 reset role;

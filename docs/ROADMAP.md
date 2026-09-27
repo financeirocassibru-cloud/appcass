@@ -288,3 +288,42 @@ Três problemas que as ferramentas pegaram antes de virarem tela:
 Migration **0014**, com `v_source_breakdown`, para o comprometimento da renda. A prova de RLS
 afirma o isolamento da view nova e que repartir o mês por origem não muda o total dele — se
 discordassem, a tela mostraria uma sobra que não fecha com o mês.
+
+## Fase 9 — Importar extrato bancário (PDF e CSV)
+
+v1.0 — 2026-09-27. Um texto "Importar extrato" logo abaixo da caixa do assistente, no Início,
+abre a janela: escolher o arquivo, conferir o que foi lido, ajustar, lançar. Primeiro banco:
+Nubank (conta), nos dois formatos.
+
+**Pronto quando:** o extrato Nubank em CSV e o mesmo período em PDF dão os mesmos lançamentos,
+com a soma batendo com o total que o PDF declara; importar o segundo depois do primeiro não
+grava nada novo; e o arquivo não passa pelo servidor.
+
+Decisões:
+
+- **O arquivo é lido no navegador** (`lib/import/read-file.ts`, com `unpdf` carregado sob
+  demanda). Para o servidor só vão as linhas confirmadas. "Não guardar o arquivo" vale por
+  construção, e o limite de corpo das Server Actions deixa de ser problema para PDF grande.
+- **Os parsers são puros** (`lib/import/`), no mesmo regime de `lib/finance/`: sem I/O, sem
+  `Date`, sem `parseFloat`. O CSV acha as colunas **pelo nome** (e, sem cabeçalho, pelo
+  conteúdo); o PDF refaz linhas e células pelas coordenadas, remove cabeçalho e rodapé por
+  repetição entre páginas e descobre as colunas de cada lançamento pelo `x` relativo dele.
+  Nada depende de coordenada fixa nem de frase exata do banco.
+- **O sentido vem do extrato sempre que ele diz**: sinal no valor, grupo "Total de entradas /
+  saídas", coluna crédito/débito. Só sem nada disso é deduzido por palavra-chave — e a linha
+  vem marcada "conferir entrada/saída".
+- **`import_key` (migration 0016) e não `source = 'import'`.** Importado é lançamento manual
+  feito em lote; um valor novo no enum faria projeção e edição o tratarem como ocorrência de
+  regra. A chave é o sha256 de data, tipo, valor, texto original só com letras e números, e
+  ordinal entre linhas idênticas — por isso CSV e PDF do mesmo extrato geram a mesma chave.
+- **Categoria: histórico primeiro, IA para o resto.** A IA recebe só a descrição curta de
+  cada contraparte e os nomes das categorias, numa chamada curta como a triagem; falhar não
+  impede importar.
+
+**Para adaptar um banco novo:** rode o arquivo dele pelos parsers (os testes em
+`tests/unit/import-parsers.test.ts` mostram como montar o PDF em itens posicionados). Se algo
+não sair certo, o ajuste é quase sempre um sinônimo de cabeçalho em `lib/import/csv.ts`, uma
+palavra de grupo em `groupKind` (`lib/import/pdf-layout.ts`) ou uma regra de descrição em
+`lib/import/describe.ts` — não um parser por banco. Acrescente um teste com o layout novo,
+com dados inventados: extrato real tem dados de terceiros e não entra no repositório.
+
