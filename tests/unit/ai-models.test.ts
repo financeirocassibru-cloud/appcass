@@ -123,6 +123,12 @@ describe('shouldFallback', () => {
     expect(shouldFallback({ status: 'failed', elapsedMs: 1, deadlineMs })).toBe(true)
   })
 
+  // v1.1 — 2026-09-27: `incomplete` virou final; sem cair como `failed`, o trabalho ficaria
+  // `running` para sempre, porque status final não vence prazo.
+  it('cai quando a interação terminou incompleta', () => {
+    expect(shouldFallback({ status: 'incomplete', elapsedMs: 1, deadlineMs })).toBe(true)
+  })
+
   it('cai por status HTTP que outro modelo pode aceitar', () => {
     expect(shouldFallback({ httpStatus: 429, elapsedMs: 1, deadlineMs })).toBe(true)
     expect(shouldFallback({ httpStatus: 404, elapsedMs: 1, deadlineMs })).toBe(true)
@@ -179,10 +185,10 @@ describe('nenhum status desconhecido segura o trabalho além do prazo', () => {
   }
 
   it('status final nunca cai por prazo, por mais que tenha demorado', () => {
-    for (const status of ['completed', 'failed', 'cancelled']) {
+    for (const status of ['completed', 'failed', 'cancelled', 'incomplete']) {
       const caiu = shouldFallback({ status, elapsedMs: 999_999, deadlineMs })
-      // 'failed' cai, mas pelo motivo certo — a interação falhou, não por prazo.
-      expect(caiu).toBe(status === 'failed')
+      // 'failed' e 'incomplete' caem, mas pelo motivo certo — não terminou bem, não por prazo.
+      expect(caiu).toBe(status === 'failed' || status === 'incomplete')
     }
   })
 })
@@ -192,6 +198,7 @@ describe('isTerminal', () => {
     expect(isTerminal('completed')).toBe(true)
     expect(isTerminal('failed')).toBe(true)
     expect(isTerminal('cancelled')).toBe(true)
+    expect(isTerminal('incomplete')).toBe(true)
   })
 
   it('em andamento, ausente e desconhecido não são finais', () => {
@@ -201,7 +208,7 @@ describe('isTerminal', () => {
     expect(isTerminal(undefined)).toBe(false)
   })
 
-  it('a lista de finais tem exatamente três status', () => {
-    expect([...TERMINAL_STATUSES]).toEqual(['completed', 'failed', 'cancelled'])
+  it('a lista de finais tem exatamente quatro status', () => {
+    expect([...TERMINAL_STATUSES]).toEqual(['completed', 'failed', 'cancelled', 'incomplete'])
   })
 })

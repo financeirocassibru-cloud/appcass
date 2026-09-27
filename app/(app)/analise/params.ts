@@ -12,6 +12,10 @@ import { ANALYSIS_MONTHS, type AnalysisMonths } from '@/lib/finance/series'
  *
  * v1.0 — 2026-09-27. Substitui o `?dias=30|90|180` da Projeção, que só sabia olhar para frente.
  *
+ * v1.1 — 2026-09-27. Sem `de`/`ate` na URL, o período vem do padrão da pessoa — o último que
+ * ela escolheu, guardado no perfil (`fallback`) — e só na falta dele dos 30 dias para trás e
+ * 90 para frente de sempre.
+ *
  * Nomes em português na URL (`de`, `ate`, `escala`), como `cenario` já era, e identificadores em
  * inglês no código — invariante 10 lido como ele é: a URL é interface.
  *
@@ -60,12 +64,23 @@ const DEFAULT_FUTURE_DAYS = 90
 export function parseAnalysisParams(
   raw: RawAnalysisParams,
   today: ISODate = todayISO(),
+  /** O período padrão da pessoa, já resolvido para hoje. v1.1 — 2026-09-27. */
+  fallback?: { from: ISODate; to: ISODate },
 ): AnalysisParams {
-  const from = raw.de && isISODate(raw.de) ? raw.de : addDays(today, -DEFAULT_PAST_DAYS)
-  const requestedTo = raw.ate && isISODate(raw.ate) ? raw.ate : addDays(today, DEFAULT_FUTURE_DAYS)
+  const defaultFrom =
+    fallback && isISODate(fallback.from) && fallback.from <= fallback.to
+      ? fallback.from
+      : addDays(today, -DEFAULT_PAST_DAYS)
+  const defaultTo =
+    fallback && isISODate(fallback.to) && fallback.from <= fallback.to
+      ? fallback.to
+      : addDays(today, DEFAULT_FUTURE_DAYS)
+
+  const from = raw.de && isISODate(raw.de) ? raw.de : defaultFrom
+  const requestedTo = raw.ate && isISODate(raw.ate) ? raw.ate : defaultTo
 
   // Intervalo invertido cai no padrão em vez de devolver uma janela vazia sem explicação.
-  const focusFrom = from <= requestedTo ? from : addDays(today, -DEFAULT_PAST_DAYS)
+  const focusFrom = from <= requestedTo ? from : defaultFrom
   // Teto de extensão: um `?de=1900-01-01` computaria dezenas de milhares de dias.
   const ceiling = addDays(focusFrom, MAX_WINDOW_DAYS)
   const focusTo = requestedTo > ceiling ? ceiling : requestedTo

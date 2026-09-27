@@ -22,7 +22,7 @@ import {
 } from '@/lib/validation/assistant'
 
 /**
- * O assistente, do lado do servidor. v1.3 — 2026-09-27 (antes v1.2 — 2026-09-26).
+ * O assistente, do lado do servidor. v1.4 — 2026-09-27 (antes v1.3 — 2026-09-27).
  *
  * v1.2: `requestInsights` passou a levar o período do histórico que a pessoa escolhe na
  * Projeção, e `enqueueJob` recebe as opções num objeto.
@@ -283,6 +283,9 @@ export async function requestInsights(
     return { error: cause instanceof Error ? cause.message : 'Não foi possível falar com a IA.' }
   }
 
+  // v1.4 — 2026-09-27: um erro do provedor (chave, cota, pedido recusado) sobe de
+  // `runInsights` como exceção e cai no `catch` acima, com a mensagem dele. `null` aqui é
+  // só o caso de nenhum modelo ter terminado dentro do orçamento.
   if (!texto) {
     return {
       error: 'Nenhum modelo entregou o diagnóstico a tempo. Tente de novo em alguns instantes.',

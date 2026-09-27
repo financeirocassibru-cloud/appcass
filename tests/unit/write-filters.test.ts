@@ -149,4 +149,17 @@ describe('escritas de lançamento conferem o resultado (invariante 17)', () => {
       expect(corpoDe(nome), `${nome} sem .eq('id', ...)`).toMatch(/\.eq\('id'/)
     }
   })
+  // v1.2 — 2026-09-27: a exclusão em lote de "Ver todos". Ela filtra por `.in(...)`, não por
+  // `.eq('id')`, então tem asserção própria: as duas escritas pedem o resultado de volta,
+  // ficam restritas aos lançamentos manuais, e zero linhas apagadas é erro.
+  it('deleteEntries confere o resultado e só alcança lançamento manual', () => {
+    const corpo = corpoDe('deleteEntries')
+
+    expect(corpo.match(/\.delete\(\)/g) ?? []).toHaveLength(2)
+    expect(corpo.match(/\.select\('id'\)/g) ?? []).toHaveLength(2)
+    expect(corpo.match(/\.eq\('source', 'manual'\)/g) ?? []).toHaveLength(2)
+    expect(corpo).toMatch(/\.in\('id', ids\)/)
+    expect(corpo).toMatch(/\.in\('import_batch_id', importBatchIds\)/)
+    expect(corpo, 'deleteEntries não recusa o caso de zero linhas').toMatch(/deleted === 0/)
+  })
 })

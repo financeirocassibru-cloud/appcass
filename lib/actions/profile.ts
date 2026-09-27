@@ -4,10 +4,13 @@ import { revalidatePath } from 'next/cache'
 import { currentUserId } from '@/lib/db/current-user'
 import { todayISO } from '@/lib/finance/date'
 import { createClient } from '@/lib/supabase/server'
-import { updateBalanceAnchorSchema } from '@/lib/validation/profile'
+import { saveAnalysisPeriodSchema, updateBalanceAnchorSchema } from '@/lib/validation/profile'
 
 /**
- * Escrita no próprio perfil.
+ * Escrita no próprio perfil. v1.1 — 2026-09-27.
+ *
+ * v1.1: `saveAnalysisPeriod`, o último período escolhido na Análise, nas colunas
+ * `analysis_*` que a migration 0018 concedeu nominalmente.
  *
  * Só toca colunas que o `grant update (...)` da migration 0008 concede a
  * `authenticated`: `display_name`, `timezone`, `opening_balance_cents` e
@@ -78,4 +81,38 @@ export async function updateBalanceAnchor(
   revalidatePath('/')
   revalidatePath('/ajustes/saldo')
   return { success: 'Saldo ajustado.' }
+}
+
+/**
+ * Guarda o período escolhido na Análise como o padrão da pessoa. v1.0 — 2026-09-27.
+ *
+ * Chamada sem esperar resposta, ao lado da navegação: se falhar, a tela já mostrou o período
+ * pedido e o único efeito é o padrão não mudar — por isso devolve o erro em vez de lançar.
+ * Não revalida nada: o período atual está na URL, e o padrão só vale na próxima visita.
+ */
+export async function saveAnalysisPeriod(input: unknown): Promise<ProfileActionState> {
+  const parsed = saveAnalysisPeriodSchema.safeParse(input)
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Período inválido' }
+  }
+
+  const userId = await currentUserId()
+  const supabase = await createClient()
+
+  const patch =
+    parsed.data.period === 'custom'
+      ? { analysis_period: 'custom', analysis_from: parsed.data.from, analysis_to: parsed.data.to }
+      : { analysis_period: parsed.data.period, analysis_from: null, analysis_to: null }
+
+  // Filtro e `.select()` pelos mesmos motivos de `updateBalanceAnchor` (invariantes 3 e 17).
+  const { data, error } = await supabase
+    .from('profiles')
+    .update(patch)
+    .eq('id', userId)
+    .select('id')
+
+  if (error) return { error: `Não foi possível guardar o período: ${error.message}` }
+  if (!data || data.length === 0) return { error: 'Perfil não encontrado.' }
+
+  return { success: 'Período guardado.' }
 }

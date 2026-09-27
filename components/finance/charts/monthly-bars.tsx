@@ -8,6 +8,9 @@ import { formatCents, formatCentsCompact } from '@/lib/finance/money'
 /**
  * Entradas e saídas mês a mês.
  *
+ * v1.1 — 2026-09-27: saiu do Início para a Análise, onde divide o espaço com o
+ * Comprometimento da renda num carrossel e acompanha o seletor 3/6/12 meses.
+ *
  * Forma e cor seguem a skill `dataviz`, como `docs/DESIGN.md` manda:
  *
  * - **Colunas agrupadas**, não empilhadas: a pergunta é "entrou mais ou saiu
@@ -36,7 +39,19 @@ interface Hovered {
   cents: number
 }
 
-export function MonthlyBars({ data, today }: { data: MonthlyTotals[]; today: string }) {
+export function MonthlyBars({
+  data,
+  today,
+  embedded = false,
+}: {
+  data: MonthlyTotals[]
+  today: string
+  /**
+   * v1.1 — 2026-09-27: dentro de um carrossel da Análise (`PanelCarousel`), que já mostra o
+   * título e o recorte no cabeçalho dele — aqui eles não se repetem.
+   */
+  embedded?: boolean
+}) {
   const [hovered, setHovered] = useState<Hovered | null>(null)
   const referenceMonth = today.slice(0, 7)
 
@@ -60,13 +75,19 @@ export function MonthlyBars({ data, today }: { data: MonthlyTotals[]; today: str
   }))
 
   return (
-    <section aria-labelledby="titulo-meses" className="flex flex-col gap-3">
-      <div className="flex items-baseline justify-between gap-3">
-        <h2 id="titulo-meses" className="text-base font-semibold">
-          Mês a mês
-        </h2>
-        <span className="text-xs text-[var(--foreground-muted)]">últimos {data.length} meses</span>
-      </div>
+    <section
+      aria-labelledby={embedded ? undefined : 'titulo-meses'}
+      aria-label={embedded ? 'Mês a mês' : undefined}
+      className="flex flex-col gap-3"
+    >
+      {embedded ? null : (
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 id="titulo-meses" className="text-base font-semibold">
+            Mês a mês
+          </h2>
+          <span className="text-xs text-[var(--foreground-muted)]">últimos {data.length} meses</span>
+        </div>
+      )}
 
       {!hasData ? (
         <p className="rounded-xl bg-[var(--surface)] p-4 text-sm text-[var(--foreground-muted)]">

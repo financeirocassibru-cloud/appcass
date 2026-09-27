@@ -48,20 +48,32 @@ const BANDS: Band[] = [
 export function CommitmentBars({
   months,
   caption,
+  embedded = false,
 }: {
   months: CommitmentMonth[]
   caption: string
+  /**
+   * v1.1 — 2026-09-27: dentro de um carrossel da Análise (`PanelCarousel`), que já mostra o
+   * título e o recorte no cabeçalho dele — aqui eles não se repetem.
+   */
+  embedded?: boolean
 }) {
   const withIncome = months.filter((month) => month.incomeCents > 0)
 
   return (
-    <section aria-labelledby="titulo-comprometimento" className="flex flex-col gap-3">
-      <div className="flex items-baseline justify-between gap-3">
-        <h2 id="titulo-comprometimento" className="text-base font-semibold">
-          Comprometimento da renda
-        </h2>
-        <span className="text-xs text-[var(--foreground-muted)]">{caption}</span>
-      </div>
+    <section
+      aria-labelledby={embedded ? undefined : 'titulo-comprometimento'}
+      aria-label={embedded ? 'Comprometimento da renda' : undefined}
+      className="flex flex-col gap-3"
+    >
+      {embedded ? null : (
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 id="titulo-comprometimento" className="text-base font-semibold">
+            Comprometimento da renda
+          </h2>
+          <span className="text-xs text-[var(--foreground-muted)]">{caption}</span>
+        </div>
+      )}
 
       {withIncome.length === 0 ? (
         <p className="rounded-xl bg-[var(--surface)] p-4 text-sm text-[var(--foreground-muted)]">

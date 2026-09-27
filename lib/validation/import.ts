@@ -5,7 +5,7 @@ import { IMPORT_KEY_RE } from '@/lib/import/fingerprint'
 import { MAX_IMPORT_ROWS } from '@/lib/import/types'
 
 /**
- * Validação da importação de extrato. v1.0 — 2026-09-27.
+ * Validação da importação de extrato. v1.1 — 2026-09-27.
  *
  * O servidor não confia no que o navegador leu do arquivo: cada linha passa de novo por aqui
  * antes de virar lançamento — valor inteiro de centavos (invariante 1), data `YYYY-MM-DD`
@@ -56,4 +56,11 @@ export const suggestGroupSchema = z.object({
   kind,
 })
 
-export const suggestGroupsSchema = z.array(suggestGroupSchema).min(1).max(300)
+/**
+ * v1.1 — 2026-09-27: no máximo 100 por pedido. A IA categoriza em lotes de 100 contrapartes
+ * (`AI_BATCH_SIZE`), a pedido: lista maior num pedido só é onde o modelo começa a pular item
+ * e a inventar chave.
+ */
+export const AI_BATCH_SIZE = 100
+
+export const suggestGroupsSchema = z.array(suggestGroupSchema).min(1).max(AI_BATCH_SIZE)

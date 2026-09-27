@@ -2,6 +2,7 @@
 -- v1.1 — 2026-09-27: asserções da import_key (migration 0016) no fim.
 -- v1.2 — 2026-09-27: parcelamento em andamento (migration 0017) no fim.
 -- v1.3 — 2026-09-27: `set_installments_paid` (migration 0017) no fim.
+-- v1.4 — 2026-09-27: palavras-chave, lote de importação e período da Análise (migration 0018) no fim.
 -- Roda como um papel sem BYPASSRLS, alternando o "usuário logado" via GUC,
 -- que é o que a função auth.uid() do shim lê.
 
@@ -1281,6 +1282,103 @@ begin
   raise exception 'ESCALADA: anon executou set_installments_paid';
 exception
   when insufficient_privilege then null;  -- esperado
+end $$;
+
+reset role;
+
+-- === Fase 11 (migration 0018) — v1.4 — 2026-09-27 ===
+--
+-- As colunas novas de `profiles` são graváveis pelo dono (grant nominal), sem reabrir a
+-- escrita em `role`; `custom` exige as duas datas; palavras-chave têm teto; e o lote de
+-- importação de Ana é invisível e inapagável para Bruno.
+
+set role authenticated;
+set request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
+
+do $$
+declare periodo text; lote uuid := '99999999-9999-9999-9999-999999999999'; n int;
+begin
+  update public.profiles set analysis_period = 'next_30d'
+   where id = '11111111-1111-1111-1111-111111111111';
+  select analysis_period into periodo from public.profiles
+   where id = '11111111-1111-1111-1111-111111111111';
+  if periodo is distinct from 'next_30d' then
+    raise exception 'o dono deveria conseguir salvar o período da Análise (%)', periodo;
+  end if;
+
+  update public.profiles
+     set analysis_period = 'custom', analysis_from = '2026-01-01', analysis_to = '2026-03-31'
+   where id = '11111111-1111-1111-1111-111111111111';
+
+  begin
+    update public.profiles set analysis_period = 'custom', analysis_from = null
+     where id = '11111111-1111-1111-1111-111111111111';
+    raise exception 'custom sem data deveria ser recusado';
+  exception when check_violation then null;
+  end;
+
+  begin
+    update public.profiles set analysis_period = 'semana-que-vem'
+     where id = '11111111-1111-1111-1111-111111111111';
+    raise exception 'atalho desconhecido deveria ser recusado';
+  exception when check_violation then null;
+  end;
+
+  update public.categories set keywords = array['ifood', 'rappi']
+   where user_id = '11111111-1111-1111-1111-111111111111' and kind = 'expense'
+     and id = (select id from public.categories
+                where user_id = '11111111-1111-1111-1111-111111111111' and kind = 'expense'
+                limit 1);
+
+  begin
+    update public.categories set keywords = array_fill('x'::text, array[31])
+     where user_id = '11111111-1111-1111-1111-111111111111';
+    raise exception 'mais de 30 palavras-chave deveria ser recusado';
+  exception when check_violation then null;
+  end;
+
+  insert into public.entries (user_id, kind, occurred_on, description, amount_cents, import_key, import_batch_id)
+  values ('11111111-1111-1111-1111-111111111111', 'expense', '2026-09-02', 'Lote Ana', 500, repeat('cd', 32), lote);
+
+  select count(*) into n from public.entries where import_batch_id = lote;
+  if n <> 1 then raise exception 'Ana deveria ver o próprio lote (%)', n; end if;
+end $$;
+
+do $$
+begin
+  update public.profiles set role = 'admin'
+   where id = '11111111-1111-1111-1111-111111111111';
+  raise exception 'ESCALADA: o grant da 0018 reabriu a escrita em profiles.role';
+exception
+  when insufficient_privilege then null;  -- esperado
+end $$;
+
+set request.jwt.claim.sub = '22222222-2222-2222-2222-222222222222';
+
+do $$
+declare n int; lote uuid := '99999999-9999-9999-9999-999999999999';
+begin
+  select count(*) into n from public.entries where import_batch_id = lote;
+  if n <> 0 then raise exception 'VAZAMENTO: Bruno viu o lote de importação de Ana'; end if;
+
+  delete from public.entries where import_batch_id = lote;
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'VAZAMENTO: Bruno apagou % linhas do lote de Ana', n; end if;
+
+  update public.profiles set analysis_period = 'last_30d'
+   where id = '11111111-1111-1111-1111-111111111111';
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'VAZAMENTO: Bruno mudou o período da Análise de Ana'; end if;
+end $$;
+
+set request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
+
+do $$
+declare n int;
+begin
+  select count(*) into n from public.entries
+   where import_batch_id = '99999999-9999-9999-9999-999999999999';
+  if n <> 1 then raise exception 'o lote de Ana deveria continuar intacto (%)', n; end if;
 end $$;
 
 reset role;

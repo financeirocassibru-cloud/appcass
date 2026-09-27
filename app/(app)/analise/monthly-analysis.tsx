@@ -4,14 +4,18 @@ import {
   getCategoryDeviation,
   getCategoryTotalsForPeriod,
   getCommitment,
+  getMonthlySeries,
   ANALYSIS_MONTHS,
   type AnalysisMonths,
 } from '@/lib/db/queries/summary'
 import { formatMonthLong } from '@/lib/finance/series'
 import type { ISODate } from '@/lib/finance/date'
 import { CategoryRanking } from '@/components/finance/charts/category-ranking'
+import { CategorySpending } from '@/components/finance/charts/category-pie'
 import { CategoryDeviationChart } from '@/components/finance/charts/category-deviation'
 import { CommitmentBars } from '@/components/finance/charts/commitment-bars'
+import { MonthlyBars } from '@/components/finance/charts/monthly-bars'
+import { PanelCarousel } from '@/components/finance/charts/panel-carousel'
 import { analysisHref, type RawAnalysisParams } from './params'
 import { cn } from '@/lib/utils'
 
@@ -27,6 +31,11 @@ import { cn } from '@/lib/utils'
  *
  * Por isso o seletor de meses é separado do período do gráfico — são dois recortes diferentes,
  * e fingir que são o mesmo é o que tornaria os números errados.
+ *
+ * v1.1 — 2026-09-27: os quatro gráficos empilhados viraram dois carrosséis
+ * (`PanelCarousel`), trocados pelas setas: **Comprometimento da renda ⇄ Mês a mês** (que veio
+ * do Início e agora segue o seletor 3/6/12) e **Saídas por categoria ⇄ Variação** (o antigo
+ * "Fora da curva"). Saídas por categoria abre em pizza, com as barras a um toque.
  */
 export async function MonthlyAnalysis({
   months,
@@ -39,10 +48,11 @@ export async function MonthlyAnalysis({
 }) {
   const period = analysisPeriod(today, months)
 
-  const [categories, commitment, deviation] = await Promise.all([
+  const [categories, commitment, deviation, monthly] = await Promise.all([
     getCategoryTotalsForPeriod(period),
     getCommitment(period),
     getCategoryDeviation(period),
+    getMonthlySeries(today, months),
   ])
 
   const first = period.months[0]
@@ -56,7 +66,7 @@ export async function MonthlyAnalysis({
       : 'os meses anteriores'
 
   return (
-    <div className="flex flex-col gap-6 border-t pt-6">
+    <div className="flex flex-col gap-8 border-t pt-8">
       <div className="flex flex-col gap-2">
         <h2 className="text-base font-semibold">Como foi</h2>
         <p className="text-xs text-[var(--foreground-muted)]">
@@ -83,18 +93,60 @@ export async function MonthlyAnalysis({
         </nav>
       </div>
 
-      <CommitmentBars months={commitment} caption={caption} />
-
-      <CategoryRanking
-        slices={categories.slices}
-        totalCents={categories.totalCents}
-        caption={caption}
+      <PanelCarousel
+        label="Renda e mês a mês"
+        panels={[
+          {
+            key: 'comprometimento',
+            title: 'Comprometimento da renda',
+            caption,
+            content: <CommitmentBars months={commitment} caption={caption} embedded />,
+          },
+          {
+            key: 'mes-a-mes',
+            title: 'Mês a mês',
+            caption: `Entradas e saídas, ${caption}`,
+            content: <MonthlyBars data={monthly} today={today} embedded />,
+          },
+        ]}
       />
 
-      <CategoryDeviationChart
-        rows={deviation}
-        caption={caption}
-        baselineCaption={baselineCaption}
+      <PanelCarousel
+        label="Saídas por categoria e variação"
+        panels={[
+          {
+            key: 'categorias',
+            title: 'Saídas por categoria',
+            caption,
+            content: (
+              <CategorySpending
+                slices={categories.slices}
+                totalCents={categories.totalCents}
+                bars={
+                  <CategoryRanking
+                    slices={categories.slices}
+                    totalCents={categories.totalCents}
+                    caption={caption}
+                    embedded
+                  />
+                }
+              />
+            ),
+          },
+          {
+            key: 'variacao',
+            title: 'Variação',
+            caption,
+            content: (
+              <CategoryDeviationChart
+                rows={deviation}
+                caption={caption}
+                baselineCaption={baselineCaption}
+                embedded
+              />
+            ),
+          },
+        ]}
       />
     </div>
   )

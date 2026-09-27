@@ -68,6 +68,7 @@ export type Database = {
           created_at: string;
           icon: string | null;
           id: string;
+          keywords: string[];
           kind: Database["public"]["Enums"]["entry_kind"];
           name: string;
           sort_order: number;
@@ -80,6 +81,7 @@ export type Database = {
           created_at?: string;
           icon?: string | null;
           id?: string;
+          keywords?: string[];
           kind?: Database["public"]["Enums"]["entry_kind"];
           name: string;
           sort_order?: number;
@@ -92,6 +94,7 @@ export type Database = {
           created_at?: string;
           icon?: string | null;
           id?: string;
+          keywords?: string[];
           kind?: Database["public"]["Enums"]["entry_kind"];
           name?: string;
           sort_order?: number;
@@ -107,6 +110,7 @@ export type Database = {
           created_at: string;
           description: string;
           id: string;
+          import_batch_id: string | null;
           import_key: string | null;
           installment_number: number | null;
           installment_total: number | null;
@@ -127,6 +131,7 @@ export type Database = {
           created_at?: string;
           description: string;
           id?: string;
+          import_batch_id?: string | null;
           import_key?: string | null;
           installment_number?: number | null;
           installment_total?: number | null;
@@ -147,6 +152,7 @@ export type Database = {
           created_at?: string;
           description?: string;
           id?: string;
+          import_batch_id?: string | null;
           import_key?: string | null;
           installment_number?: number | null;
           installment_total?: number | null;
@@ -363,6 +369,9 @@ export type Database = {
           ai_model: string | null;
           ai_notifications_enabled: boolean;
           ai_show_reasoning: boolean;
+          analysis_from: string | null;
+          analysis_period: string | null;
+          analysis_to: string | null;
           created_at: string;
           display_name: string;
           id: string;
@@ -378,6 +387,9 @@ export type Database = {
           ai_model?: string | null;
           ai_notifications_enabled?: boolean;
           ai_show_reasoning?: boolean;
+          analysis_from?: string | null;
+          analysis_period?: string | null;
+          analysis_to?: string | null;
           created_at?: string;
           display_name?: string;
           id: string;
@@ -393,6 +405,9 @@ export type Database = {
           ai_model?: string | null;
           ai_notifications_enabled?: boolean;
           ai_show_reasoning?: boolean;
+          analysis_from?: string | null;
+          analysis_period?: string | null;
+          analysis_to?: string | null;
           created_at?: string;
           display_name?: string;
           id?: string;

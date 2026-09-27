@@ -13,7 +13,8 @@ import type { Entry, EntryKind } from './types'
 /**
  * "Duplicar hábitos": repetir o jeito de gastar de um mês nos meses seguintes de um cenário.
  *
- * v1.0 — 2026-09-27.
+ * v1.1 — 2026-09-27 (antes v1.0 — 2026-09-27). v1.1: o mês atual, em aberto, pode ser a
+ * origem (`habitSourceMonths`).
  *
  * Só o que **não** tem recorrência programada vira hábito: lançamento avulso (`source =
  * 'manual'`, o que inclui o importado de extrato). Conta fixa, renda fixa, parcela e aporte de
@@ -185,8 +186,16 @@ export function habitWindowStart(scenarioStartsOn: ISODate, today: ISODate): ISO
   return compareISO(scenarioStartsOn, today) >= 0 ? scenarioStartsOn : today
 }
 
-/** Os últimos N meses **fechados** antes de hoje, do mais recente ao mais antigo. */
-export function closedMonthsBefore(today: ISODate, count: number): string[] {
+/**
+ * Os meses que podem ser origem do hábito, do mais recente ao mais antigo: o mês atual —
+ * ainda em aberto — e os N−1 anteriores.
+ *
+ * v1.1 — 2026-09-27: o mês atual entrou (antes era `closedMonthsBefore`, só meses
+ * fechados). Em setembro não dava para repetir setembro, que é justamente o retrato mais
+ * fresco de como a pessoa está gastando. Não dobra nada: `habitTargetMonths` continua
+ * começando no mês **seguinte** à origem, e do mês em aberto só entra o que já foi lançado.
+ */
+export function habitSourceMonths(today: ISODate, count: number): string[] {
   const current = monthKey(today)
-  return Array.from({ length: count }, (_, index) => shiftMonthKey(current, -(index + 1)))
+  return Array.from({ length: count }, (_, index) => shiftMonthKey(current, -index))
 }

@@ -10,6 +10,7 @@ import type { Category } from '@/lib/db/queries/categories'
 import type { EntryKind } from '@/lib/db/types'
 import { isISODate, isoWeekday, parseISODate } from '@/lib/finance/date'
 import { firstDueFromNext, planInstallments } from '@/lib/finance/installments'
+import { matchCategoryByKeywords } from '@/lib/finance/keywords'
 import { formatCents } from '@/lib/finance/money'
 import type { RecurrenceFrequency } from '@/lib/finance/types'
 import { MoneyInput } from '@/components/finance/money-input'
@@ -24,6 +25,10 @@ import { cn } from '@/lib/utils'
  *
  * v1.0 — 2026-09-27. Até aqui conta fixa e parcelamento moravam na aba Mais, e cadastrar um
  * deles custava quatro telas. Agora são um chip abaixo de Saída/Entrada.
+ *
+ * v1.1 — 2026-09-27. A descrição escolhe a categoria pela palavra-chave (Ajustes ›
+ * Categorias) enquanto a pessoa não tocar num chip — tocou, a escolha é dela e a palavra
+ * não mexe mais.
  *
  * O avulso continua sendo o padrão e o caminho mais curto: o valor já com foco, dois toques
  * para salvar (meta de `docs/DESIGN.md`). Os outros modos só **acrescentam** campos — valor,
@@ -89,6 +94,10 @@ export function LaunchForm({
   )
   const [cents, setCents] = useState(0)
   const [categoryId, setCategoryId] = useState('')
+  /** A pessoa escolheu a categoria à mão? Aí a palavra-chave não mexe mais nela. */
+  const [categoryTouched, setCategoryTouched] = useState(false)
+  /** A palavra-chave que escolheu a categoria atual, para dizer isso na tela. */
+  const [autoKeyword, setAutoKeyword] = useState<string | null>(null)
   const [date, setDate] = useState(today)
 
   // Conta fixa / renda fixa.
@@ -161,7 +170,26 @@ export function LaunchForm({
     // A categoria escolhida pertence ao tipo anterior; limpar evita enviar uma categoria de
     // despesa num lançamento de receita. E renda não se parcela.
     setCategoryId('')
+    setCategoryTouched(false)
+    setAutoKeyword(null)
     if (option === 'income' && mode === 'installment') setMode('single')
+  }
+
+  function onDescriptionChange(description: string) {
+    if (categoryTouched) return
+    const match = matchCategoryByKeywords(
+      description,
+      kind,
+      categories.map((c) => ({ id: c.id, kind: c.kind, keywords: c.keywords })),
+    )
+    if (match) {
+      setCategoryId(match.categoryId)
+      setAutoKeyword(match.keyword)
+    } else if (autoKeyword) {
+      // A palavra que escolheu saiu do texto: a categoria que ela pôs sai junto.
+      setCategoryId('')
+      setAutoKeyword(null)
+    }
   }
 
   const submitLabel =
@@ -318,7 +346,11 @@ export function LaunchForm({
                 key={category.id}
                 type="button"
                 aria-pressed={categoryId === category.id}
-                onClick={() => setCategoryId(categoryId === category.id ? '' : category.id)}
+                onClick={() => {
+                  setCategoryId(categoryId === category.id ? '' : category.id)
+                  setCategoryTouched(true)
+                  setAutoKeyword(null)
+                }}
                 className={cn(
                   'min-h-11 shrink-0 rounded-full border px-4 text-sm font-medium transition-colors',
                   categoryId === category.id
@@ -352,8 +384,15 @@ export function LaunchForm({
                   ? 'Mercado'
                   : 'Pix recebido'
           }
+          onChange={(event) => onDescriptionChange(event.target.value)}
           className="min-h-11 text-base"
         />
+        {autoKeyword && categoryId ? (
+          <p className="text-muted-foreground text-xs" role="status">
+            Categoria {categories.find((c) => c.id === categoryId)?.name} pela palavra-chave
+            &ldquo;{autoKeyword}&rdquo;.
+          </p>
+        ) : null}
         {mode === 'installment' ? (
           <p className="text-muted-foreground text-xs">
             Cada parcela entra no histórico como &ldquo;Sofá (1/{safeCount || count})&rdquo;.

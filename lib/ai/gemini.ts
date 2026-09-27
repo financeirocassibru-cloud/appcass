@@ -6,7 +6,14 @@ import { isTerminal } from './models'
 import type { ToolDeclaration } from './tools'
 
 /**
- * Cliente da Interactions API do Gemini. v1.3 — 2026-09-26.
+ * Cliente da Interactions API do Gemini. v1.4 — 2026-09-27.
+ *
+ * v1.4: o texto do modelo passou a ser lido por `interactionText`, dos `steps`. Todo o app
+ * lia `output_text`, um campo que só existe nos SDKs do Google — o JSON cru da API REST
+ * entrega o texto em `steps[] (type "model_output") → content[] (type "text") → text`.
+ * Com isso o Diagnóstico sempre caía em "Nenhum modelo entregou…" com a resposta pronta
+ * do lado de lá, e a triagem e a sugestão de categoria da importação devolviam vazio em
+ * silêncio. Os testes passavam porque o mock tinha o formato dos SDKs, não o da API.
  *
  * v1.3: `background` virou opcional (padrão `true`) e ganhou `runInteraction`, que
  * resolve a interação na mesma viagem HTTP. É o que a triagem usa: ela é barata e
@@ -68,6 +75,48 @@ const interactionSchema = z
   .passthrough()
 
 export type Interaction = z.infer<typeof interactionSchema>
+
+/** Um passo de saída do modelo, só com o que a leitura do texto precisa. */
+const outputStepSchema = z
+  .object({
+    type: z.string().optional(),
+    content: z
+      .array(z.object({ type: z.string().optional(), text: z.string().optional() }).passthrough())
+      .optional(),
+  })
+  .passthrough()
+
+/**
+ * O texto que o modelo escreveu. v1.0 — 2026-09-27.
+ *
+ * Na API REST ele vem nos `steps` de tipo `model_output`, dentro de `content`, em partes
+ * de tipo `text` — e pode vir em mais de um passo ou mais de uma parte, por isso junta
+ * tudo. `output_text` é só a conveniência dos SDKs; continua aceito se um dia aparecer,
+ * mas não é de onde o texto vem.
+ *
+ * Tolerante como `hasFunctionCall`: passo torto é ignorado, e sem texto nenhum devolve
+ * `null` — nunca estoura.
+ */
+export function interactionText(interaction: Interaction | null | undefined): string | null {
+  if (!interaction) return null
+  if (typeof interaction.output_text === 'string' && interaction.output_text.trim()) {
+    return interaction.output_text
+  }
+
+  const partes: string[] = []
+  for (const raw of interaction.steps ?? []) {
+    const step = outputStepSchema.safeParse(raw)
+    if (!step.success || step.data.type !== 'model_output') continue
+    for (const part of step.data.content ?? []) {
+      if ((part.type === undefined || part.type === 'text') && typeof part.text === 'string') {
+        partes.push(part.text)
+      }
+    }
+  }
+
+  const texto = partes.join('')
+  return texto.trim() ? texto : null
+}
 
 /** Erro de transporte ou de recusa do provedor, com o status para decidir a queda. */
 export class GeminiError extends Error {
@@ -252,7 +301,8 @@ export async function runInteraction(
   doFetch: FetchLike = globalThis.fetch,
 ): Promise<Interaction | null> {
   const criada = await startInteraction({ ...input, background: false }, doFetch)
-  if (isTerminal(criada.status) || criada.output_text) return criada
+  // v1.4 — 2026-09-27: `interactionText`, e não `output_text` (ver o cabeçalho).
+  if (isTerminal(criada.status) || interactionText(criada)) return criada
 
   let atual = criada
 
@@ -260,7 +310,7 @@ export async function runInteraction(
     await new Promise((resolve) => setTimeout(resolve, FOREGROUND_GAP_MS))
 
     atual = await getInteraction(criada.id, doFetch)
-    if (isTerminal(atual.status) || atual.output_text) return atual
+    if (isTerminal(atual.status) || interactionText(atual)) return atual
   }
 
   // Não resolveu: cancelar para não deixar cota queimando por uma resposta que já

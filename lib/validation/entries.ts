@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { isISODate } from '@/lib/finance/date'
+import { parseKeywords } from '@/lib/finance/keywords'
 
 /** O valor chega do formulário em centavos, como inteiro — nunca como texto decimal. */
 const amountCentsSchema = z.coerce
@@ -53,6 +54,23 @@ export const entryIdSchema = z.object({
   id: z.string().uuid('Lançamento inválido'),
 })
 
+/**
+ * Exclusão em lote, de "Ver todos". v1.0 — 2026-09-27.
+ *
+ * Por id (o que foi marcado na página) e/ou por importação inteira (`import_batch_id`), que
+ * pode passar de uma página. Os tetos são de sanidade, não de regra: a página mostra 40
+ * linhas e uma importação tem no máximo 1000.
+ */
+export const deleteEntriesSchema = z
+  .object({
+    ids: z.array(z.string().uuid('Lançamento inválido')).max(500, 'Seleção grande demais').default([]),
+    importBatchIds: z
+      .array(z.string().uuid('Importação inválida'))
+      .max(20, 'Importações demais de uma vez')
+      .default([]),
+  })
+  .refine((v) => v.ids.length + v.importBatchIds.length > 0, 'Nada selecionado')
+
 export const toggleSettledSchema = z.object({
   id: z.string().uuid('Lançamento inválido'),
   isSettled: z.union([z.literal('true'), z.literal('false')]).transform((v) => v === 'true'),
@@ -71,6 +89,21 @@ export const createCategorySchema = z.object({
 export const renameCategorySchema = z.object({
   id: z.string().uuid('Categoria inválida'),
   name: z.string().trim().min(1, 'Informe o nome').max(40, 'Nome longo demais'),
+})
+
+/**
+ * Palavras-chave de uma categoria. v1.0 — 2026-09-27.
+ *
+ * Chega como o texto do campo (separado por vírgula ou linha) e sai como a lista limpa de
+ * `parseKeywords` — a mesma função que a tela usa para mostrar os chips, então o que a
+ * pessoa vê é o que é gravado.
+ */
+export const updateCategoryKeywordsSchema = z.object({
+  id: z.string().uuid('Categoria inválida'),
+  keywords: z
+    .string()
+    .max(2_000, 'Palavras-chave demais')
+    .transform((raw) => parseKeywords(raw)),
 })
 
 export const archiveCategorySchema = z.object({

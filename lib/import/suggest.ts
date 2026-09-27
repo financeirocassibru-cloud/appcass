@@ -72,6 +72,8 @@ export interface CategoryOption {
   id: string
   name: string
   kind: EntryKind
+  /** v1.1 — 2026-09-27: as palavras-chave da categoria (migration 0018). */
+  keywords: string[]
 }
 
 export interface SuggestGroup {

@@ -372,3 +372,36 @@ Decisões:
 - **Nada antes de hoje.** A projeção aplica o cenário só à previsão; item datado no passado seria
   gravado e nunca apareceria. A prévia diz isso, e pergunta — sem opção pré-marcada — se é tudo,
   só saídas ou só entradas.
+
+## Fase 11 — Palavras-chave, "Ver todos" que exclui, Análise que respira, e o Diagnóstico de volta
+
+v1.0 — 2026-09-27. Um pacote de experiência e um conserto.
+
+**Pronto quando:** "iFood" em Alimentação categoriza sozinho a linha do extrato e o [+]; a IA só
+categoriza a importação quando a pessoa toca no botão, em lotes de 100, sem passar por cima de
+palavra-chave, histórico ou escolha feita na tela; uma importação ruim some inteira em "Ver
+todos" com um atalho e uma confirmação; a Análise abre no último período escolhido; e o
+Diagnóstico devolve texto.
+
+Decisões:
+
+- **O Diagnóstico nunca falhou por tempo.** O código lia `output_text`, um campo que só os SDKs
+  do Google montam; o JSON da API REST entrega o texto em `steps[] (model_output) → content[]
+  → text`. A interação completava, a leitura dava vazio e a cadeia de modelos inteira era
+  percorrida à toa. `interactionText` (`lib/ai/gemini.ts`) lê dos `steps`, e o mesmo conserto
+  destravou a triagem e a sugestão de categoria da importação, que falhavam em silêncio. O mock
+  dos testes tinha o formato dos SDKs — por isso passavam. Junto: `incomplete` é status final,
+  o erro real do provedor (chave, cota, 400) chega à tela, e o orçamento vale dentro do poll.
+- **Palavra-chave na própria categoria** (`categories.keywords`, migration 0018), e não numa
+  tabela de regras: é uma lista curta, com o mesmo dono e o mesmo tipo da categoria. A regra
+  escrita pela pessoa vence o histórico, que vence a IA. Palavra de até 3 letras só casa inteira
+  ("bar" não pega "barbearia"); empate entre categorias diferentes não decide.
+- **`import_batch_id` e não `created_at`** para "selecionar a importação": o instante coincide
+  hoje por acaso de implementação. O backfill usou esse acaso uma vez, para as importações que
+  já existiam. Excluir um importado libera a `import_key`, e reimportar o extrato o traz de
+  volta — é o conserto que a pessoa quer para uma importação ruim.
+- **O período salvo é o atalho, não as datas** (`profiles.analysis_period`, com grant nominal
+  pelo invariante 15): "Próximos 30 dias" guardado ontem começa hoje. Arrastar o gráfico não é
+  escolha de filtro e não mexe no padrão.
+- **Duplicar hábitos aceita o mês em aberto.** Não dobra nada: o destino continua começando no
+  mês seguinte à origem, e do mês atual entra o que já foi lançado.

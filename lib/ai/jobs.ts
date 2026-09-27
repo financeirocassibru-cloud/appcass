@@ -9,7 +9,7 @@ import {
   cancelInteraction,
   getInteraction,
   GeminiError,
-
+  interactionText,
   startInteraction,
   type Interaction,
 } from './gemini'
@@ -28,7 +28,10 @@ import { TOOLS } from './tools'
 import { draftPromptBlock, type DraftItem } from './triage'
 
 /**
- * Ciclo de vida de um trabalho da IA. v1.2 — 2026-09-26.
+ * Ciclo de vida de um trabalho da IA. v1.3 — 2026-09-27.
+ *
+ * v1.3: a mensagem-texto do modelo é lida por `interactionText`, dos `steps` — `output_text`
+ * não existe no JSON da API, e a resposta "não entendi" chegava sempre vazia.
  *
  * v1.2: **o resumo saiu daqui.** Ele não era um trabalho: era uma leitura, e guardá-lo
  * em `ai_jobs` acumulava linhas que ninguém ia reler, aparecendo no histórico ao lado
@@ -416,7 +419,8 @@ async function completeJob(
     })),
     // Sem nenhuma chamada de ferramenta, o texto do modelo é a resposta: ou ele
     // não entendeu, ou faltou informação. Mostrar isso é melhor que um vazio.
-    message: operations.length === 0 ? (interaction.output_text?.trim() ?? null) : null,
+    // v1.3 — 2026-09-27: texto lido dos `steps`, onde a API o entrega.
+    message: operations.length === 0 ? (interactionText(interaction)?.trim() ?? null) : null,
     rejected,
   }
 

@@ -10,12 +10,28 @@ import { DEFAULT_HORIZON_DAYS, splitAgenda } from '@/lib/finance/agenda'
 import { addDays, todayISO, type ISODate } from '@/lib/finance/date'
 import { formatCents } from '@/lib/finance/money'
 import { geminiModelChain } from './env'
-import { cancelInteraction, getInteraction, isTerminal, startInteraction } from './gemini'
-import { nextModel } from './models'
+import {
+  cancelInteraction,
+  GeminiError,
+  getInteraction,
+  interactionText,
+  isTerminal,
+  startInteraction,
+} from './gemini'
+import { isRetriableHttpStatus, nextModel } from './models'
 import { formatISODateBR } from './proposal'
 
 /**
- * Diagnóstico da situação financeira. v1.2 — 2026-09-26.
+ * Diagnóstico da situação financeira. v1.3 — 2026-09-27.
+ *
+ * ## v1.3 — o texto estava lá o tempo todo
+ *
+ * O Diagnóstico sempre terminava em "Nenhum modelo entregou o diagnóstico a tempo". A
+ * causa não era tempo: o texto era lido de `output_text`, campo dos SDKs que o JSON da
+ * API REST não tem — ele vem em `steps[].content[].text`. A interação completava, a
+ * leitura dava vazio, e a cadeia inteira de modelos era percorrida à toa. Agora a
+ * leitura é `interactionText`; o erro real do provedor (chave, cota, pedido recusado)
+ * chega à tela em vez da frase genérica; e o orçamento vale também dentro do poll.
  *
  * Na tela ele se chama **Diagnóstico**; aqui, `insights`. O invariante 10 pede
  * identificadores em inglês e interface em português, e este arquivo é a costura entre
@@ -271,6 +287,8 @@ export async function buildInsightsInput(
 const BUDGET_MS = 40_000
 const SLICE_MS = 20_000
 const POLL_MS = 1_500
+/** O mínimo de tempo que vale começar um modelo novo. v1.3 — 2026-09-27. */
+const MIN_SLICE_MS = 5_000
 
 /**
  * Gera o resumo **dentro do pedido** e devolve o texto.
@@ -296,24 +314,42 @@ export async function runInsights(
   const ateQuando = Date.now() + BUDGET_MS
 
   let model = chain[0]
+  // v1.3 — 2026-09-27: o último erro do provedor viaja até a tela. Antes todo erro virava
+  // o mesmo "Nenhum modelo entregou…", e uma chave recusada ou uma cota estourada ficavam
+  // indistinguíveis de lentidão.
+  let ultimoErro: GeminiError | null = null
 
-  while (model && Date.now() < ateQuando) {
-    const texto = await tentarModelo(model, prompt, Math.min(SLICE_MS, ateQuando - Date.now()))
-    if (texto) return texto
+  // Só começa um modelo se sobra tempo para ele responder: iniciar no segundo 39 de um
+  // orçamento de 40 empurraria o pedido para além do `maxDuration` da rota.
+  while (model && ateQuando - Date.now() >= MIN_SLICE_MS) {
+    const tentativa = await tentarModelo(model, prompt, Math.min(SLICE_MS, ateQuando - Date.now()))
+    if (tentativa.text) return tentativa.text
+
+    if (tentativa.error) {
+      ultimoErro = tentativa.error
+      // 400, 401, 403: o pedido ou a chave é que estão errados, e outro modelo recusaria
+      // do mesmo jeito. Insistir só gastaria o orçamento para dar o mesmo erro.
+      const status = tentativa.error.httpStatus
+      if (status !== undefined && !isRetriableHttpStatus(status)) break
+    }
 
     model = nextModel(chain, model) ?? undefined
   }
 
+  if (ultimoErro) throw ultimoErro
   return null
 }
 
+/** O resultado de uma tentativa: o texto, ou o erro do provedor, ou nada (acabou o tempo). */
+interface Tentativa {
+  text: string | null
+  error: GeminiError | null
+}
+
 /** Uma tentativa, num modelo, dentro da fatia de tempo dele. */
-async function tentarModelo(
-  model: string,
-  prompt: string,
-  sliceMs: number,
-): Promise<string | null> {
+async function tentarModelo(model: string, prompt: string, sliceMs: number): Promise<Tentativa> {
   let interactionId: string | undefined
+  const ateQuando = Date.now() + sliceMs
 
   try {
     const criada = await startInteraction({
@@ -326,17 +362,19 @@ async function tentarModelo(
     })
 
     interactionId = criada.id
-    const pronta = readInsightsText(criada.output_text)
-    if (pronta) return pronta
+    // v1.3 — 2026-09-27: `interactionText` lê o texto dos `steps`, onde a API REST o
+    // entrega. `output_text` — que era o lido aqui — não existe no JSON cru, e era por
+    // isso que o Diagnóstico nunca aparecia.
+    const pronta = readInsightsText(interactionText(criada) ?? undefined)
+    if (pronta) return { text: pronta, error: null }
 
-    const ateQuando = Date.now() + sliceMs
-
-    while (Date.now() < ateQuando) {
+    // O poll só roda se há tempo para mais uma leitura inteira.
+    while (ateQuando - Date.now() > POLL_MS) {
       await new Promise((resolve) => setTimeout(resolve, POLL_MS))
 
       const atual = await getInteraction(criada.id)
-      const texto = readInsightsText(atual.output_text)
-      if (texto) return texto
+      const texto = readInsightsText(interactionText(atual) ?? undefined)
+      if (texto) return { text: texto, error: null }
 
       // Terminou sem texto: insistir neste modelo não muda nada.
       if (isTerminal(atual.status)) break
@@ -346,13 +384,14 @@ async function tentarModelo(
     // gastando cota por uma resposta que já não tem para onde ir.
     await cancelInteraction(criada.id)
 
-    return null
-  } catch {
-    // Falha de provedor não é erro para a pessoa ler modelo por modelo: quem chama
-    // decide o que dizer quando a cadeia inteira acabar.
+    return { text: null, error: null }
+  } catch (cause) {
     if (interactionId) await cancelInteraction(interactionId)
 
-    return null
+    return {
+      text: null,
+      error: cause instanceof GeminiError ? cause : new GeminiError('Falha ao falar com o Gemini.'),
+    }
   }
 }
 
