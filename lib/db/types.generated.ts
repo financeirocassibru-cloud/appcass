@@ -365,6 +365,7 @@ export type Database = {
           id: string;
           opening_balance_cents: number;
           opening_balance_on: string;
+          opening_balance_set_at: string | null;
           role: Database["public"]["Enums"]["app_role"];
           timezone: string;
           updated_at: string;
@@ -379,6 +380,7 @@ export type Database = {
           id: string;
           opening_balance_cents?: number;
           opening_balance_on?: string;
+          opening_balance_set_at?: string | null;
           role?: Database["public"]["Enums"]["app_role"];
           timezone?: string;
           updated_at?: string;
@@ -393,6 +395,7 @@ export type Database = {
           id?: string;
           opening_balance_cents?: number;
           opening_balance_on?: string;
+          opening_balance_set_at?: string | null;
           role?: Database["public"]["Enums"]["app_role"];
           timezone?: string;
           updated_at?: string;

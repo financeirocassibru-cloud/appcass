@@ -23,13 +23,27 @@ import { createClient } from '@/lib/supabase/server'
 export interface BalanceAnchor {
   openingBalanceCents: number
   openingBalanceOn: ISODate
-  /** `false` quando a pessoa nunca informou quanto tem: convida a ajustar. */
+  /**
+   * `false` quando a pessoa nunca informou quanto tem: convida a ajustar.
+   *
+   * v1.1 — 2026-09-27: vem de `opening_balance_set_at` (migration 0015), não mais de
+   * `opening_balance_cents !== 0`. Salvar saldo zero é informar que não tem nada, e o
+   * convite tem de sumir.
+   */
   isConfigured: boolean
 }
 
 export interface CurrentBalance extends BalanceBreakdown {
   today: ISODate
   isAnchorConfigured: boolean
+  /**
+   * Se existe ao menos um lançamento, em qualquer data e situação. v1.1 — 2026-09-27.
+   *
+   * `countedEntries` não serve para isto: conta só os liquidados dentro da janela da
+   * âncora. Quem já registrou qualquer coisa não está no primeiro uso, e o convite para
+   * informar o saldo deixa de ser o assunto da tela.
+   */
+  hasEntries: boolean
 }
 
 export async function getBalanceAnchor(): Promise<BalanceAnchor> {
@@ -37,7 +51,7 @@ export async function getBalanceAnchor(): Promise<BalanceAnchor> {
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('opening_balance_cents, opening_balance_on')
+    .select('opening_balance_cents, opening_balance_on, opening_balance_set_at')
     .maybeSingle()
 
   if (error) throw new Error(`Falha ao ler a âncora do saldo: ${error.message}`)
@@ -51,7 +65,7 @@ export async function getBalanceAnchor(): Promise<BalanceAnchor> {
     // muito abaixo de 2^53, e `amount_cents` tem teto validado em 9.999.999.999.
     openingBalanceCents: Number(data.opening_balance_cents),
     openingBalanceOn: data.opening_balance_on,
-    isConfigured: Number(data.opening_balance_cents) !== 0,
+    isConfigured: data.opening_balance_set_at !== null,
   }
 }
 
@@ -63,7 +77,7 @@ export async function getBalanceAnchor(): Promise<BalanceAnchor> {
  * podem cair em dias diferentes na virada da meia-noite.
  */
 export async function getCurrentBalance(today: ISODate = todayISO()): Promise<CurrentBalance> {
-  const anchor = await getBalanceAnchor()
+  const [anchor, hasEntries] = await Promise.all([getBalanceAnchor(), hasAnyEntry()])
   const supabase = await createClient()
 
   // Âncora no futuro: a janela é vazia, então não há o que buscar. Sem esta
@@ -74,6 +88,7 @@ export async function getCurrentBalance(today: ISODate = todayISO()): Promise<Cu
       ...computeBalance({ ...anchor, today, entries: [] }),
       today,
       isAnchorConfigured: anchor.isConfigured,
+      hasEntries,
     }
   }
 
@@ -102,5 +117,23 @@ export async function getCurrentBalance(today: ISODate = todayISO()): Promise<Cu
     }),
     today,
     isAnchorConfigured: anchor.isConfigured,
+    hasEntries,
   }
+}
+
+/**
+ * Há algum lançamento? v1.1 — 2026-09-27.
+ *
+ * Uma linha basta para responder, e `limit(1)` para no primeiro índice que casar. A
+ * RLS restringe `entries` à própria pessoa (invariante 3), então não há filtro de
+ * usuário aqui — leitura não precisa de `.eq(...)`, só escrita.
+ */
+async function hasAnyEntry(): Promise<boolean> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase.from('entries').select('id').limit(1)
+
+  if (error) throw new Error(`Falha ao verificar os lançamentos: ${error.message}`)
+
+  return (data ?? []).length > 0
 }
