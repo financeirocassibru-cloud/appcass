@@ -1,5 +1,7 @@
 import { z } from 'zod'
 import { isISODate } from '@/lib/finance/date'
+import { parseKeywords } from '@/lib/finance/keywords'
+import { keywordsField } from '@/lib/validation/keywords'
 
 /**
  * Validação de parcelamento.
@@ -13,6 +15,9 @@ import { isISODate } from '@/lib/finance/date'
  *
  * v1.2 — 2026-09-27: `setPaidCountSchema`, para declarar quantas já foram pagas num
  * parcelamento que já está no app.
+ *
+ * v1.3 — 2026-09-27: `keywords` no plano (as parcelas não copiam — invariante 6), e
+ * `updateInstallmentKeywordsSchema` para editá-las depois (migration 0019).
  */
 
 /** `''` ou ausente vira `fallback`; o resto precisa ser inteiro. */
@@ -59,6 +64,7 @@ export const createInstallmentSchema = z
       (value) => value === null || (Number.isInteger(value) && value >= 1 && value <= 31),
       'Dia de vencimento inválido',
     ),
+    keywords: keywordsField,
   })
   .refine((data) => (data.paidCount ?? 0) < data.installmentsCount, {
     message: 'Ao menos uma parcela precisa estar por pagar — se já pagou todas, não há o que parcelar',
@@ -83,3 +89,12 @@ export const installmentPlanIdSchema = z.object({
 })
 
 export type CreateInstallmentInput = z.infer<typeof createInstallmentSchema>
+
+/** v1.3 — 2026-09-27: as palavras-chave de um plano existente. Vazio apaga. */
+export const updateInstallmentKeywordsSchema = z.object({
+  id: z.string().uuid('Parcelamento inválido'),
+  keywords: z
+    .string()
+    .max(2_000, 'Palavras-chave demais')
+    .transform((raw) => parseKeywords(raw)),
+})

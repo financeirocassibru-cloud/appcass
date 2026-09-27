@@ -89,6 +89,9 @@ create table entries (
   installment_number smallint,
   installment_total smallint,
   import_key text,              -- sha256 da linha do extrato importado (0016); nulo se digitado
+  -- v1.3 — 2026-09-27 (0019): palavras que, no extrato, liquidam este lançamento pendente.
+  -- A parcela usa as do plano, e a ocorrência de conta fixa, as da regra.
+  keywords text[] not null default '{}',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   check (is_settled = false or settled_on is not null),
@@ -119,6 +122,7 @@ create table recurring_rules (
   starts_on date not null,
   ends_on date,
   is_active boolean not null default true,
+  keywords text[] not null default '{}',   -- 0019: a linha do extrato que liquida a ocorrência
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   check (ends_on is null or ends_on >= starts_on)
@@ -138,6 +142,7 @@ create table installment_plans (
   total_amount_cents bigint not null check (total_amount_cents > 0),
   installments_count smallint not null check (installments_count between 1 and 360),
   first_due_on date not null,
+  keywords text[] not null default '{}',   -- 0019: vale para todas as parcelas, sem cópia
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -149,6 +154,7 @@ create table goals (
   target_amount_cents bigint not null check (target_amount_cents > 0),
   target_date date,
   monthly_contribution_cents bigint,   -- null = calcular a partir de target_date
+  keywords text[] not null default '{}',   -- 0019: a saída do extrato que vira aporte
   archived_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -161,7 +167,10 @@ create table goal_contributions (
   user_id uuid not null references auth.users(id) on delete cascade,
   amount_cents bigint not null check (amount_cents <> 0),
   occurred_on date not null,
-  entry_id uuid references entries(id) on delete set null,
+  -- v1.3 — 2026-09-27 (0019): `on delete cascade` e único. O aporte feito como saída (pelo
+  -- [+] ou pela importação) é amarrado a ela: excluir a saída leva o aporte, e o trigger
+  -- `sync_goal_contribution` mantém valor e data iguais aos dela.
+  entry_id uuid references entries(id) on delete cascade,
   note text,
   created_at timestamptz not null default now()
 );
@@ -213,6 +222,20 @@ create table scenario_entries (
 ```
 
 > A aba `Ciclos` do app antigo não é reconstruída — era código morto (ver `ARCHITECTURE.md`).
+
+## Conexão do extrato (migration 0019) — v1.3 — 2026-09-27
+
+- `record_goal_contribution(goal, valor, data, nota?, import_key?, lote?)` — o aporte como
+  saída: um lançamento `source = 'goal'` com `occurrence_key` = `YYYY-MM` (o mesmo do aporte
+  previsto por `expandGoal`, que a projeção então descarta; o segundo do mês é `YYYY-MM:2`) e
+  o `goal_contributions` amarrado por `entry_id`, numa transação.
+- `reconcile_import_row(alvo, id, vencimento, data, tipo, valor, import_key, lote?, notas?)` —
+  a linha do extrato liquida o item cadastrado em vez de virar lançamento novo. `entry`
+  (avulso/parcela/conta fixa já materializada pendente), `recurring` (materializa a ocorrência
+  do vencimento) ou `goal` (aporte). Vale o valor do extrato, menos na parcela; `occurred_on`
+  vira a data do extrato, porque o saldo soma por ela. Devolve `null` quando o item já não está
+  pendente — a importação então grava a linha como lançamento novo. O casamento em si é puro,
+  no navegador: `lib/finance/reconcile.ts`.
 
 ## Views (dashboard)
 

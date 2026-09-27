@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { currentUserId } from '@/lib/db/current-user'
 import { createClient } from '@/lib/supabase/server'
+import { keywordsPatch } from '@/lib/validation/keywords'
 import {
   createRecurringSchema,
   materializeSchema,
@@ -23,6 +24,9 @@ import {
  * Consequência que a tela precisa dizer em voz alta: **editar o valor não
  * reescreve o passado.** As ocorrências já liquidadas são linhas independentes,
  * e continuam com o valor que tinham no dia.
+ *
+ * v1.2 — 2026-09-27: criar e editar gravam `keywords` (migration 0019) — a linha do extrato
+ * que contém uma delas liquida a ocorrência do mês na importação.
  */
 
 export interface RecurringActionState {
@@ -54,6 +58,7 @@ function readForm(formData: FormData) {
     dayOfMonth: formData.get('dayOfMonth') ?? '',
     startsOn: formData.get('startsOn'),
     endsOn: formData.get('endsOn') ?? '',
+    keywords: formData.get('keywords'),
   }
 }
 
@@ -81,6 +86,7 @@ export async function createRecurring(
     day_of_month: parsed.data.dayOfMonth,
     starts_on: parsed.data.startsOn,
     ends_on: parsed.data.endsOn,
+    ...keywordsPatch(parsed.data.keywords),
   })
 
   if (error) return { error: `Não foi possível salvar: ${error.message}` }
@@ -117,6 +123,7 @@ export async function updateRecurring(
       day_of_month: parsed.data.dayOfMonth,
       starts_on: parsed.data.startsOn,
       ends_on: parsed.data.endsOn,
+      ...keywordsPatch(parsed.data.keywords),
     })
     .eq('id', parsed.data.id)
     .select('id')

@@ -7,12 +7,12 @@ export const metadata = { title: 'Mais' }
 
 // v1.1 — 2026-09-26: fase 7, a tela do assistente.
 // v1.2 — 2026-09-27: Contas fixas e Parcelas saíram daqui para o [+], junto com Renda fixa.
+// v1.3 — 2026-09-27: Metas também — virou Saída › Meta no [+], com a lista no rodapé dele.
 const ITENS = [
   { href: '/assistente', label: 'Assistente', nota: null },
   { href: '/ajustes', label: 'Ajustes', nota: null },
   { href: '/ajustes/categorias', label: 'Categorias', nota: null },
   { href: '/cenarios', label: 'Cenários', nota: null },
-  { href: '/metas', label: 'Metas', nota: null },
 ] as const
 
 export default function MaisPage() {

@@ -1,24 +1,9 @@
-import Link from 'next/link'
-import { ChevronLeft } from 'lucide-react'
-import { todayISO } from '@/lib/finance/date'
-import { GoalForm } from '../form'
+import { redirect } from 'next/navigation'
 
-// v1.1 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
-export const metadata = { title: 'Nova meta' }
-export const dynamic = 'force-dynamic'
-
+/**
+ * v1.1 — 2026-09-27: meta passou a nascer no [+], como Saída › Meta. A rota fica,
+ * redirecionando, porque está em atalhos e no histórico do navegador de quem já usava.
+ */
 export default function NovaMetaPage() {
-  return (
-    <main className="mx-auto flex max-w-md flex-col gap-6 px-6 py-8">
-      <div className="flex flex-col gap-2">
-        <Link href="/metas" className="text-muted-foreground flex min-h-11 items-center gap-1 text-sm">
-          <ChevronLeft className="size-4" aria-hidden />
-          Metas
-        </Link>
-        <h1 className="text-2xl font-bold tracking-tight">Nova meta</h1>
-      </div>
-
-      <GoalForm today={todayISO()} />
-    </main>
-  )
+  redirect('/novo?modo=meta')
 }

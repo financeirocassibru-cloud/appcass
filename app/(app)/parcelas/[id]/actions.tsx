@@ -6,8 +6,10 @@ import { toast } from 'sonner'
 import {
   deleteInstallmentPlan,
   setInstallmentsPaid,
+  updateInstallmentKeywords,
   type InstallmentActionState,
 } from '@/lib/actions/installments'
+import { KeywordField } from '@/components/finance/keyword-field'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -24,6 +26,7 @@ const initialState: InstallmentActionState = {}
  * isso em vez de oferecer um botão que faria escolhas silenciosas.
  *
  * v1.1 — 2026-09-27: `PaidCountForm`, abaixo, para declarar quantas já foram pagas.
+ * v1.2 — 2026-09-27: `PlanKeywordsForm`, as palavras-chave do plano.
  */
 export function PlanActions({
   id,
@@ -166,6 +169,52 @@ export function PaidCountForm({
         vencimento de cada uma, e a agenda para de cobrá-las.
       </p>
       {state.error ? <p className="text-[var(--destructive)] text-xs">{state.error}</p> : null}
+    </form>
+  )
+}
+
+/**
+ * As palavras-chave do plano. v1.0 — 2026-09-27.
+ *
+ * Ficam no plano, não em cada parcela (invariante 6): na importação, a linha do extrato que
+ * contém uma delas marca como paga a parcela pendente mais perto da data dela. A parcela
+ * mantém o próprio valor — a soma das parcelas é o total da compra.
+ */
+export function PlanKeywordsForm({
+  id,
+  keywords,
+  suggestions,
+}: {
+  id: string
+  keywords: string[]
+  suggestions: string[]
+}) {
+  const router = useRouter()
+  const [state, formAction, pending] = useActionState(
+    async (prev: InstallmentActionState, formData: FormData) => {
+      const result = await updateInstallmentKeywords(prev, formData)
+      if (result.success) {
+        toast.success(result.success)
+        router.refresh()
+      }
+      return result
+    },
+    initialState,
+  )
+
+  return (
+    <form action={formAction} className="flex flex-col gap-3 rounded-xl bg-[var(--surface)] p-4">
+      <input type="hidden" name="id" value={id} />
+      <KeywordField
+        label="Palavras-chave do extrato"
+        hint="Na importação, a linha do extrato com uma destas palavras marca a parcela do mês como paga. A parcela mantém o valor dela."
+        initial={keywords}
+        suggestions={suggestions}
+      />
+      {state.error ? <p className="text-xs text-[var(--destructive)]">{state.error}</p> : null}
+      <Button type="submit" variant="outline" disabled={pending} className="min-h-11">
+        {pending ? 'Salvando…' : 'Salvar palavras-chave'}
+      </Button>
     </form>
   )
 }

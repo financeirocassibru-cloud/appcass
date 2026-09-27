@@ -6,7 +6,7 @@ import type { Route } from 'next'
 import { ArrowRight, ChevronRight } from 'lucide-react'
 import type { Category } from '@/lib/db/queries/categories'
 import type { EntryKind } from '@/lib/db/types'
-import { LaunchForm, type LaunchMode } from '@/components/finance/launch-form'
+import { LaunchForm, type LaunchGoal, type LaunchMode } from '@/components/finance/launch-form'
 
 /**
  * A tela do [+]: o formulário e, embaixo, o que já foi cadastrado do tipo escolhido.
@@ -17,6 +17,9 @@ import { LaunchForm, type LaunchMode } from '@/components/finance/launch-form'
  *
  * v1.1 — 2026-09-27. "Ver lançamentos" virou "Ver todos", com a seta embaixo do texto em vez
  * do ícone de lista ao lado: o link disputava a largura do título no topo da tela.
+ *
+ * v1.2 — 2026-09-27. Metas saiu da aba Mais e mora aqui, no rodapé de Saída, como Contas
+ * fixas. O formulário recebe as metas (modo Meta) e as sugestões de palavra-chave.
  */
 export function LaunchScreen({
   expenseCategories,
@@ -25,13 +28,17 @@ export function LaunchScreen({
   initialKind,
   initialMode,
   counts,
+  goals,
+  suggestions,
 }: {
   expenseCategories: Category[]
   incomeCategories: Category[]
   today: string
   initialKind: EntryKind
   initialMode: LaunchMode
-  counts: { fixedExpenses: number; fixedIncomes: number; openPlans: number }
+  counts: { fixedExpenses: number; fixedIncomes: number; openPlans: number; activeGoals: number }
+  goals: LaunchGoal[]
+  suggestions: Record<EntryKind, string[]>
 }) {
   const [kind, setKind] = useState<EntryKind>(initialKind)
 
@@ -47,6 +54,11 @@ export function LaunchScreen({
             href: '/parcelas',
             label: 'Parcelamentos',
             note: counts.openPlans === 1 ? '1 em andamento' : `${counts.openPlans} em andamento`,
+          },
+          {
+            href: '/metas',
+            label: 'Metas',
+            note: counts.activeGoals === 1 ? '1 em andamento' : `${counts.activeGoals} em andamento`,
           },
         ]
       : [
@@ -77,6 +89,8 @@ export function LaunchScreen({
         today={today}
         initialKind={initialKind}
         initialMode={initialMode}
+        goals={goals}
+        suggestions={suggestions}
         onKindChange={setKind}
       />
 

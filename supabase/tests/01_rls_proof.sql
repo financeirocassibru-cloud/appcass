@@ -3,6 +3,7 @@
 -- v1.2 — 2026-09-27: parcelamento em andamento (migration 0017) no fim.
 -- v1.3 — 2026-09-27: `set_installments_paid` (migration 0017) no fim.
 -- v1.4 — 2026-09-27: palavras-chave, lote de importação e período da Análise (migration 0018) no fim.
+-- v1.5 — 2026-09-27: conexão do extrato ao que foi cadastrado e aporte como saída (migration 0019) no fim.
 -- Roda como um papel sem BYPASSRLS, alternando o "usuário logado" via GUC,
 -- que é o que a função auth.uid() do shim lê.
 
@@ -1382,5 +1383,217 @@ begin
 end $$;
 
 reset role;
+
+-- === Fase 12 (migration 0019) — v1.5 — 2026-09-27 ===
+--
+-- A linha do extrato liquida o item cadastrado em vez de criar outro; reimportar não faz
+-- nada; a parcela mantém o valor; o aporte de meta é uma saída amarrada; e nada disso
+-- alcança o que é de outra pessoa.
+
+set role authenticated;
+set request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
+
+do $$
+declare
+  ana       uuid := '11111111-1111-1111-1111-111111111111';
+  pendente  uuid;
+  regra     uuid;
+  meta      uuid;
+  plano     uuid;
+  parcela   uuid;
+  v_id      uuid;
+  n         int;
+  valor     bigint;
+  guardado  bigint;
+  pago      boolean;
+  data_real date;
+begin
+  -- Palavras-chave têm o mesmo teto da 0018 nas quatro tabelas.
+  begin
+    insert into public.entries (user_id, kind, occurred_on, description, amount_cents, keywords)
+    values (ana, 'expense', '2026-09-01', 'Teto', 100, array_fill('x'::text, array[31]));
+    raise exception 'mais de 30 palavras-chave num lançamento deveria ser recusado';
+  exception when check_violation then null;
+  end;
+
+  -- 1. Avulso pendente: liquida com o valor e a data do extrato, e guarda a chave.
+  insert into public.entries (user_id, kind, occurred_on, description, amount_cents, keywords)
+  values (ana, 'expense', '2026-09-05', 'Conta de luz', 20000, array['enel'])
+  returning id into pendente;
+
+  v_id := public.reconcile_import_row('entry', pendente, '2026-09-05', '2026-09-07', 'expense',
+                                      21050, repeat('a1', 32), null, 'ENEL DISTRIBUICAO');
+  if v_id is distinct from pendente then raise exception 'o avulso pendente deveria ser conectado'; end if;
+
+  select amount_cents, is_settled, occurred_on into valor, pago, data_real
+    from public.entries where id = pendente;
+  if valor <> 21050 or not pago or data_real <> '2026-09-07' then
+    raise exception 'conectado deveria ficar pago em 07/09 com o valor do extrato (%, %, %)', valor, pago, data_real;
+  end if;
+
+  -- Reimportar a mesma linha não conecta de novo nem cria nada.
+  if public.reconcile_import_row('entry', pendente, '2026-09-05', '2026-09-07', 'expense',
+                                 21050, repeat('a1', 32)) is not null then
+    raise exception 'a mesma linha do extrato não pode ser conectada duas vezes';
+  end if;
+
+  -- Tipo diferente não conecta.
+  insert into public.entries (user_id, kind, occurred_on, description, amount_cents)
+  values (ana, 'income', '2026-09-05', 'Reembolso', 5000) returning id into v_id;
+  if public.reconcile_import_row('entry', v_id, '2026-09-05', '2026-09-05', 'expense',
+                                 5000, repeat('a2', 32)) is not null then
+    raise exception 'saída do extrato não pode liquidar uma entrada';
+  end if;
+
+  -- 2. Renda fixa: a ocorrência nasce paga com o valor do extrato, na chave do vencimento.
+  insert into public.recurring_rules (user_id, kind, description, amount_cents, frequency,
+                                      day_of_month, starts_on, keywords)
+  values (ana, 'income', 'Salário', 500000, 'monthly', 1, '2026-01-01', array['empresa x'])
+  returning id into regra;
+
+  v_id := public.reconcile_import_row('recurring', regra, '2026-10-01', '2026-09-30', 'income',
+                                      512300, repeat('a3', 32), gen_random_uuid());
+  if v_id is null then raise exception 'a renda fixa deveria ser conectada'; end if;
+
+  select count(*) into n from public.entries
+   where source = 'recurring' and source_id = regra and occurrence_key = '2026-10'
+     and is_settled and amount_cents = 512300 and occurred_on = '2026-09-30';
+  if n <> 1 then raise exception 'a ocorrência de outubro deveria estar paga em 30/09 (%)', n; end if;
+
+  -- A mesma ocorrência por outra linha: já paga, não conecta.
+  if public.reconcile_import_row('recurring', regra, '2026-10-01', '2026-10-01', 'income',
+                                 512300, repeat('a4', 32)) is not null then
+    raise exception 'ocorrência já paga não pode ser conectada de novo';
+  end if;
+
+  -- Fora da vigência não existe ocorrência.
+  if public.reconcile_import_row('recurring', regra, '2025-12-01', '2025-12-01', 'income',
+                                 500000, repeat('a5', 32)) is not null then
+    raise exception 'data antes do início da renda fixa não pode ser conectada';
+  end if;
+
+  -- 3. Parcela: conecta, mas mantém o valor da parcela (a soma é o total do plano).
+  plano := public.create_installment_plan(
+    'Sofá', 30000::bigint, 3::smallint, '2026-09-10'::date,
+    '[{"number":"1","amount_cents":10000,"due_on":"2026-09-10","description":"Sofá (1/3)"},
+      {"number":"2","amount_cents":10000,"due_on":"2026-10-10","description":"Sofá (2/3)"},
+      {"number":"3","amount_cents":10000,"due_on":"2026-11-10","description":"Sofá (3/3)"}]'::jsonb
+  );
+  update public.installment_plans set keywords = array['loja do sofa'] where id = plano;
+  select id into parcela from public.entries where source_id = plano and occurrence_key = '1';
+
+  v_id := public.reconcile_import_row('entry', parcela, '2026-09-10', '2026-09-11', 'expense',
+                                      10390, repeat('a6', 32));
+  if v_id is distinct from parcela then raise exception 'a parcela deveria ser conectada'; end if;
+
+  select sum(amount_cents) into valor from public.entries where source_id = plano;
+  if valor <> 30000 then raise exception 'a soma das parcelas mudou: %', valor; end if;
+
+  -- 4. Meta: o aporte é uma saída amarrada; excluir a saída leva o aporte.
+  insert into public.goals (user_id, name, target_amount_cents, keywords)
+  values (ana, 'Viagem', 300000, array['guardado'])
+  returning id into meta;
+
+  v_id := public.record_goal_contribution(meta, 50000, '2026-09-15');
+  select count(*) into n from public.entries
+   where id = v_id and source = 'goal' and source_id = meta and occurrence_key = '2026-09'
+     and kind = 'expense' and is_settled;
+  if n <> 1 then raise exception 'o aporte deveria virar uma saída da meta com a chave do mês'; end if;
+
+  -- Segundo aporte no mesmo mês ganha chave própria.
+  v_id := public.reconcile_import_row('goal', meta, null, '2026-09-20', 'expense',
+                                      25000, repeat('a7', 32));
+  select count(*) into n from public.entries where id = v_id and occurrence_key = '2026-09:2';
+  if n <> 1 then raise exception 'o segundo aporte do mês deveria ter a chave 2026-09:2'; end if;
+
+  select saved_cents into guardado from public.v_goal_progress where goal_id = meta;
+  if guardado <> 75000 then raise exception 'a meta deveria somar 75000, soma %', guardado; end if;
+
+  -- Editar a saída muda o aporte (trigger), e excluir a saída o apaga (cascade).
+  update public.entries set amount_cents = 30000 where id = v_id;
+  select saved_cents into guardado from public.v_goal_progress where goal_id = meta;
+  if guardado <> 80000 then raise exception 'editar a saída deveria mudar o aporte (%)', guardado; end if;
+
+  delete from public.entries where id = v_id;
+  select saved_cents into guardado from public.v_goal_progress where goal_id = meta;
+  if guardado <> 50000 then raise exception 'excluir a saída deveria apagar o aporte (%)', guardado; end if;
+end $$;
+
+-- Bruno não conecta nada de Ana, nem registra aporte na meta dela.
+set request.jwt.claim.sub = '22222222-2222-2222-2222-222222222222';
+
+do $$
+declare n int;
+begin
+  select count(*) into n from public.entries where description = 'Reembolso';
+  if n <> 0 then raise exception 'VAZAMENTO: Bruno viu o lançamento de Ana'; end if;
+end $$;
+
+-- Os ids de Ana, lidos fora da RLS, para Bruno tentar usá-los: é o ataque real — adivinhar
+-- ou vazar um uuid não pode bastar.
+reset role;
+
+create temp table alvos_ana as
+  select
+    (select id from public.entries where description = 'Reembolso') as entrada,
+    (select id from public.recurring_rules where description = 'Salário') as regra,
+    (select id from public.goals where name = 'Viagem') as meta;
+grant select on alvos_ana to authenticated;
+
+set role authenticated;
+set request.jwt.claim.sub = '22222222-2222-2222-2222-222222222222';
+
+do $$
+declare a record; n int;
+begin
+  select * into a from alvos_ana;
+
+  if public.reconcile_import_row('entry', a.entrada, '2026-09-05', '2026-09-05', 'income',
+                                 5000, repeat('b1', 32)) is not null then
+    raise exception 'VAZAMENTO: Bruno liquidou um lançamento de Ana';
+  end if;
+
+  if public.reconcile_import_row('recurring', a.regra, '2026-11-01', '2026-11-01', 'income',
+                                 5000, repeat('b2', 32)) is not null then
+    raise exception 'VAZAMENTO: Bruno materializou a renda fixa de Ana';
+  end if;
+
+  begin
+    perform public.record_goal_contribution(a.meta, 100, '2026-09-01');
+    raise exception 'VAZAMENTO: Bruno aportou na meta de Ana';
+  exception when no_data_found then null;
+  end;
+
+  select count(*) into n from public.entries where import_key in (repeat('b1', 32), repeat('b2', 32));
+  if n <> 0 then raise exception 'Bruno não deveria ter gravado nada (%)', n; end if;
+end $$;
+
+reset role;
+
+-- A entrada de Ana segue pendente e a renda de novembro não existe.
+do $$
+declare n int;
+begin
+  select count(*) into n from public.entries
+   where description = 'Reembolso' and not is_settled and import_key is null;
+  if n <> 1 then raise exception 'a entrada de Ana deveria continuar pendente'; end if;
+
+  select count(*) into n from public.entries e
+    join public.recurring_rules r on r.id = e.source_id
+   where r.description = 'Salário' and e.occurrence_key = '2026-11';
+  if n <> 0 then raise exception 'a renda de novembro de Ana não deveria existir'; end if;
+end $$;
+
+-- anon não executa as funções novas.
+do $$
+begin
+  if has_function_privilege('anon',
+       'public.reconcile_import_row(text, uuid, date, date, public.entry_kind, bigint, text, uuid, text)',
+       'execute')
+     or has_function_privilege('anon',
+       'public.record_goal_contribution(uuid, bigint, date, text, text, uuid)', 'execute') then
+    raise exception 'anon não deveria executar as funções da 0019';
+  end if;
+end $$;
 
 select 'TODAS AS ASSERÇÕES DE RLS E CONSTRAINTS PASSARAM' as resultado;

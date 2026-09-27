@@ -5,6 +5,7 @@ import { monthlyContributionCents } from '@/lib/finance/goals'
 import { formatCents } from '@/lib/finance/money'
 import { todayISO } from '@/lib/finance/date'
 
+// v1.1 — 2026-09-27: "Nova" abre o [+] no modo Meta, onde a meta passou a nascer.
 // v1.1 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
 export const metadata = { title: 'Metas' }
 export const dynamic = 'force-dynamic'
@@ -17,7 +18,7 @@ export default async function MetasPage() {
     <main className="mx-auto flex max-w-md flex-col gap-6 px-6 py-8">
       <div className="flex items-baseline justify-between gap-3">
         <h1 className="text-2xl font-bold tracking-tight">Metas</h1>
-        <Link href="/metas/nova" className="text-sm font-medium text-[var(--brand)]">
+        <Link href="/novo?modo=meta" className="text-sm font-medium text-[var(--brand)]">
           Nova
         </Link>
       </div>
@@ -29,7 +30,7 @@ export default async function MetasPage() {
             aporte da projeção — para o saldo futuro não parecer maior do que vai ser.
           </p>
           <Link
-            href="/metas/nova"
+            href="/novo?modo=meta"
             className="bg-primary text-primary-foreground flex min-h-12 items-center justify-center gap-2 rounded-xl text-base font-semibold"
           >
             <Plus className="size-5" aria-hidden />

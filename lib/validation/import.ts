@@ -5,7 +5,11 @@ import { IMPORT_KEY_RE } from '@/lib/import/fingerprint'
 import { MAX_IMPORT_ROWS } from '@/lib/import/types'
 
 /**
- * Validação da importação de extrato. v1.1 — 2026-09-27.
+ * Validação da importação de extrato. v1.2 — 2026-09-27.
+ *
+ * v1.2: `link` opcional por linha — o item cadastrado que a linha liquida (conta fixa, parcela,
+ * avulso pendente, meta). Só a identidade viaja; o que pode ser conectado quem confere é o
+ * banco, em `reconcile_import_row` (migration 0019).
  *
  * O servidor não confia no que o navegador leu do arquivo: cada linha passa de novo por aqui
  * antes de virar lançamento — valor inteiro de centavos (invariante 1), data `YYYY-MM-DD`
@@ -29,6 +33,14 @@ export const importRowSchema = z.object({
     .nullable(),
   categoryId: z.string().uuid('Categoria inválida').nullable(),
   importKey: z.string().regex(IMPORT_KEY_RE, 'Chave de importação inválida'),
+  link: z
+    .object({
+      target: z.enum(['entry', 'recurring', 'goal']),
+      id: z.string().uuid('Item inválido'),
+      dueOn: isoDate.nullable(),
+    })
+    .nullable()
+    .optional(),
 })
 
 export type ImportRowInput = z.infer<typeof importRowSchema>

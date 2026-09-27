@@ -53,6 +53,25 @@ export async function getInstallmentPlan(id: string): Promise<InstallmentPlanPro
   return toProgress(data)
 }
 
+/**
+ * As palavras-chave de um plano (migration 0019). v1.0 — 2026-09-27.
+ *
+ * Fora de `getInstallmentPlan` porque a view de progresso (0007) não tem a coluna, e
+ * views aplicadas não se editam (invariante 16). Uma leitura a mais, numa tela só.
+ */
+export async function getInstallmentKeywords(id: string): Promise<string[]> {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('installment_plans')
+    .select('keywords')
+    .eq('id', id)
+    .maybeSingle()
+
+  if (error) throw new Error(`Falha ao buscar parcelamento: ${error.message}`)
+  return data?.keywords ?? []
+}
+
 interface ViewRow {
   plan_id: string | null
   description: string | null

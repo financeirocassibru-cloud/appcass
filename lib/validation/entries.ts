@@ -1,6 +1,10 @@
 import { z } from 'zod'
 import { isISODate } from '@/lib/finance/date'
 import { parseKeywords } from '@/lib/finance/keywords'
+import { keywordsField } from '@/lib/validation/keywords'
+
+// v1.1 — 2026-09-27: `keywords` no lançamento, para a importação do extrato liquidá-lo
+// (migration 0019).
 
 /** O valor chega do formulário em centavos, como inteiro — nunca como texto decimal. */
 const amountCentsSchema = z.coerce
@@ -44,6 +48,7 @@ export const createEntrySchema = z.object({
   isSettled: z
     .union([z.literal('on'), z.literal('true'), z.literal('false'), z.undefined(), z.null()])
     .transform((value) => value === 'on' || value === 'true'),
+  keywords: keywordsField,
 })
 
 export const updateEntrySchema = createEntrySchema.extend({

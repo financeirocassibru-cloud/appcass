@@ -1,10 +1,15 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Check, ChevronLeft, Clock } from 'lucide-react'
-import { getInstallmentPlan, listPlanInstallments } from '@/lib/db/queries/installments'
+import { listImportedDescriptions } from '@/lib/db/queries/entries'
+import {
+  getInstallmentKeywords,
+  getInstallmentPlan,
+  listPlanInstallments,
+} from '@/lib/db/queries/installments'
 import { formatCents } from '@/lib/finance/money'
 import { todayISO } from '@/lib/finance/date'
-import { PaidCountForm, PlanActions } from './actions'
+import { PaidCountForm, PlanActions, PlanKeywordsForm } from './actions'
 import { cn } from '@/lib/utils'
 
 /**
@@ -12,6 +17,9 @@ import { cn } from '@/lib/utils'
  *
  * v1.1: "Quantas já foram pagas?" (`PaidCountForm`), para o parcelamento que entrou no app já
  * em andamento, sem precisar marcar parcela por parcela.
+ *
+ * v1.2 — 2026-09-27: "Palavras-chave do extrato" (`PlanKeywordsForm`) — a linha importada que
+ * contém uma delas marca como paga a parcela pendente mais perto da data (migration 0019).
  */
 
 // v1.2 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
@@ -26,7 +34,12 @@ export default async function ParcelamentoPage({
 }) {
   const { id } = await params
 
-  const [plan, parcels] = await Promise.all([getInstallmentPlan(id), listPlanInstallments(id)])
+  const [plan, parcels, keywords, imported] = await Promise.all([
+    getInstallmentPlan(id),
+    listPlanInstallments(id),
+    getInstallmentKeywords(id),
+    listImportedDescriptions(),
+  ])
   if (!plan) notFound()
 
   const today = todayISO()
@@ -122,6 +135,13 @@ export default async function ParcelamentoPage({
         id={plan.planId}
         paidCount={plan.paidCount}
         installmentsCount={plan.installmentsCount}
+      />
+
+      <PlanKeywordsForm
+        key={keywords.join('|')}
+        id={plan.planId}
+        keywords={keywords}
+        suggestions={imported.expense}
       />
 
       <PlanActions

@@ -3,6 +3,7 @@ import { notFound, redirect } from 'next/navigation'
 import { ChevronLeft } from 'lucide-react'
 import type { EntryKind } from '@/lib/db/types'
 import { listActiveCategories } from '@/lib/db/queries/categories'
+import { listImportedDescriptions } from '@/lib/db/queries/entries'
 import { countMaterialized, getRecurringRule } from '@/lib/db/queries/recurring'
 import { RecurringForm } from './form'
 import { RuleActions } from './[id]/actions'
@@ -13,6 +14,8 @@ import { RuleActions } from './[id]/actions'
  * v1.0 — 2026-09-27: extraída de `compromissos/[id]/page.tsx` quando renda fixa ganhou rota
  * própria. Se a regra aberta é do outro tipo — um link antigo de renda em `/compromissos` —,
  * redireciona para a rota certa, em vez de mostrar o salário sob o título "Contas fixas".
+ *
+ * v1.1 — 2026-09-27: carrega as descrições importadas, que sugerem as palavras-chave.
  */
 export async function RuleDetail({ id, kind }: { id: string; kind: EntryKind }) {
   const rule = await getRecurringRule(id)
@@ -22,9 +25,10 @@ export async function RuleDetail({ id, kind }: { id: string; kind: EntryKind }) 
     redirect(rule.kind === 'income' ? `/rendas/${rule.id}` : `/compromissos/${rule.id}`)
   }
 
-  const [categories, materializedCount] = await Promise.all([
+  const [categories, materializedCount, imported] = await Promise.all([
     listActiveCategories(rule.kind),
     countMaterialized(rule.id),
+    listImportedDescriptions(),
   ])
 
   const isIncome = rule.kind === 'income'
@@ -44,7 +48,7 @@ export async function RuleDetail({ id, kind }: { id: string; kind: EntryKind }) 
         </h1>
       </div>
 
-      <RecurringForm categories={categories} rule={rule} />
+      <RecurringForm categories={categories} rule={rule} suggestions={imported[rule.kind]} />
 
       <RuleActions
         id={rule.id}

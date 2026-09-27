@@ -112,20 +112,28 @@ export async function listActiveRecurringRules(): Promise<RecurringRuleWithCateg
   return (data as unknown as JoinedRow[]).map(toRuleWithCategory)
 }
 
-/** Uma regra, para a tela de edição. */
-export async function getRecurringRule(id: string): Promise<RecurringRule | null> {
+/**
+ * Uma regra, para a tela de edição.
+ *
+ * v1.2 — 2026-09-27: com `keywords` (migration 0019), que só a edição usa — o motor puro não
+ * precisa delas, e por isso ficam fora de `RecurringRule`.
+ */
+export async function getRecurringRule(
+  id: string,
+): Promise<(RecurringRule & { keywords: string[] }) | null> {
   const supabase = await createClient()
 
   const { data, error } = await supabase
     .from('recurring_rules')
-    .select(COLUMNS)
+    .select(`${COLUMNS}, keywords`)
     .eq('id', id)
     .maybeSingle()
 
   if (error) throw new Error(`Falha ao buscar conta fixa: ${error.message}`)
   if (!data) return null
 
-  return toRule(data as unknown as Row)
+  const row = data as unknown as Row & { keywords: string[] | null }
+  return { ...toRule(row), keywords: row.keywords ?? [] }
 }
 
 /**

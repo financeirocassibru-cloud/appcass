@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ChevronLeft } from 'lucide-react'
+import { listImportedDescriptions } from '@/lib/db/queries/entries'
 import { getGoal, listContributions } from '@/lib/db/queries/goals'
 import { monthlyContributionCents } from '@/lib/finance/goals'
 import { formatCents } from '@/lib/finance/money'
@@ -22,7 +23,12 @@ export default async function MetaPage({
   const { id } = await params
   const today = todayISO()
 
-  const [goal, contributions] = await Promise.all([getGoal(id), listContributions(id)])
+  // v1.1 — 2026-09-27: as descrições importadas sugerem palavra-chave no formulário.
+  const [goal, contributions, imported] = await Promise.all([
+    getGoal(id),
+    listContributions(id),
+    listImportedDescriptions(),
+  ])
   if (!goal) notFound()
 
   const monthly = monthlyContributionCents(goal, today)
@@ -92,7 +98,7 @@ export default async function MetaPage({
           Editar a meta
         </summary>
         <div className="pt-2">
-          <GoalForm today={today} goal={goal} />
+          <GoalForm today={today} goal={goal} suggestions={imported.expense} />
         </div>
       </details>
 

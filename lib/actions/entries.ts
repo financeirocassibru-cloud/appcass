@@ -8,6 +8,7 @@ import type { EntryKind } from '@/lib/db/types'
 import type { RecategorizeTarget } from '@/lib/import/recategorize'
 import type { CategoryOption } from '@/lib/import/suggest'
 import { createClient } from '@/lib/supabase/server'
+import { keywordsPatch } from '@/lib/validation/keywords'
 import {
   applyCategoriesSchema,
   createEntrySchema,
@@ -20,10 +21,13 @@ import {
 } from '@/lib/validation/entries'
 
 /*
- * Escrita de lançamentos. v1.3 — 2026-09-27.
+ * Escrita de lançamentos. v1.4 — 2026-09-27.
  *
  * v1.3: `prepareRecategorize` e `applyCategories`, o "Categorizar" da seleção de "Todos os
  * lançamentos" — palavra-chave e IA aplicadas a lançamentos que já existem.
+ *
+ * v1.4: criar e editar gravam `keywords` (migration 0019) — as palavras que, no extrato
+ * importado, liquidam este lançamento pendente. Ausente no formulário, não mexe.
  */
 
 export interface EntryActionState {
@@ -59,6 +63,7 @@ export async function createEntry(
     categoryId: formData.get('categoryId') ?? '',
     notes: formData.get('notes') ?? '',
     isSettled: formData.get('isSettled'),
+    keywords: formData.get('keywords'),
   })
 
   if (!parsed.success) {
@@ -82,6 +87,7 @@ export async function createEntry(
     // A constraint `entries_settled_needs_date` exige a data quando liquidado.
     settled_on: parsed.data.isSettled ? parsed.data.occurredOn : null,
     source: 'manual',
+    ...keywordsPatch(parsed.data.keywords),
   })
 
   if (error) {
@@ -105,6 +111,7 @@ export async function updateEntry(
     categoryId: formData.get('categoryId') ?? '',
     notes: formData.get('notes') ?? '',
     isSettled: formData.get('isSettled'),
+    keywords: formData.get('keywords'),
   })
 
   if (!parsed.success) {
@@ -127,6 +134,7 @@ export async function updateEntry(
       notes: parsed.data.notes ?? null,
       is_settled: parsed.data.isSettled,
       settled_on: parsed.data.isSettled ? parsed.data.occurredOn : null,
+      ...keywordsPatch(parsed.data.keywords),
     })
     .eq('id', parsed.data.id)
     .select('id')

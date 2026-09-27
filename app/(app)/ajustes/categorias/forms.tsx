@@ -1,7 +1,7 @@
 'use client'
 
-import { useActionState, useState, type KeyboardEvent } from 'react'
-import { Archive, ArchiveRestore, Pencil, Tags, X } from 'lucide-react'
+import { useActionState, useState } from 'react'
+import { Archive, ArchiveRestore, Pencil, Tags } from 'lucide-react'
 import {
   archiveCategory,
   createCategory,
@@ -9,8 +9,9 @@ import {
   updateCategoryKeywords,
   type CategoryActionState,
 } from '@/lib/actions/categories'
-import { MAX_KEYWORDS, parseKeywords } from '@/lib/finance/keywords'
 import type { Category } from '@/lib/db/queries/categories'
+import type { EntryKind } from '@/lib/db/types'
+import { KeywordField } from '@/components/finance/keyword-field'
 import { FormMessage } from '@/components/auth/form-field'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,11 +20,16 @@ import { Label } from '@/components/ui/label'
 const initialState: CategoryActionState = {}
 
 /*
- * Tela de categorias. v1.1 — 2026-09-27.
+ * Tela de categorias. v1.2 — 2026-09-27.
  *
  * v1.1: cada categoria ganhou "Palavras-chave" (ícone de etiqueta). Um lançamento cujo nome
  * contém uma delas entra na categoria sozinho, na importação de extrato e no [+].
+ *
+ * v1.2: o editor virou o `KeywordField` compartilhado, que sugere as descrições já
+ * importadas do mesmo tipo da categoria.
  */
+
+type Suggestions = Record<EntryKind, string[]>
 
 export function NewCategoryForm() {
   const [state, formAction, pending] = useActionState(createCategory, initialState)
@@ -64,7 +70,15 @@ export function NewCategoryForm() {
   )
 }
 
-export function CategoryList({ title, categories }: { title: string; categories: Category[] }) {
+export function CategoryList({
+  title,
+  categories,
+  suggestions,
+}: {
+  title: string
+  categories: Category[]
+  suggestions: Suggestions
+}) {
   return (
     <section className="flex flex-col gap-2">
       <h2 className="text-sm font-semibold">{title}</h2>
@@ -73,7 +87,7 @@ export function CategoryList({ title, categories }: { title: string; categories:
       ) : (
         <ul className="divide-border flex flex-col divide-y">
           {categories.map((category) => (
-            <CategoryItem key={category.id} category={category} />
+            <CategoryItem key={category.id} category={category} suggestions={suggestions[category.kind]} />
           ))}
         </ul>
       )}
@@ -81,7 +95,7 @@ export function CategoryList({ title, categories }: { title: string; categories:
   )
 }
 
-function CategoryItem({ category }: { category: Category }) {
+function CategoryItem({ category, suggestions }: { category: Category; suggestions: string[] }) {
   const [editing, setEditing] = useState(false)
   const [editingKeywords, setEditingKeywords] = useState(false)
   const [renameState, renameAction, renaming] = useActionState(renameCategory, initialState)
@@ -183,7 +197,11 @@ function CategoryItem({ category }: { category: Category }) {
       </div>
 
       {editingKeywords && !archived ? (
-        <KeywordsEditor category={category} onDone={() => setEditingKeywords(false)} />
+        <KeywordsEditor
+          category={category}
+          suggestions={suggestions}
+          onDone={() => setEditingKeywords(false)}
+        />
       ) : null}
 
       <FormMessage error={renameState.error ?? archiveState.error} />
@@ -192,15 +210,21 @@ function CategoryItem({ category }: { category: Category }) {
 }
 
 /**
- * As palavras-chave de uma categoria, em chips. v1.0 — 2026-09-27.
+ * As palavras-chave de uma categoria, em chips. v1.1 — 2026-09-27.
  *
- * Enter ou vírgula transforma o que foi digitado em chip; o X remove. O que vai para a
- * Server Action é a lista inteira, e a limpeza (repetidas, vazias, teto) é a mesma
+ * v1.1: o campo é o `KeywordField` (components/finance/keyword-field.tsx), com as sugestões do
+ * extrato. O que vai para a Server Action é a lista inteira, e a limpeza é a mesma
  * `parseKeywords` dos dois lados.
  */
-function KeywordsEditor({ category, onDone }: { category: Category; onDone: () => void }) {
-  const [keywords, setKeywords] = useState<string[]>(category.keywords)
-  const [draft, setDraft] = useState('')
+function KeywordsEditor({
+  category,
+  suggestions,
+  onDone,
+}: {
+  category: Category
+  suggestions: string[]
+  onDone: () => void
+}) {
   const [state, action, pending] = useActionState(
     async (prev: CategoryActionState, formData: FormData) => {
       const result = await updateCategoryKeywords(prev, formData)
@@ -210,72 +234,16 @@ function KeywordsEditor({ category, onDone }: { category: Category; onDone: () =
     initialState,
   )
 
-  function add(text: string) {
-    const next = parseKeywords([...keywords, ...parseKeywords(text)])
-    setKeywords(next)
-    setDraft('')
-  }
-
-  function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === 'Enter' || event.key === ',') {
-      event.preventDefault()
-      if (draft.trim()) add(draft)
-    } else if (event.key === 'Backspace' && draft === '' && keywords.length > 0) {
-      setKeywords(keywords.slice(0, -1))
-    }
-  }
-
-  // O rascunho que ficou no campo também conta: quem digita "ifood" e toca em Salvar
-  // espera que ele entre.
-  const final = parseKeywords([...keywords, ...parseKeywords(draft)])
-  const inputId = `palavras-${category.id}`
-
   return (
     <form action={action} className="bg-muted/40 flex flex-col gap-2 rounded-xl p-3">
       <input type="hidden" name="id" value={category.id} />
-      <input type="hidden" name="keywords" value={final.join(', ')} />
 
-      <Label htmlFor={inputId}>Palavras-chave</Label>
-      <p className="text-muted-foreground text-xs">
-        Lançamentos cujo nome contém uma dessas palavras entram em {category.name} sozinhos.
-        Sem acento e sem diferença entre maiúsculas.
-      </p>
-
-      {keywords.length > 0 ? (
-        <ul className="flex flex-wrap gap-1.5" aria-label="Palavras-chave adicionadas">
-          {keywords.map((keyword) => (
-            <li
-              key={keyword}
-              className="bg-card flex items-center gap-1 rounded-full border py-0.5 pr-1 pl-3 text-sm"
-            >
-              {keyword}
-              <button
-                type="button"
-                onClick={() => setKeywords(keywords.filter((k) => k !== keyword))}
-                aria-label={`Remover ${keyword}`}
-                className="hover:bg-muted flex size-7 items-center justify-center rounded-full"
-              >
-                <X className="size-3.5" aria-hidden />
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-
-      <Input
-        id={inputId}
-        value={draft}
-        onChange={(event) => {
-          const value = event.target.value
-          // Colar "ifood, rappi" vira dois chips de uma vez.
-          if (/[,;\n]/.test(value)) add(value)
-          else setDraft(value)
-        }}
-        onKeyDown={onKeyDown}
-        disabled={keywords.length >= MAX_KEYWORDS}
-        placeholder={keywords.length === 0 ? 'ifood, rappi, padaria' : 'Outra palavra'}
-        enterKeyHint="done"
-        className="min-h-11 text-base"
+      <KeywordField
+        label="Palavras-chave"
+        hint={`Lançamentos cujo nome contém uma dessas palavras entram em ${category.name} sozinhos. Sem acento e sem diferença entre maiúsculas.`}
+        initial={category.keywords}
+        suggestions={suggestions}
+        placeholder={category.keywords.length === 0 ? 'ifood, rappi, padaria' : 'Outra palavra'}
       />
 
       <FormMessage error={state.error} />

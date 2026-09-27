@@ -1,12 +1,14 @@
 import { listAllCategories } from '@/lib/db/queries/categories'
+import { listImportedDescriptions } from '@/lib/db/queries/entries'
 import { CategoryList, NewCategoryForm } from './forms'
 
+// v1.1 — 2026-09-27: as palavras-chave sugerem o que já veio nos extratos importados.
 // v1.1 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
 export const metadata = { title: 'Categorias' }
 export const dynamic = 'force-dynamic'
 
 export default async function CategoriasPage() {
-  const categories = await listAllCategories()
+  const [categories, imported] = await Promise.all([listAllCategories(), listImportedDescriptions()])
 
   const active = categories.filter((c) => c.archivedAt === null)
   const archived = categories.filter((c) => c.archivedAt !== null)
@@ -20,8 +22,10 @@ export default async function CategoriasPage() {
 
       <NewCategoryForm />
 
-      <CategoryList title="Ativas" categories={active} />
-      {archived.length > 0 ? <CategoryList title="Arquivadas" categories={archived} /> : null}
+      <CategoryList title="Ativas" categories={active} suggestions={imported} />
+      {archived.length > 0 ? (
+        <CategoryList title="Arquivadas" categories={archived} suggestions={imported} />
+      ) : null}
     </div>
   )
 }

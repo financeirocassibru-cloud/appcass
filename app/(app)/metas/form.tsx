@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { createGoal, updateGoal, type GoalActionState } from '@/lib/actions/goals'
 import type { GoalProgress } from '@/lib/db/queries/goals'
+import { KeywordField } from '@/components/finance/keyword-field'
 import { MoneyInput } from '@/components/finance/money-input'
 import { formatCents, popCentsDigit, pushCentsDigit } from '@/lib/finance/money'
 import { Button } from '@/components/ui/button'
@@ -16,13 +17,25 @@ import { cn } from '@/lib/utils'
 const initialState: GoalActionState = {}
 
 /**
- * Formulário de meta.
+ * Formulário de meta. v1.1 — 2026-09-27.
+ *
+ * v1.1: criar a meta passou para o [+] (modo Meta); este formulário ficou para editar, e
+ * ganhou as palavras-chave que, no extrato, registram um aporte nela (migration 0019).
  *
  * O aporte mensal é opcional de propósito: deixando vazio, o app divide o que
  * falta pelos meses até o prazo. Preenchendo, o valor manda — e o prazo passa a
  * ser uma consequência, não uma promessa.
  */
-export function GoalForm({ today, goal }: { today: string; goal?: GoalProgress }) {
+export function GoalForm({
+  today,
+  goal,
+  suggestions = [],
+}: {
+  today: string
+  goal?: GoalProgress
+  /** Descrições de saídas já importadas, para sugerir palavra-chave. */
+  suggestions?: string[]
+}) {
   const router = useRouter()
   const isEditing = goal !== undefined
   const [monthlyCents, setMonthlyCents] = useState(goal?.monthlyContributionCents ?? 0)
@@ -115,6 +128,13 @@ export function GoalForm({ today, goal }: { today: string; goal?: GoalProgress }
             : 'Este valor manda; o prazo vira consequência.'}
         </p>
       </div>
+
+      <KeywordField
+        label="Palavras-chave do extrato"
+        hint="Uma saída do extrato com uma destas palavras vira aporte nesta meta na importação — por exemplo, o nome da caixinha ou do investimento."
+        initial={goal?.keywords ?? []}
+        suggestions={suggestions}
+      />
 
       <FormMessage error={state.error} />
 

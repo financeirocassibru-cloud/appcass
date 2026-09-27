@@ -7,6 +7,7 @@ import {
   createInstallmentSchema,
   installmentPlanIdSchema,
   setPaidCountSchema,
+  updateInstallmentKeywordsSchema,
 } from '@/lib/validation/installments'
 
 /**
@@ -30,6 +31,12 @@ import {
  *
  * v1.2 — 2026-09-27: `setInstallmentsPaid`, para declarar quantas já foram pagas num
  * parcelamento que já está no app (função `set_installments_paid`, migration 0017).
+ *
+ * v1.3 — 2026-09-27: palavras-chave no plano (migration 0019) — a linha do extrato que
+ * contém uma delas liquida a parcela pendente mais perto da data. Na criação vão num `update`
+ * logo depois da função: são um complemento, e mudar a assinatura de `create_installment_plan`
+ * de novo custaria o mesmo drop/create da 0017 por uma coluna que não precisa da transação.
+ * `updateInstallmentKeywords` edita depois.
  */
 
 export interface InstallmentActionState {
@@ -57,6 +64,7 @@ export async function createInstallmentPlan(
     categoryId: formData.get('categoryId') ?? '',
     paidCount: formData.get('paidCount'),
     anchorDay: formData.get('anchorDay'),
+    keywords: formData.get('keywords'),
   })
 
   if (!parsed.success) {
@@ -99,12 +107,62 @@ export async function createInstallmentPlan(
   if (error) return { error: `Não foi possível criar: ${error.message}` }
   if (!data) return { error: 'Não foi possível criar o parcelamento.' }
 
+  // v1.3 — 2026-09-27: as palavras-chave, no plano recém-criado. `.select` conferido
+  // (invariante 17); se falhar, o plano existe e a tela diz o que faltou.
+  let keywordsNote = ''
+  if (parsed.data.keywords && parsed.data.keywords.length > 0) {
+    const saved = await supabase
+      .from('installment_plans')
+      .update({ keywords: parsed.data.keywords })
+      .eq('id', data)
+      .select('id')
+    if (saved.error || !saved.data || saved.data.length === 0) {
+      keywordsNote = ' As palavras-chave não foram salvas — tente de novo na tela do parcelamento.'
+    }
+  }
+
   revalidateInstallmentViews()
   return {
     success:
-      paidCount > 0
+      (paidCount > 0
         ? `Parcelamento criado em ${parsed.data.installmentsCount}x, com ${paidCount} já ${paidCount === 1 ? 'paga' : 'pagas'}.`
-        : `Parcelamento criado em ${parsed.data.installmentsCount}x.`,
+        : `Parcelamento criado em ${parsed.data.installmentsCount}x.`) + keywordsNote,
+  }
+}
+
+/**
+ * As palavras-chave de um parcelamento existente. v1.0 — 2026-09-27.
+ *
+ * A lista inteira substitui a anterior, como em Categorias. `.eq('id')` para o PostgREST
+ * aceitar o `update` e `.select('id')` para saber que casou (invariantes 3 e 17).
+ */
+export async function updateInstallmentKeywords(
+  _prev: InstallmentActionState,
+  formData: FormData,
+): Promise<InstallmentActionState> {
+  const parsed = updateInstallmentKeywordsSchema.safeParse({
+    id: formData.get('id'),
+    keywords: formData.get('keywords') ?? '',
+  })
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos' }
+  }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('installment_plans')
+    .update({ keywords: parsed.data.keywords })
+    .eq('id', parsed.data.id)
+    .select('id')
+
+  if (error) return { error: `Não foi possível salvar: ${error.message}` }
+  if (!data || data.length === 0) return { error: 'Parcelamento não encontrado.' }
+
+  revalidatePath(`/parcelas/${parsed.data.id}`)
+  revalidatePath('/parcelas')
+  return {
+    success:
+      parsed.data.keywords.length === 0 ? 'Palavras-chave removidas.' : 'Palavras-chave salvas.',
   }
 }
 
