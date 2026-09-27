@@ -36,7 +36,6 @@ export function Logo({
         alt={withName ? '' : 'Cass'}
         priority
       />
-      {withName && <span className="text-lg font-semibold tracking-tight">Cass</span>}
     </span>
   )
 }
