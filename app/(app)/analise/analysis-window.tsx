@@ -6,6 +6,7 @@ import { BarChart3, List } from 'lucide-react'
 import type { Route } from 'next'
 import type { Category } from '@/lib/db/queries/categories'
 import type { EntryWithCategory } from '@/lib/db/queries/entries'
+import type { CreditOption } from '@/lib/finance/credit'
 import { addDays, type ISODate } from '@/lib/finance/date'
 import {
   bucketize,
@@ -26,6 +27,9 @@ import { cn } from '@/lib/utils'
  * A janela da Análise: o gráfico navegável, o detalhamento do período tocado e a visão em lista.
  *
  * v1.0 — 2026-09-27.
+ *
+ * v1.2 — 2026-09-27: repassa `creditAccounts` ao painel e à lista, para o formulário de
+ * lançamento ter o "Pago com" também aqui.
  *
  * **O período vive na URL**, e não em `useState`. É o que `horizon-tabs.tsx` já praticava, e aqui
  * é obrigatório por um motivo mais duro: o servidor é quem calcula a janela, então se a extensão
@@ -55,6 +59,7 @@ export function AnalysisWindow({
   entriesById,
   expenseCategories,
   incomeCategories,
+  creditAccounts,
   scenarioId,
   adjustedTargets,
 }: {
@@ -70,6 +75,8 @@ export function AnalysisWindow({
   entriesById: Record<string, EntryWithCategory>
   expenseCategories: Category[]
   incomeCategories: Category[]
+  /** v1.2 — 2026-09-27: cartões e empréstimos (inclusive arquivados) para o "Pago com". */
+  creditAccounts: CreditOption[]
   /** `null` quando a janela é a projeção real. */
   scenarioId: string | null
   /** `targetType:targetId:occurrenceKey` dos alvos que já têm ajuste, para a linha oferecer o
@@ -158,6 +165,7 @@ export function AnalysisWindow({
       entriesById={entriesById}
       expenseCategories={expenseCategories}
       incomeCategories={incomeCategories}
+      creditAccounts={creditAccounts}
       onFormOpenChange={(open) => setPanelMode(open ? 'form' : 'reading')}
       onClose={() => setSelectedKey(null)}
       renderActions={renderActions}
@@ -203,6 +211,7 @@ export function AnalysisWindow({
           entriesById={entriesById}
           expenseCategories={expenseCategories}
           incomeCategories={incomeCategories}
+          creditAccounts={creditAccounts}
           renderActions={renderActions}
         />
       )}

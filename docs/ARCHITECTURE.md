@@ -231,7 +231,8 @@ dá para preencher? como dizer isso em português? Em um ou dois segundos a pess
 a IA entendeu e corrige ali mesmo se estiver errado. Nada foi gravado em lugar nenhum.
 
 **Segundo tempo — a proposta.** Só depois do "É isso" nasce a linha em `ai_jobs`, com o
-retrato financeiro, as 27 ferramentas e o rascunho já aprovado num bloco próprio do
+retrato financeiro, as 28 ferramentas (27 até a v1.1 do assistente, 2026-09-27, que trouxe
+`pay_credit_bill`) e o rascunho já aprovado num bloco próprio do
 prompt. Esse bloco não é economia de tokens: é o que evita a proposta contradizer o que a
 pessoa acabou de confirmar.
 

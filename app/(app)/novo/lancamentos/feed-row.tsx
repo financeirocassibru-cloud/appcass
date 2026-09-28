@@ -7,6 +7,7 @@ import { ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Category } from '@/lib/db/queries/categories'
 import type { FeedItem } from '@/lib/db/queries/created-feed'
+import type { CreditOption } from '@/lib/finance/credit'
 import { createdTime } from '@/lib/feed'
 import { EntryForm } from '@/components/finance/entry-form'
 import { Money } from '@/components/finance/money'
@@ -20,7 +21,10 @@ import {
 import { cn } from '@/lib/utils'
 
 /**
- * Uma linha de "Ver todos". v1.1 — 2026-09-27.
+ * Uma linha de "Ver todos". v1.2 — 2026-09-27.
+ *
+ * v1.2: a edição recebe `creditAccounts` — sem eles o formulário escondia o "Pago com", e uma
+ * compra lançada no cartão não podia ser corrigida (nem posta no cartão) a partir daqui.
  *
  * v1.1: modo seleção. Com `selection`, o lançamento avulso vira uma caixa de marcar em vez
  * de abrir a edição, e regra e parcelamento ficam apagados — eles têm a exclusão deles, na
@@ -44,6 +48,7 @@ export function FeedRow({
   expenseCategories,
   incomeCategories,
   today,
+  creditAccounts,
   selecting = false,
   selection,
 }: {
@@ -51,6 +56,8 @@ export function FeedRow({
   expenseCategories: Category[]
   incomeCategories: Category[]
   today: string
+  /** v1.2 — 2026-09-27: cartões e empréstimos para o "Pago com" da edição. */
+  creditAccounts: CreditOption[]
   /** A lista está em modo seleção. */
   selecting?: boolean
   /** Presente só para linha que pode ser marcada (lançamento avulso ou importado). */
@@ -132,6 +139,7 @@ export function FeedRow({
               expenseCategories={expenseCategories}
               incomeCategories={incomeCategories}
               today={today}
+              creditAccounts={creditAccounts}
               onDone={(result) => {
                 toast.success(result === 'deleted' ? 'Lançamento excluído.' : 'Lançamento atualizado.')
                 setEditing(false)

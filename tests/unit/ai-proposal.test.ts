@@ -5,6 +5,7 @@ import { formatCents } from '@/lib/finance/money'
 import { TOOLS, TOOL_NAMES } from '@/lib/ai/tools'
 import {
   ACTION_FOR_OPERATION,
+  creditProblem,
   describeOperation,
   formatISODateBR,
   hasFunctionCall,
@@ -12,6 +13,8 @@ import {
   operationSchema,
   operationToFormData,
   parseFunctionCalls,
+  withCreditDefaults,
+  type LabelIndex,
   type Operation,
 } from '@/lib/ai/proposal'
 
@@ -37,6 +40,8 @@ describe('o vocabulário do modelo e o do app são o mesmo', () => {
       'goals',
       'scenarios',
       'profile',
+      // v1.1 — 2026-09-27: `pay_credit_bill` → `payCreditBill`.
+      'credit',
     ]
       .map((nome) => readFileSync(join(process.cwd(), 'lib', 'actions', `${nome}.ts`), 'utf8'))
       .join('\n')
@@ -488,5 +493,189 @@ describe('hasFunctionCall', () => {
     expect(hasFunctionCall(undefined)).toBe(false)
     expect(hasFunctionCall('texto solto')).toBe(false)
     expect(hasFunctionCall({ steps: [] })).toBe(false)
+  })
+})
+
+/**
+ * v1.1 — 2026-09-27 (Fase 13 no assistente): o "Pago com" nas ferramentas.
+ *
+ * O caso que motivou: "gastei 30 de Uber no Nubank" virava uma saída do SALDO hoje. Com
+ * cartão, ela conta na categoria hoje e sai do saldo só na fatura — e quem calcula a fatura é
+ * o ciclo do cartão (`defaultFirstDue`), nunca o modelo fazendo conta de calendário.
+ */
+describe('cartão e empréstimo na proposta', () => {
+  const NUBANK = 'dd000000-0000-4000-8000-000000000001'
+  const EMPRESTIMO = 'dd000000-0000-4000-8000-000000000002'
+  const labels: LabelIndex = {
+    categories: {},
+    entries: { 'e0000000-0000-4000-8000-000000000001': 'Uber' },
+    recurring: {},
+    installments: {},
+    goals: {},
+    scenarios: {},
+    credit: {
+      [NUBANK]: { name: 'Nubank', kind: 'card', closingDay: 3, dueDay: 10, dueOn: null },
+      [EMPRESTIMO]: { name: 'Caixa', kind: 'loan', closingDay: null, dueDay: 15, dueOn: null },
+    },
+  }
+
+  const uberNoCartao = () =>
+    operationSchema.parse({
+      op: 'create_entry',
+      kind: 'expense',
+      amount_cents: 3000,
+      occurred_on: '2026-09-27',
+      description: 'Uber',
+      is_settled: true,
+      credit_account_id: NUBANK,
+    })
+
+  it('sem "será pago em", o vencimento sai do ciclo do cartão', () => {
+    // Fecha dia 3: a compra de 27/09 cai na fatura que fecha em 03/10 e vence em 10/10.
+    const op = withCreditDefaults(uberNoCartao(), labels)
+    expect(op.op === 'create_entry' && op.charge_first_due_on).toBe('2026-10-10')
+  })
+
+  it('a data que a pessoa disse vale mais que a do ciclo', () => {
+    const op = withCreditDefaults(
+      operationSchema.parse({ ...uberNoCartao(), charge_first_due_on: '2026-11-10' }),
+      labels,
+    )
+    expect(op.op === 'create_entry' && op.charge_first_due_on).toBe('2026-11-10')
+  })
+
+  it('no cartão é sempre uma vez só — parcelado no cartão é parcelamento', () => {
+    const op = withCreditDefaults(operationSchema.parse({ ...uberNoCartao(), charge_count: 3 }), labels)
+    expect(op.op === 'create_entry' && op.charge_count).toBe(1)
+  })
+
+  it('manda ao createEntry os mesmos campos do "Pago com" da tela', () => {
+    const fd = operationToFormData(withCreditDefaults(uberNoCartao(), labels))
+    expect(fd.get('creditAccountId')).toBe(NUBANK)
+    expect(fd.get('chargeFirstDueOn')).toBe('2026-10-10')
+    expect(fd.get('chargeCount')).toBe('1')
+    expect(fd.get('chargeTotalCents')).toBe('')
+  })
+
+  it('sem conta na operação, o campo nem vai — a action não mexe em de onde veio', () => {
+    const fd = operationToFormData(
+      operationSchema.parse({
+        op: 'update_entry',
+        id: 'e0000000-0000-4000-8000-000000000001',
+        kind: 'expense',
+        amount_cents: 3000,
+        occurred_on: '2026-09-27',
+        description: 'Uber',
+        is_settled: false,
+      }),
+    )
+    expect(fd.has('creditAccountId')).toBe(false)
+  })
+
+  it('conta vazia numa alteração é "do saldo" e zera a dívida', () => {
+    const op = operationSchema.parse({
+      op: 'update_entry',
+      id: 'e0000000-0000-4000-8000-000000000001',
+      kind: 'expense',
+      amount_cents: 3000,
+      occurred_on: '2026-09-27',
+      description: 'Uber',
+      is_settled: true,
+      credit_account_id: '',
+    })
+    const fd = operationToFormData(op)
+    expect(fd.get('creditAccountId')).toBe('')
+    expect(fd.get('chargeFirstDueOn')).toBe('')
+    expect(describeOperation(op, labels)).toContain('do saldo')
+  })
+
+  it('empréstimo em parcelas, com juros', () => {
+    const op = withCreditDefaults(
+      operationSchema.parse({
+        op: 'create_entry',
+        kind: 'income',
+        amount_cents: 500000,
+        occurred_on: '2026-09-27',
+        description: 'Empréstimo',
+        is_settled: true,
+        credit_account_id: EMPRESTIMO,
+        charge_count: 10,
+        charge_total_cents: 600000,
+      }),
+      labels,
+    )
+    const fd = operationToFormData(op)
+    expect(fd.get('chargeCount')).toBe('10')
+    expect(fd.get('chargeTotalCents')).toBe('600000')
+    // Dia fixo 15: o primeiro vencimento depois de 27/09 é 15/10.
+    expect(fd.get('chargeFirstDueOn')).toBe('2026-10-15')
+
+    const texto = describeOperation(op, labels)
+    expect(texto).toContain('veio do empréstimo Caixa')
+    expect(texto).toContain('10x')
+    expect(texto).toContain(formatCents(100000))
+  })
+
+  it('a confirmação diz o cartão, a fatura e que quem paga é a fatura', () => {
+    const texto = describeOperation(uberNoCartao(), labels)
+    expect(texto).toContain('no cartão Nubank')
+    expect(texto).toContain('10/10/2026')
+    expect(texto).toContain('paga pela fatura')
+    expect(texto).not.toContain(NUBANK)
+  })
+
+  it('cartão fora do contexto é recusado, não vira saldo', () => {
+    const op = operationSchema.parse({
+      ...uberNoCartao(),
+      credit_account_id: 'dd000000-0000-4000-8000-00000000abcd',
+    })
+    expect(creditProblem(op, labels)).toContain('não encontrado')
+    expect(creditProblem(withCreditDefaults(uberNoCartao(), labels), labels)).toBeNull()
+  })
+
+  it('conta fixa e parcelamento não vão para empréstimo', () => {
+    const op = operationSchema.parse({
+      op: 'create_installment_plan',
+      description: 'TV',
+      total_amount_cents: 300000,
+      installments_count: 3,
+      first_due_on: '2026-09-27',
+      credit_account_id: EMPRESTIMO,
+    })
+    expect(creditProblem(op, labels)).not.toBeNull()
+    expect(operationToFormData(op).get('creditAccountId')).toBe(EMPRESTIMO)
+  })
+
+  it('pagar a fatura usa os nomes que payCreditBill lê', () => {
+    const op = operationSchema.parse({
+      op: 'pay_credit_bill',
+      account_id: NUBANK,
+      due_on: '2026-10-10',
+      amount_cents: 45000,
+      paid_on: '2026-10-09',
+    })
+    const fd = operationToFormData(op)
+    expect(fd.get('accountId')).toBe(NUBANK)
+    expect(fd.get('dueOn')).toBe('2026-10-10')
+    expect(fd.get('amountCents')).toBe('45000')
+    expect(fd.get('paidOn')).toBe('2026-10-09')
+
+    const texto = describeOperation(op, labels)
+    expect(texto).toContain('fatura do cartão Nubank')
+    expect(texto).toContain('10/10/2026')
+  })
+
+  it('id de conta que não é UUID é recusado já na leitura', () => {
+    const { operations, rejected } = parseFunctionCalls([
+      call('create_entry', { ...uberNoCartao(), op: undefined, credit_account_id: 'nubank' }),
+    ])
+    expect(operations).toHaveLength(0)
+    expect(rejected).toHaveLength(1)
+  })
+
+  it('pedido gravado antes dos cartões (sem `credit` nos rótulos) continua descrito', () => {
+    const { credit: _semCartoes, ...antigos } = labels
+    void _semCartoes
+    expect(describeOperation(uberNoCartao(), antigos)).toContain('conta não encontrada')
   })
 })

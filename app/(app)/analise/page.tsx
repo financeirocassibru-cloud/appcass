@@ -4,6 +4,8 @@ import { getWindow } from '@/lib/db/queries/projection'
 import { getActiveScenarioId, listScenarios } from '@/lib/db/queries/scenarios'
 import { listActiveCategories } from '@/lib/db/queries/categories'
 import { listEntriesInRange } from '@/lib/db/queries/entries'
+import { getCreditLedger } from '@/lib/db/queries/credit'
+import { toCreditOptions } from '@/lib/finance/credit'
 import { formatDayLabel } from '@/lib/finance/grouping'
 import { formatCents } from '@/lib/finance/money'
 import { addDays, isISODate, todayISO } from '@/lib/finance/date'
@@ -22,6 +24,7 @@ import { ScaleTabs } from './scale-tabs'
 import { ScenarioBar } from './scenario-bar'
 import { ScenarioEntries } from './scenario-entries'
 
+// v2.4 — 27/09/2026: a edição e o "novo lançamento" da janela recebem os cartões e empréstimos.
 // v2.3 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
 export const metadata = { title: 'Análise' }
 /** Depende de "hoje" e do banco: prerenderizada, congelaria os dois. */
@@ -108,11 +111,15 @@ export default async function AnalisePage({
 
   // Os lançamentos reais da janela, para o formulário de edição abrir preenchido. O motor entrega
   // ocorrências, que não carregam categoria nem `notes`; quem tem isso é a linha de `entries`.
-  const [entries, expenseCategories, incomeCategories] = await Promise.all([
+  // v2.4 — 2026-09-27: e os cartões e empréstimos, para o "Pago com" do formulário — sem eles
+  // editar uma compra do cartão por aqui escondia de onde veio o dinheiro.
+  const [entries, expenseCategories, incomeCategories, ledger] = await Promise.all([
     listEntriesInRange(window.from, window.to, 2_000),
     listActiveCategories('expense'),
     listActiveCategories('income'),
+    getCreditLedger(today),
   ])
+  const creditAccounts = toCreditOptions(ledger.accounts, ledger.bills, true)
 
   const entriesById: Record<string, EntryWithCategory> = {}
   for (const entry of entries) entriesById[entry.id] = entry
@@ -190,6 +197,7 @@ export default async function AnalisePage({
             entriesById={entriesById}
             expenseCategories={expenseCategories}
             incomeCategories={incomeCategories}
+            creditAccounts={creditAccounts}
             scenarioId={window.scenario?.id ?? null}
             adjustedTargets={adjustedTargets}
           />

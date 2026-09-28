@@ -1,5 +1,11 @@
 /**
- * A superfície de ação da IA. v1.0 — 2026-09-26.
+ * A superfície de ação da IA. v1.1 — 2026-09-27.
+ *
+ * v1.1 (Fase 13 no assistente): o "Pago com" chegou às ferramentas. `create_entry` e
+ * `update_entry` aceitam o cartão ou empréstimo e a dívida (vencimento, vezes, valor com
+ * juros); conta fixa e parcelamento aceitam o cartão; e `pay_credit_bill` paga uma fatura.
+ * Antes disso a IA só sabia lançar do saldo, e "gastei 30 de Uber no Nubank" virava uma saída
+ * do saldo hoje — o bug de competência que a Fase 13 existe para não ter.
  *
  * Módulo **puro**: só dados. Cada entrada aqui espelha uma Server Action que já
  * existe em `lib/actions/`, e nada mais — a IA não ganha um caminho próprio de
@@ -72,6 +78,32 @@ const ID = (what: string): ToolParameterSchema => ({
   description: `id de ${what}, exatamente como veio no contexto.`,
 })
 
+/** v1.1 — 2026-09-27: de onde veio o dinheiro. */
+const CREDIT_ACCOUNT: ToolParameterSchema = {
+  type: 'string',
+  description:
+    'id de um cartão ou empréstimo da lista CARTÕES E EMPRÉSTIMOS do contexto, quando a pessoa disser que pagou "no cartão", "no crédito", "no Nubank", "com o empréstimo". Omita quando o dinheiro saiu ou entrou do saldo (débito, Pix, dinheiro). Nunca invente id: se o cartão não está no contexto, pergunte.',
+}
+
+/** v1.1 — 2026-09-27: os campos da dívida, só com `credit_account_id`. */
+const CHARGE: Record<string, ToolParameterSchema> = {
+  charge_first_due_on: {
+    type: 'string',
+    description:
+      'Só com credit_account_id: quando será pago, YYYY-MM-DD. OMITA para usar o vencimento da fatura em que a compra cai (o app calcula pelo fechamento do cartão). Informe só se a pessoa disse a data.',
+  },
+  charge_count: {
+    type: 'integer',
+    description:
+      'Só com credit_account_id de EMPRÉSTIMO: em quantas parcelas mensais será pago (1 = à vista). Compra parcelada no CARTÃO não usa isto: use create_installment_plan com credit_account_id.',
+  },
+  charge_total_cents: {
+    type: 'integer',
+    description:
+      'Só com credit_account_id, quando há juros: o TOTAL que será pago, em centavos (todas as parcelas somadas). Omita se é o mesmo valor. A diferença vira "Juros e encargos".',
+  },
+}
+
 function tool(
   name: string,
   description: string,
@@ -102,8 +134,10 @@ export const TOOLS: readonly ToolDeclaration[] = [
       is_settled: {
         type: 'boolean',
         description:
-          'true se o dinheiro JÁ saiu ou entrou (pago/recebido). false se é uma conta a pagar ou a receber no futuro.',
+          'true se o dinheiro JÁ saiu ou entrou (pago/recebido). false se é uma conta a pagar ou a receber no futuro. Numa saída com credit_account_id tanto faz: quem paga é a fatura.',
       },
+      credit_account_id: CREDIT_ACCOUNT,
+      ...CHARGE,
     },
     ['kind', 'amount_cents', 'occurred_on', 'description', 'is_settled'],
   ),
@@ -119,6 +153,12 @@ export const TOOLS: readonly ToolDeclaration[] = [
       category_id: CATEGORY,
       notes: { type: 'string', description: 'Observação livre, opcional.' },
       is_settled: { type: 'boolean', description: 'Se já foi pago ou recebido.' },
+      credit_account_id: {
+        type: 'string',
+        description:
+          'Cartão ou empréstimo de onde veio o dinheiro. OMITA para manter como está (inclusive vencimento, parcelas e juros). Só mande para TROCAR: o id de outro cartão/empréstimo, ou "" (vazio) para passar para o saldo. Ao mandar, repita charge_count e charge_total_cents que valem, senão voltam a 1x e sem juros.',
+      },
+      ...CHARGE,
     },
     ['id', 'kind', 'amount_cents', 'occurred_on', 'description', 'is_settled'],
   ),
@@ -148,6 +188,11 @@ export const TOOLS: readonly ToolDeclaration[] = [
       },
       starts_on: DATE,
       ends_on: { type: 'string', description: 'Data do último vencimento, YYYY-MM-DD. Omita se não tem fim previsto.' },
+      credit_account_id: {
+        type: 'string',
+        description:
+          'Só para SAÍDA cobrada num CARTÃO (assinatura, streaming): id do cartão do contexto. Cada ocorrência entra na fatura do mês. Omita se sai do saldo. Empréstimo não serve.',
+      },
     },
     ['kind', 'description', 'amount_cents', 'frequency', 'starts_on'],
   ),
@@ -164,6 +209,10 @@ export const TOOLS: readonly ToolDeclaration[] = [
       day_of_month: { type: 'integer', description: 'Dia do vencimento, 1 a 31, só para mensal.' },
       starts_on: DATE,
       ends_on: { type: 'string', description: 'Data do último vencimento, ou omita.' },
+      credit_account_id: {
+        type: 'string',
+        description: 'Cartão da conta fixa. Omita para manter; "" (vazio) tira do cartão.',
+      },
     },
     ['id', 'kind', 'description', 'amount_cents', 'frequency', 'starts_on'],
   ),
@@ -192,6 +241,11 @@ export const TOOLS: readonly ToolDeclaration[] = [
       first_due_on: DATE,
       category_id: CATEGORY,
       category_name: CATEGORY_NAME,
+      credit_account_id: {
+        type: 'string',
+        description:
+          'Compra parcelada no CARTÃO ("3x no Nubank"): id do cartão do contexto. Cada parcela cai na fatura do mês dela; first_due_on é a data da compra. Omita para parcelamento fora do cartão (carnê, boleto).',
+      },
     },
     ['description', 'total_amount_cents', 'installments_count', 'first_due_on'],
   ),
@@ -200,6 +254,23 @@ export const TOOLS: readonly ToolDeclaration[] = [
     'Apaga um parcelamento. As parcelas já pagas continuam no extrato; só as pendentes somem.',
     { id: ID('um parcelamento') },
     ['id'],
+  ),
+
+  // --- Cartões e empréstimos (v1.1 — 2026-09-27) --------------------------
+  tool(
+    'pay_credit_bill',
+    'Paga uma fatura de cartão ou uma parcela de empréstimo — inteira ou parte. Ex.: "paguei a fatura do Nubank", "paguei 500 da fatura". A fatura vem da lista FATURAS A PAGAR do contexto. NÃO use create_entry para pagar fatura: isso contaria as compras duas vezes.',
+    {
+      account_id: ID('um cartão ou empréstimo'),
+      due_on: { type: 'string', description: 'Vencimento da fatura, YYYY-MM-DD, exatamente como veio no contexto.' },
+      amount_cents: {
+        type: 'integer',
+        description:
+          'Quanto foi pago, em centavos. "Paguei a fatura" sem valor é o valor que falta, do contexto. Menos que isso é pagamento parcial; mais é juros.',
+      },
+      paid_on: DATE,
+    },
+    ['account_id', 'due_on', 'amount_cents', 'paid_on'],
   ),
 
   // --- Metas --------------------------------------------------------------

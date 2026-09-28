@@ -2,17 +2,25 @@ import 'server-only'
 
 import { getBalanceAnchor, getCurrentBalance } from '@/lib/db/queries/balance'
 import { listActiveCategories } from '@/lib/db/queries/categories'
+import { getCreditLedger } from '@/lib/db/queries/credit'
 import { listRecentEntries } from '@/lib/db/queries/entries'
 import { listGoals } from '@/lib/db/queries/goals'
 import { listInstallmentPlans } from '@/lib/db/queries/installments'
 import { listRecurringRules } from '@/lib/db/queries/recurring'
 import { listScenarios } from '@/lib/db/queries/scenarios'
+import { availableLimitCents, billStatusLabel, isBillDue } from '@/lib/finance/credit'
 import { todayISO, type ISODate } from '@/lib/finance/date'
 import { formatCents } from '@/lib/finance/money'
-import type { LabelIndex } from './proposal'
+import type { CreditLabel, LabelIndex } from './proposal'
 
 /**
- * O retrato que a IA recebe junto da frase. v1.0 — 2026-09-26.
+ * O retrato que a IA recebe junto da frase. v1.1 — 2026-09-27.
+ *
+ * v1.1 (Fase 13 no assistente): cartões e empréstimos, com o ciclo e o limite, e as faturas
+ * que ainda cobram alguma coisa — é daqui que saem o `credit_account_id` do "Pago com" e o
+ * par conta + vencimento de `pay_credit_bill`. Cada lançamento recente diz de onde veio o
+ * dinheiro, e o pagamento de fatura aparece como tal, para "apague a compra do Uber" não virar
+ * "apague o pagamento da fatura". As regras novas estão em `SYSTEM_INSTRUCTION`.
  *
  * Sem isto a IA só sabe criar coisa nova: para alterar ou apagar, ela precisa
  * dos ids do que já existe — e o invariante que impomos a ela é "todo id vem do
@@ -27,6 +35,8 @@ import type { LabelIndex } from './proposal'
  */
 
 const RECENT_ENTRIES = 40
+/** v1.1 — 2026-09-27: quantas faturas a pagar por conta vão no retrato. */
+const BILLS_PER_ACCOUNT = 3
 
 export interface AiContext {
   today: ISODate
@@ -36,6 +46,8 @@ export interface AiContext {
   labels: LabelIndex
   /** Ids de categoria válidos, para recusar o que o modelo inventar. */
   validCategoryIds: ReadonlySet<string>
+  /** v1.1 — 2026-09-27: ids de cartão/empréstimo da pessoa, para o ajuste na confirmação. */
+  validCreditAccountIds: ReadonlySet<string>
 }
 
 /** Uma linha do retrato: id curto primeiro, para o modelo copiá-lo sem erro. */
@@ -50,7 +62,7 @@ function line(id: string, ...parts: (string | number | null | undefined)[]): str
  * segundo à espera de quem já está olhando para o cursor piscando.
  */
 export async function buildContext(today: ISODate = todayISO()): Promise<AiContext> {
-  const [balance, anchor, categories, entries, rules, plans, goals, scenarios] = await Promise.all([
+  const [balance, anchor, categories, entries, rules, plans, goals, scenarios, ledger] = await Promise.all([
     getCurrentBalance(today),
     getBalanceAnchor(),
     listActiveCategories(),
@@ -59,7 +71,22 @@ export async function buildContext(today: ISODate = todayISO()): Promise<AiConte
     listInstallmentPlans(),
     listGoals(),
     listScenarios(),
+    getCreditLedger(today),
   ])
+
+  // v1.1 — 2026-09-27: todas as contas, inclusive arquivadas — um lançamento antigo pode ser de
+  // uma delas, e a confirmação precisa do nome.
+  const credit: Record<string, CreditLabel> = Object.fromEntries(
+    ledger.accounts.map((a) => [
+      a.id,
+      { name: a.name, kind: a.kind, closingDay: a.closingDay, dueDay: a.dueDay, dueOn: a.dueOn },
+    ]),
+  )
+  const creditName = (id: string | null): string | null => {
+    const account = id ? credit[id] : undefined
+    if (!account) return null
+    return account.kind === 'card' ? `cartão ${account.name}` : `empréstimo ${account.name}`
+  }
 
   const labels: LabelIndex = {
     categories: Object.fromEntries(categories.map((c) => [c.id, c.name])),
@@ -68,6 +95,7 @@ export async function buildContext(today: ISODate = todayISO()): Promise<AiConte
     installments: Object.fromEntries(plans.map((p) => [p.planId, p.description])),
     goals: Object.fromEntries(goals.map((g) => [g.id, g.name])),
     scenarios: Object.fromEntries(scenarios.map((s) => [s.id, s.name])),
+    credit,
   }
 
   const blocos: string[] = [
@@ -83,6 +111,53 @@ export async function buildContext(today: ISODate = todayISO()): Promise<AiConte
     ...categories.map((c) => line(c.id, c.name, c.kind === 'expense' ? 'despesa' : 'receita')),
   )
 
+  // v1.1 — 2026-09-27: só as ativas — arquivada não recebe compra nova.
+  const activeAccounts = ledger.accounts.filter((a) => a.archivedAt === null)
+  if (activeAccounts.length > 0) {
+    blocos.push(
+      'CARTÕES E EMPRÉSTIMOS (credit_account_id daqui quando a pessoa pagou "no cartão", "no crédito", "com o empréstimo"):',
+      ...activeAccounts.map((a) => {
+        const available = availableLimitCents(
+          a,
+          ledger.bills.filter((b) => b.accountId === a.id),
+        )
+        return line(
+          a.id,
+          a.name,
+          a.kind === 'card' ? 'cartão' : 'empréstimo',
+          a.kind === 'card'
+            ? `fecha dia ${a.closingDay}, vence dia ${a.dueDay}`
+            : a.dueOn
+              ? `vencimento único em ${a.dueOn}`
+              : a.dueDay
+                ? `parcelas todo dia ${a.dueDay}`
+                : 'vencimento escolhido a cada uso',
+          available === null ? null : `disponível ${formatCents(available)}`,
+        )
+      }),
+    )
+
+    // As faturas que ainda cobram alguma coisa, as mais próximas de cada conta.
+    const due = ledger.bills.filter((b) => isBillDue(b) && b.remainingCents > 0)
+    const shown = activeAccounts.flatMap((a) =>
+      due.filter((b) => b.accountId === a.id).slice(0, BILLS_PER_ACCOUNT),
+    )
+    if (shown.length > 0) {
+      blocos.push(
+        'FATURAS A PAGAR (para pay_credit_bill: account_id e due_on exatamente daqui):',
+        ...shown.map((b) =>
+          line(
+            b.accountId,
+            b.accountKind === 'card' ? `fatura ${b.accountName}` : b.accountName,
+            `vence ${b.dueOn}`,
+            `falta ${formatCents(b.remainingCents)}`,
+            billStatusLabel(b.status, b.accountKind),
+          ),
+        ),
+      )
+    }
+  }
+
   if (entries.length > 0) {
     blocos.push(
       `LANÇAMENTOS RECENTES (os ${entries.length} últimos):`,
@@ -95,9 +170,17 @@ export async function buildContext(today: ISODate = todayISO()): Promise<AiConte
           e.kind === 'expense' ? 'saída' : 'entrada',
           e.isSettled ? 'pago' : 'pendente',
           e.category?.name,
+          // v1.1 — 2026-09-27: de onde veio o dinheiro, e o pagamento de fatura pelo nome.
+          e.source === 'credit_bill'
+            ? `pagamento da fatura do ${creditName(e.creditAccountId) ?? 'cartão'}`
+            : e.creditAccountId
+              ? `${e.kind === 'expense' ? 'no' : 'veio do'} ${creditName(e.creditAccountId) ?? 'cartão'}` +
+                (e.chargeCount > 1 ? ` em ${e.chargeCount}x` : '') +
+                (e.interestCents > 0 ? `, ${formatCents(e.interestCents)} de juros` : '')
+              : null,
           // Parcela e conta fixa não se editam como lançamento solto: quem muda
           // o valor de uma parcela mexe no plano, não na linha gerada.
-          e.source !== 'manual' ? `gerado por ${e.source}` : null,
+          e.source !== 'manual' && e.source !== 'credit_bill' ? `gerado por ${e.source}` : null,
         ),
       ),
     )
@@ -162,6 +245,7 @@ export async function buildContext(today: ISODate = todayISO()): Promise<AiConte
     text: blocos.join('\n'),
     labels,
     validCategoryIds: new Set(categories.map((c) => c.id)),
+    validCreditAccountIds: new Set(ledger.accounts.map((a) => a.id)),
   }
 }
 
@@ -183,6 +267,14 @@ COMO ESCOLHER A FERRAMENTA:
 - Compra dividida em 2 ou mais vezes: create_installment_plan, com o valor TOTAL. "3x de 100" é total 30000. Para "1x", use create_entry.
 - Dinheiro guardado para um objetivo: create_contribution numa meta existente.
 - "Paguei a conta de luz deste mês", quando existe uma conta fixa correspondente: materialize_recurring, não create_entry — assim o app não duplica o lançamento.
+
+CARTÃO E EMPRÉSTIMO:
+- Gasto "no cartão", "no crédito", "no Nubank": create_entry com credit_account_id do cartão e occurred_on = a data do GASTO (não a da fatura). Omita charge_first_due_on: o app calcula a fatura em que a compra cai. Débito, Pix e dinheiro saem do saldo: sem credit_account_id.
+- Compra parcelada no cartão ("3x no cartão"): create_installment_plan com credit_account_id e first_due_on = a data da compra.
+- Assinatura cobrada no cartão todo mês: create_recurring com credit_account_id.
+- Pegou dinheiro emprestado ("peguei 5 mil de empréstimo, pago em 10x"): create_entry kind=income com credit_account_id do empréstimo, charge_count = parcelas e, se a pessoa disse o total com juros, charge_total_cents. Esse dinheiro não é renda.
+- "Paguei a fatura": pay_credit_bill com account_id e due_on da lista FATURAS A PAGAR; sem valor dito, amount_cents = o que falta. NUNCA use create_entry para pagar fatura.
+- Se a pessoa falou de um cartão ou empréstimo que não está no contexto, não invente: responda em texto pedindo para cadastrá-lo em Cartões.
 
 OUTRAS CONVENÇÕES:
 - Se a pessoa já gastou ou já recebeu, is_settled = true. Se é conta a pagar ou a receber, false.

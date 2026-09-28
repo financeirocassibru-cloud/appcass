@@ -9,6 +9,7 @@ import { formatDayLabel } from '@/lib/finance/grouping'
 import { formatCents } from '@/lib/finance/money'
 import type { Category } from '@/lib/db/queries/categories'
 import type { EntryWithCategory } from '@/lib/db/queries/entries'
+import type { CreditOption } from '@/lib/finance/credit'
 import type { Occurrence } from '@/lib/finance/types'
 import { EntryForm } from '@/components/finance/entry-form'
 import { Money } from '@/components/finance/money'
@@ -19,6 +20,9 @@ import { Button } from '@/components/ui/button'
  * O que aconteceu — ou vai acontecer — no **período** tocado no gráfico, e as ações sobre ele.
  *
  * v1.0 — 2026-09-27.
+ *
+ * v1.1 — 2026-09-27: alterar e lançar recebem `creditAccounts` — o "Pago com" cartão/empréstimo
+ * que o [+] e o Histórico já tinham.
  *
  * Período, e não dia: o painel recebe um `BucketPoint`, então na escala semanal ele lista os
  * lançamentos da semana inteira — com a data em cada linha, que numa lista de um dia só seria
@@ -41,6 +45,7 @@ export function PeriodPanel({
   entriesById,
   expenseCategories,
   incomeCategories,
+  creditAccounts,
   onClose,
   onFormOpenChange,
   renderActions,
@@ -51,6 +56,8 @@ export function PeriodPanel({
   entriesById: Record<string, EntryWithCategory>
   expenseCategories: Category[]
   incomeCategories: Category[]
+  /** v1.1 — 2026-09-27: cartões e empréstimos para o "Pago com". */
+  creditAccounts: CreditOption[]
   onClose?: () => void
   /** Avisa quem está por fora que um formulário abriu — a tela cheia usa isso para desligar a
    *  rotação por CSS enquanto a pessoa digita. */
@@ -100,6 +107,7 @@ export function PeriodPanel({
           expenseCategories={expenseCategories}
           incomeCategories={incomeCategories}
           today={today}
+          creditAccounts={creditAccounts}
           onDone={(result) =>
             done(result === 'deleted' ? 'Lançamento excluído.' : 'Lançamento atualizado.')
           }
@@ -115,6 +123,7 @@ export function PeriodPanel({
           mode="create"
           expenseCategories={expenseCategories}
           incomeCategories={incomeCategories}
+          creditAccounts={creditAccounts}
           // A data já vem do período tocado, e o toque já disse qual é — digitar de novo seria
           // repetição. Num período de vários dias o palpite é **hoje**, quando hoje cai dentro
           // dele; o primeiro dia só quando não cai, porque aí não há dia "corrente" ali.

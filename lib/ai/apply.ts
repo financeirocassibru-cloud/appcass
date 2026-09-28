@@ -1,6 +1,7 @@
 import 'server-only'
 
 import { archiveCategory, createCategory, renameCategory } from '@/lib/actions/categories'
+import { payCreditBill } from '@/lib/actions/credit'
 import { createEntry, deleteEntry, toggleSettled, updateEntry } from '@/lib/actions/entries'
 import {
   archiveGoal,
@@ -29,14 +30,22 @@ import {
 } from '@/lib/actions/scenarios'
 import { listActiveCategories } from '@/lib/db/queries/categories'
 import {
+  creditProblem,
   describeOperation,
   operationToFormData,
+  withCreditDefaults,
   type LabelIndex,
   type Operation,
 } from './proposal'
 
 /**
- * Execução da proposta confirmada. v1.0 — 2026-09-26.
+ * Execução da proposta confirmada. v1.1 — 2026-09-27.
+ *
+ * v1.1 (Fase 13 no assistente): `pay_credit_bill` chama `payCreditBill`, a mesma action do
+ * botão "Pagar" da fatura; e antes de executar, o lançamento pago com cartão/empréstimo ganha
+ * o vencimento do ciclo da conta (`withCreditDefaults`) — com os rótulos relidos na
+ * confirmação, então um cartão cadastrado ou alterado depois da proposta já vale. Conta que
+ * não existe recusa a operação com uma frase (`creditProblem`), em vez de registrar no saldo.
  *
  * **Este módulo não escreve no banco.** Ele traduz cada operação em `FormData`
  * e chama a Server Action que a tela já usa. Tudo o que importa vem junto de
@@ -159,6 +168,8 @@ async function runOperation(
       return await createInstallmentPlan(INITIAL, fd)
     case 'delete_installment_plan':
       return await deleteInstallmentPlan(INITIAL, fd)
+    case 'pay_credit_bill':
+      return await payCreditBill(INITIAL, fd)
 
     case 'create_goal':
       return await createGoal(INITIAL, fd)
@@ -217,8 +228,16 @@ export async function applyProposal(
   const resolver = new CategoryResolver()
   const applied: AppliedOperation[] = []
 
-  for (const op of operations) {
+  for (const original of operations) {
+    // v1.1 — 2026-09-27: "será pago em" vazio vira o vencimento do ciclo da conta.
+    const op = withCreditDefaults(original, labels)
     const description = describeOperation(op, labels)
+
+    const problem = creditProblem(op, labels)
+    if (problem) {
+      applied.push({ description, ok: false, error: problem })
+      continue
+    }
 
     try {
       const categoryId = await resolveCategory(op, resolver, validCategoryIds)

@@ -13,6 +13,8 @@ import { advanceJob, enqueueJob, getJob, getJobRow, trackJob, type JobView } fro
 import { operationSchema } from '@/lib/ai/proposal'
 import { draftSummary, type DraftItem, type Triage } from '@/lib/ai/triage'
 import { listActiveCategories, type Category } from '@/lib/db/queries/categories'
+import { listCreditAccounts } from '@/lib/db/queries/credit'
+import type { CreditAccountKind } from '@/lib/finance/credit'
 import { createClient } from '@/lib/supabase/server'
 import {
   approveBriefingSchema,
@@ -22,7 +24,12 @@ import {
 } from '@/lib/validation/assistant'
 
 /**
- * O assistente, do lado do servidor. v1.4 — 2026-09-27 (antes v1.3 — 2026-09-27).
+ * O assistente, do lado do servidor. v1.5 — 2026-09-27 (antes v1.4 — 2026-09-27).
+ *
+ * v1.5 (Fase 13 no assistente): a confirmação aceita trocar o "Pago com" — só por um cartão ou
+ * empréstimo da pessoa (`validCreditAccountIds`) —, `getAssistantSetup` devolve as contas para
+ * o seletor, e confirmar revalida `/cartoes`, porque a IA passou a lançar no cartão e a pagar
+ * fatura.
  *
  * v1.2: `requestInsights` passou a levar o período do histórico que a pessoa escolhe na
  * Projeção, e `enqueueJob` recebe as opções num objeto.
@@ -102,6 +109,8 @@ function revalidateEverything(): void {
   ]) {
     revalidatePath(path)
   }
+  // v1.5 — 2026-09-27: compra no cartão e pagamento de fatura mudam as faturas e o limite.
+  revalidatePath('/cartoes', 'layout')
 }
 
 /**
@@ -166,7 +175,7 @@ function toBriefingView(triagem: Triage): BriefingView {
  * A aprovação do briefing: daqui para a frente é o caminho pesado.
  *
  * O "depois que o usuário aprovar, aí sim que começa o processo real". Só neste ponto
- * nasce a linha em `ai_jobs`, com o retrato financeiro, as 27 ferramentas e o rascunho
+ * nasce a linha em `ai_jobs`, com o retrato financeiro, as 28 ferramentas e o rascunho
  * que a pessoa já leu e disse que estava certo.
  */
 export async function approveBriefing(
@@ -376,6 +385,7 @@ export async function confirmProposal(
     payload.success ? payload.data.edits : [],
     payload.success ? payload.data.removed : [],
     context.validCategoryIds,
+    context.validCreditAccountIds,
   )
 
   if (ajustada.operations.length === 0) {
@@ -477,6 +487,8 @@ function lerJson(value: FormDataEntryValue | null): unknown {
 export interface AssistantSetup {
   /** As categorias reais, para o ajuste de categoria na confirmação. */
   categories: { id: string; name: string; kind: Category['kind'] }[]
+  /** v1.5 — 2026-09-27: cartões e empréstimos ativos, para o ajuste do "Pago com". */
+  creditAccounts: { id: string; name: string; kind: CreditAccountKind }[]
   /** A pessoa pediu para ver as etapas do processamento? */
   showReasoning: boolean
 }
@@ -494,13 +506,15 @@ export interface AssistantSetup {
 export async function getAssistantSetup(): Promise<AssistantSetup> {
   const supabase = await createClient()
 
-  const [categories, profile] = await Promise.all([
+  const [categories, profile, creditAccounts] = await Promise.all([
     listActiveCategories(),
     supabase.from('profiles').select('ai_show_reasoning').maybeSingle(),
+    listCreditAccounts(),
   ])
 
   return {
     categories: categories.map((c) => ({ id: c.id, name: c.name, kind: c.kind })),
+    creditAccounts: creditAccounts.map((a) => ({ id: a.id, name: a.name, kind: a.kind })),
     showReasoning: profile.data?.ai_show_reasoning ?? false,
   }
 }

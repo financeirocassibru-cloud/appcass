@@ -2,7 +2,13 @@ import { z } from 'zod'
 import { operationSchema, type Operation, type OperationKind } from './proposal'
 
 /**
- * Os ajustes que a pessoa faz na tela de confirmação. v1.0 — 2026-09-26.
+ * Os ajustes que a pessoa faz na tela de confirmação. v1.1 — 2026-09-27.
+ *
+ * v1.1 (Fase 13 no assistente): no lançamento, o "Pago com" (`credit_account_id`) e o "Será
+ * pago em" (`charge_first_due_on`) são ajustáveis — a IA pode ter lido "no débito" como "no
+ * cartão". No pagamento de fatura, valor e data; a fatura em si (`account_id` + `due_on`) é o
+ * ALVO e entra na lista de nunca-editáveis. Trocar a conta sem mexer no vencimento zera o
+ * vencimento, que volta a ser o do ciclo da conta nova (`withCreditDefaults`).
  *
  * Módulo **puro** (invariante 9): sem I/O, sem Supabase, sem relógio.
  *
@@ -37,8 +43,24 @@ import { operationSchema, type Operation, type OperationKind } from './proposal'
  * daqui. O que a pessoa faz com eles é **remover da proposta**.
  */
 export const EDITABLE_FIELDS: Partial<Record<OperationKind, readonly string[]>> = {
-  create_entry: ['amount_cents', 'occurred_on', 'description', 'category_id', 'is_settled'],
-  update_entry: ['amount_cents', 'occurred_on', 'description', 'category_id', 'is_settled'],
+  create_entry: [
+    'amount_cents',
+    'occurred_on',
+    'description',
+    'category_id',
+    'is_settled',
+    'credit_account_id',
+    'charge_first_due_on',
+  ],
+  update_entry: [
+    'amount_cents',
+    'occurred_on',
+    'description',
+    'category_id',
+    'is_settled',
+    'credit_account_id',
+    'charge_first_due_on',
+  ],
   create_recurring: [
     'amount_cents',
     'description',
@@ -66,6 +88,8 @@ export const EDITABLE_FIELDS: Partial<Record<OperationKind, readonly string[]>> 
   create_goal: ['name', 'target_amount_cents', 'target_date'],
   update_goal: ['name', 'target_amount_cents', 'target_date'],
   create_scenario_entry: ['amount_cents', 'description', 'occurs_on'],
+  // v1.1 — 2026-09-27: quanto e quando pagou; qual fatura, não.
+  pay_credit_bill: ['amount_cents', 'paid_on'],
 }
 
 /** Esta operação aceita ajuste, ou só pode ser removida? */
@@ -86,6 +110,9 @@ const NUNCA_EDITAVEL: ReadonlySet<string> = new Set([
   'rule_id',
   'goal_id',
   'scenario_id',
+  // v1.1 — 2026-09-27: a fatura que se paga é o alvo do pagamento.
+  'account_id',
+  'due_on',
 ])
 
 export const editSchema = z.object({
@@ -125,6 +152,8 @@ export function applyEdits(
   edits: readonly Edit[],
   removed: readonly number[],
   validCategoryIds: ReadonlySet<string>,
+  /** v1.1 — 2026-09-27: cartões e empréstimos da pessoa. Sem a lista, nenhum é aceito. */
+  validCreditAccountIds: ReadonlySet<string> = new Set(),
 ): AppliedEdits {
   const remover = new Set(removed)
   let changed = remover.size > 0
@@ -159,6 +188,27 @@ export function applyEdits(
         mesclado.category_name = null
         changed = true
         continue
+      }
+
+      // v1.1 — 2026-09-27: conta que não é da lista não entra — o ajuste é ignorado, e fica
+      // o que a proposta trazia. Virar "do saldo" em silêncio mudaria de onde saiu o dinheiro.
+      if (
+        campo === 'credit_account_id' &&
+        typeof valor === 'string' &&
+        valor !== '' &&
+        !validCreditAccountIds.has(valor)
+      ) {
+        continue
+      }
+
+      // Conta trocada sem vencimento escolhido: o vencimento antigo era do ciclo da outra
+      // conta. Zerar faz a execução calcular o da conta nova.
+      if (
+        campo === 'credit_account_id' &&
+        (mesclado[campo] ?? null) !== valor &&
+        !Object.hasOwn(ajuste, 'charge_first_due_on')
+      ) {
+        mesclado.charge_first_due_on = null
       }
 
       if (mesclado[campo] !== valor) changed = true
