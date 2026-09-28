@@ -37,6 +37,7 @@ export const dynamic = 'force-dynamic'
 
 const PAGE_SIZE = 40
 
+// v1.4 — 28/09/2026: layout de computador — a partir de `lg` (1024 px) a largura vai a `lg:max-w-4xl` (lista). No celular continua `max-w-md`.
 export default async function VerLancamentosPage({
   searchParams,
 }: {
@@ -68,7 +69,7 @@ export default async function VerLancamentosPage({
   const batches = await listImportBatches(batchIds)
 
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-5 px-6 py-8">
+    <main className="mx-auto flex max-w-md flex-col gap-5 px-6 py-8 lg:max-w-4xl lg:px-10 lg:py-10">
       <header className="flex flex-col gap-2">
         <Link href="/novo" className="text-muted-foreground flex min-h-11 items-center gap-1 text-sm">
           <ChevronLeft className="size-4" aria-hidden />

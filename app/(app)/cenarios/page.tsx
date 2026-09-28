@@ -8,12 +8,13 @@ import { ScenarioRow } from './scenario-row'
 export const metadata = { title: 'Cenários' }
 export const dynamic = 'force-dynamic'
 
+// v1.2 — 28/09/2026: layout de computador — a partir de `lg` (1024 px) a largura vai a `lg:max-w-4xl` (lista) e os cartões ficam em duas colunas. No celular continua `max-w-md`, uma coluna.
 export default async function CenariosPage() {
   const today = todayISO()
   const scenarios = await listScenarios()
 
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-6 px-6 py-8">
+    <main className="mx-auto flex max-w-md flex-col gap-6 px-6 py-8 lg:max-w-4xl lg:px-10 lg:py-10">
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-bold tracking-tight">Cenários</h1>
         <p className="text-sm text-[var(--foreground-muted)]">
@@ -24,7 +25,7 @@ export default async function CenariosPage() {
       </div>
 
       {scenarios.length > 0 ? (
-        <ul className="flex flex-col gap-3">
+        <ul className="flex flex-col gap-3 lg:grid lg:grid-cols-2 lg:gap-4">
           {scenarios.map((scenario) => (
             <ScenarioRow key={scenario.id} scenario={scenario} />
           ))}

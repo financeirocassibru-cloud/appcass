@@ -6,6 +6,7 @@ import { listRecurringRules } from '@/lib/db/queries/recurring'
 import { todayISO } from '@/lib/finance/date'
 import { RuleCard } from './rule-card'
 
+// v1.1 — 28/09/2026: layout de computador — a partir de `lg` (1024 px) a largura vai a `lg:max-w-4xl` (lista) e os cartões ficam em duas colunas. No celular continua `max-w-md`, uma coluna.
 /**
  * A lista de regras de um tipo: contas fixas (`expense`) ou renda fixa (`income`).
  *
@@ -40,7 +41,7 @@ export async function RuleList({ kind }: { kind: EntryKind }) {
         }
 
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-6 px-6 py-8">
+    <main className="mx-auto flex max-w-md flex-col gap-6 px-6 py-8 lg:max-w-4xl lg:px-10 lg:py-10">
       <div className="flex items-baseline justify-between gap-3">
         <h1 className="text-2xl font-bold tracking-tight">{copy.title}</h1>
         <Link href={copy.newHref} className="text-sm font-medium text-[var(--brand)]">
@@ -62,7 +63,7 @@ export async function RuleList({ kind }: { kind: EntryKind }) {
       ) : (
         <div className="flex flex-col gap-6">
           {active.length > 0 ? (
-            <ul className="flex flex-col gap-3">
+            <ul className="flex flex-col gap-3 lg:grid lg:grid-cols-2 lg:gap-4">
               {active.map((rule) => (
                 <RuleCard key={rule.id} rule={rule} today={today} />
               ))}
@@ -76,7 +77,7 @@ export async function RuleList({ kind }: { kind: EntryKind }) {
           {inactive.length > 0 ? (
             <section className="flex flex-col gap-3">
               <h2 className="text-sm font-semibold text-[var(--foreground-muted)]">Desativadas</h2>
-              <ul className="flex flex-col gap-3">
+              <ul className="flex flex-col gap-3 lg:grid lg:grid-cols-2 lg:gap-4">
                 {inactive.map((rule) => (
                   <RuleCard key={rule.id} rule={rule} today={today} />
                 ))}

@@ -10,12 +10,13 @@ import { todayISO } from '@/lib/finance/date'
 export const metadata = { title: 'Metas' }
 export const dynamic = 'force-dynamic'
 
+// v1.2 — 28/09/2026: layout de computador — a partir de `lg` (1024 px) a largura vai a `lg:max-w-4xl` (lista) e os cartões ficam em duas colunas. No celular continua `max-w-md`, uma coluna.
 export default async function MetasPage() {
   const today = todayISO()
   const goals = await listGoals()
 
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-6 px-6 py-8">
+    <main className="mx-auto flex max-w-md flex-col gap-6 px-6 py-8 lg:max-w-4xl lg:px-10 lg:py-10">
       <div className="flex items-baseline justify-between gap-3">
         <h1 className="text-2xl font-bold tracking-tight">Metas</h1>
         <Link href="/novo?modo=meta" className="text-sm font-medium text-[var(--brand)]">
@@ -38,7 +39,7 @@ export default async function MetasPage() {
           </Link>
         </div>
       ) : (
-        <ul className="flex flex-col gap-3">
+        <ul className="flex flex-col gap-3 lg:grid lg:grid-cols-2 lg:gap-4">
           {goals.map((goal) => {
             const done = goal.remainingCents === 0
             const monthly = monthlyContributionCents(goal, today)
@@ -47,7 +48,7 @@ export default async function MetasPage() {
               <li key={goal.id}>
                 <Link
                   href={{ pathname: '/metas/[id]', query: { id: goal.id } }}
-                  className="flex flex-col gap-2 rounded-xl bg-[var(--surface)] p-4"
+                  className="flex flex-col gap-2 rounded-xl bg-[var(--surface)] p-4 lg:h-full lg:transition-colors lg:hover:bg-[color-mix(in_srgb,var(--brand)_6%,var(--surface))]"
                 >
                   <div className="flex items-center gap-3">
                     <div className="min-w-0 flex-1">

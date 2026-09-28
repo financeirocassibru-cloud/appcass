@@ -9,6 +9,7 @@ import { countMaterialized, getRecurringRule } from '@/lib/db/queries/recurring'
 import { RecurringForm } from './form'
 import { RuleActions } from './[id]/actions'
 
+// v1.3 — 28/09/2026: layout de computador — a partir de `lg` (1024 px) a largura vai a `lg:max-w-3xl` (detalhe). No celular continua `max-w-md`.
 /**
  * Edição de uma regra, para `/compromissos/[id]` e `/rendas/[id]`.
  *
@@ -39,7 +40,7 @@ export async function RuleDetail({ id, kind }: { id: string; kind: EntryKind }) 
   const isIncome = rule.kind === 'income'
 
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-6 px-6 py-8">
+    <main className="mx-auto flex max-w-md flex-col gap-6 px-6 py-8 lg:max-w-3xl lg:px-10 lg:py-10">
       <div className="flex flex-col gap-2">
         <Link
           href={isIncome ? '/rendas' : '/compromissos'}

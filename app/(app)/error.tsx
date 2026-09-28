@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
+// v1.1 — 28/09/2026: layout de computador — a partir de `lg` (1024 px) a largura vai a `lg:max-w-2xl` (formulário). No celular continua `max-w-md`.
 /**
  * Error boundary das telas do app.
  *
@@ -32,7 +33,7 @@ export default function Error({
   }, [error])
 
   return (
-    <main className="mx-auto flex min-h-[70dvh] max-w-md flex-col items-center justify-center gap-4 px-6 py-8 text-center">
+    <main className="mx-auto flex min-h-[70dvh] max-w-md flex-col items-center justify-center gap-4 px-6 py-8 text-center lg:max-w-2xl lg:px-10 lg:py-10">
       <TriangleAlert className="size-9 text-[var(--expense)]" aria-hidden />
       <h1 className="text-xl font-bold tracking-tight">Algo deu errado aqui</h1>
       <p className="text-sm text-[var(--foreground-muted)]">

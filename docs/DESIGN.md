@@ -28,6 +28,25 @@ A agenda de "próximos eventos" sai da aba Planejamento e vira um bloco fixo na 
 calculado sempre — não pode depender da existência de um cenário ativo (bug do app antigo:
 `getUpcomingEvents()` retornava lista vazia sem cenário ativo).
 
+### Computador (v2.3 — 28/09/2026)
+
+O celular continua sendo o alvo principal, e o layout dele não muda. A partir de **1024 px**
+(o `lg:` do Tailwind) o app ganha um layout próprio de computador:
+
+- **Regra:** toda diferença de computador entra com prefixo `lg:` (ou num componente que só
+  existe `hidden lg:flex`). Classe base de celular não é editada para acomodar o computador; se
+  precisar de um invólucro, ele é `contents` abaixo de `lg`, para sumir do layout do celular.
+- **Barra lateral** (`components/app/side-nav.tsx`) no lugar da barra inferior: "Novo lançamento"
+  no topo, o convite do assistente logo abaixo, e os destinos de "Mais" e do rodapé do [+] como
+  itens diretos. A barra inferior e a caixa flutuante do assistente são `lg:hidden`.
+- **Largura por tipo de tela:** painel (`lg:max-w-6xl` — Início, Análise), lista
+  (`lg:max-w-4xl`), detalhe (`lg:max-w-3xl`) e formulário (`lg:max-w-2xl`). Início em duas
+  colunas; na Análise o gráfico ocupa a largura toda e os carrosséis de "Como foi" ficam lado a
+  lado; listas de cartões em duas colunas.
+- **Folhas de baixo viram modal centralizado** (`components/ui/sheet.tsx`).
+- **Gráfico ampliado:** no computador não gira (a rotação por CSS é só para retrato) e usa a
+  altura da tela.
+
 ## Telas
 
 - **Início:** herói de saldo no topo — número grande, cor semântica (verde se positivo,

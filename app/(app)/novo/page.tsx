@@ -35,6 +35,7 @@ const MODES: Record<string, LaunchMode> = {
   meta: 'goal',
 }
 
+// v1.4 — 28/09/2026: layout de computador — a partir de `lg` (1024 px) a largura vai a `lg:max-w-2xl` (formulário). No celular continua `max-w-md`.
 export default async function NovoPage({
   searchParams,
 }: {
@@ -64,7 +65,7 @@ export default async function NovoPage({
   }
 
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-6 px-6 py-8">
+    <main className="mx-auto flex max-w-md flex-col gap-6 px-6 py-8 lg:max-w-2xl lg:px-10 lg:py-10">
       <LaunchScreen
         expenseCategories={expense}
         incomeCategories={income}

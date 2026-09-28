@@ -57,6 +57,13 @@ function SheetOverlay({
   )
 }
 
+/**
+ * v1.2 — 28/09/2026: no computador (≥ 1024 px, `lg:`) a folha de baixo vira um modal centralizado,
+ * com largura de leitura e cantos arredondados. De borda a borda num monitor ela ficava com cara de
+ * celular esticado. Só classes `lg:` foram acrescentadas: abaixo disso ela é a mesma folha.
+ * A posição usa a propriedade `translate` do Tailwind 4 e a animação do `tw-animate-css` usa
+ * `transform`; as duas se somam, então a folha ainda sobe ao abrir.
+ */
 function SheetContent({
   className,
   children,
@@ -81,7 +88,7 @@ function SheetContent({
           side === "top" &&
             "inset-x-0 top-0 h-auto border-b data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top",
           side === "bottom" &&
-            "inset-x-0 bottom-0 h-auto border-t data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom",
+            "inset-x-0 bottom-0 h-auto border-t data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom lg:inset-x-auto lg:bottom-auto lg:top-1/2 lg:left-1/2 lg:w-full lg:max-w-xl lg:-translate-x-1/2 lg:-translate-y-1/2 lg:rounded-2xl lg:border",
           className
         )}
         {...props}

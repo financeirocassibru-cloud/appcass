@@ -31,6 +31,7 @@ import { cn } from '@/lib/utils'
 export const metadata = { title: 'Parcelamento' }
 export const dynamic = 'force-dynamic'
 
+// v1.4 — 28/09/2026: layout de computador — a partir de `lg` (1024 px) a largura vai a `lg:max-w-3xl` (detalhe). No celular continua `max-w-md`.
 export default async function ParcelamentoPage({
   params,
 }: {
@@ -54,7 +55,7 @@ export default async function ParcelamentoPage({
   const card = accounts.find((a) => a.id === plan.creditAccountId) ?? null
 
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-6 px-6 py-8">
+    <main className="mx-auto flex max-w-md flex-col gap-6 px-6 py-8 lg:max-w-3xl lg:px-10 lg:py-10">
       <div className="flex flex-col gap-2">
         <Link
           href="/parcelas"

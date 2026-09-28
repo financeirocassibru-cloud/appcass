@@ -32,6 +32,7 @@ export const dynamic = 'force-dynamic'
 
 const RESOLVED_SHOWN = 6
 
+// v1.1 — 28/09/2026: layout de computador — a partir de `lg` (1024 px) a largura vai a `lg:max-w-3xl` (detalhe). No celular continua `max-w-md`.
 export default async function CartaoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const today = todayISO()
@@ -45,7 +46,7 @@ export default async function CartaoPage({ params }: { params: Promise<{ id: str
   const isCard = account.kind === 'card'
 
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-6 px-6 py-8">
+    <main className="mx-auto flex max-w-md flex-col gap-6 px-6 py-8 lg:max-w-3xl lg:px-10 lg:py-10">
       <div className="flex flex-col gap-2">
         <Link href="/cartoes" className="text-muted-foreground flex min-h-11 items-center gap-1 text-sm">
           <ChevronLeft className="size-4" aria-hidden />

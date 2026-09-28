@@ -5,11 +5,22 @@ import { flushSync } from 'react-dom'
 import { Maximize2, Minimize2 } from 'lucide-react'
 import { PortalContainerProvider } from '@/components/ui/portal-container'
 import { Button } from '@/components/ui/button'
+import {
+  DESKTOP_MEDIA_QUERY,
+  expandedChartHeight,
+  needsCssRotation,
+} from './expand-geometry'
 
 /**
  * Amplia um gráfico para a tela cheia, em paisagem, e devolve o retrato ao fechar.
  *
  * v1.0 — 2026-09-27.
+ *
+ * v1.1 — 28/09/2026: no computador, ampliar girava o gráfico 90°. `orientation.lock` existe no
+ * Chrome/Edge/Firefox de computador e **rejeita** — e a rejeição caía no fallback de rotação por
+ * CSS, que é para o iPhone em retrato. Agora a rotação só entra com a tela em retrato
+ * (`needsCssRotation`). E, só no computador, o gráfico ampliado ganha a altura da tela: `chart`
+ * pode ser uma função que recebe a altura. No celular nada mudou.
  *
  * O que dá e o que não dá, dito de frente, porque o desenho todo depende disso:
  *
@@ -49,6 +60,23 @@ function orientationApi(): LockableOrientation | undefined {
   return typeof screen === 'undefined' ? undefined : (screen.orientation as LockableOrientation)
 }
 
+/** v1.1 — 28/09/2026: a tela está em retrato agora? */
+function isPortrait(): boolean {
+  return typeof matchMedia === 'function' && matchMedia('(orientation: portrait)').matches
+}
+
+/** v1.1 — 28/09/2026: altura do gráfico ampliado; `undefined` fora do computador. */
+function measureExpandedHeight(): number | undefined {
+  return expandedChartHeight(window.innerHeight, matchMedia(DESKTOP_MEDIA_QUERY).matches)
+}
+
+/** v1.1 — 28/09/2026: o que o gráfico recebe quando `chart` é uma função. */
+export interface ChartRenderContext {
+  expanded: boolean
+  /** Altura do gráfico ampliado no computador; `undefined` mantém a altura padrão. */
+  height?: number
+}
+
 const DOUBLE_TAP_MS = 300
 const DOUBLE_TAP_PX = 24
 const DRAG_PX = 10
@@ -61,7 +89,7 @@ export function ChartExpander({
 }: {
   /** O gráfico. É só neste contêiner que o duplo toque amplia — num botão, dois toques
    *  seguidos são dois cliques, não um pedido de tela cheia. */
-  chart: React.ReactNode
+  chart: React.ReactNode | ((context: ChartRenderContext) => React.ReactNode)
   /** O detalhamento do período. Em paisagem vai para a coluna da direita. */
   panel?: React.ReactNode
   /** `true` enquanto um formulário está aberto: a rotação por CSS sai de cena. */
@@ -70,6 +98,8 @@ export function ChartExpander({
 }) {
   const [expanded, setExpanded] = useState(false)
   const [cssRotate, setCssRotate] = useState(false)
+  // v1.1 — 28/09/2026: altura do gráfico ampliado; só é definida no computador.
+  const [expandedHeight, setExpandedHeight] = useState<number | undefined>(undefined)
   const overlay = useRef<HTMLDivElement | null>(null)
   // Estado, e não o ref, porque o container do portal é lido durante a renderização.
   const [overlayEl, setOverlayEl] = useState<HTMLDivElement | null>(null)
@@ -102,7 +132,10 @@ export function ChartExpander({
     // null nesta linha — a camada só existiria no próximo commit — e o `requestFullscreen`
     // nunca seria chamado. Um `await` para esperar a montagem também não serve: gastaria a
     // ativação do usuário, e aí o navegador recusa.
-    flushSync(() => setExpanded(true))
+    flushSync(() => {
+      setExpanded(true)
+      setExpandedHeight(measureExpandedHeight())
+    })
 
     // O botão voltar do Android tem de fechar a tela cheia. Sem este estado ele sai de
     // `/analise` inteira e a pessoa perde o lugar no período.
@@ -111,7 +144,8 @@ export function ChartExpander({
 
     const element = overlay.current
     if (!element?.requestFullscreen) {
-      setCssRotate(true)
+      // v1.1 — 28/09/2026: girar só faz sentido em retrato.
+      if (needsCssRotation(isPortrait())) setCssRotate(true)
       return
     }
 
@@ -120,7 +154,11 @@ export function ChartExpander({
     element
       .requestFullscreen()
       .then(() => orientationApi()?.lock?.('landscape'))
-      .catch(() => setCssRotate(true))
+      // v1.1 — 28/09/2026: no computador `lock` rejeita sempre, e a tela já está em paisagem —
+      // girar ali era o bug. A rotação por CSS fica só para quem está em retrato.
+      .catch(() => {
+        if (needsCssRotation(isPortrait())) setCssRotate(true)
+      })
   }, [])
 
   useEffect(() => {
@@ -150,6 +188,21 @@ export function ChartExpander({
       document.documentElement.style.overflow = previousOverflow
     }
   }, [expanded, collapse])
+
+  // v1.1 — 28/09/2026: no computador o gráfico ampliado acompanha a altura da janela — que muda
+  // ao entrar no fullscreen, daí o `resize`. No celular `expandedChartHeight` devolve `undefined`.
+  // A primeira medida é tirada em `expand()`, junto com a montagem; aqui só se acompanha.
+  useEffect(() => {
+    if (!expanded) return
+    function onResize() {
+      setExpandedHeight(measureExpandedHeight())
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [expanded])
+
+  const renderChart = (context: ChartRenderContext) =>
+    typeof chart === 'function' ? chart(context) : chart
 
   const gestureProps = {
     onPointerDown: (event: React.PointerEvent) => {
@@ -190,7 +243,7 @@ export function ChartExpander({
   if (!expanded) {
     return (
       <div className="flex flex-col gap-2">
-        <div {...gestureProps}>{chart}</div>
+        <div {...gestureProps}>{renderChart({ expanded: false })}</div>
         {/* O botão é a via primária: duplo toque é indescobrível e inalcançável por teclado. */}
         <Button
           type="button"
@@ -269,14 +322,14 @@ export function ChartExpander({
               }
             >
               <div {...gestureProps} className="min-w-0 flex-1">
-                {chart}
+                {renderChart({ expanded: true, height: expandedHeight })}
               </div>
               {panel ? (
                 <div
                   className={
                     rotate
                       ? 'w-full max-w-xs shrink-0 overflow-y-auto'
-                      : 'w-full shrink-0 overflow-y-auto landscape:max-w-xs'
+                      : 'w-full shrink-0 overflow-y-auto landscape:max-w-xs lg:max-w-sm'
                   }
                 >
                   {panel}

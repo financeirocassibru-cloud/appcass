@@ -1,6 +1,7 @@
 import { AssistantBar } from '@/components/ai/assistant-bar'
 import { BottomNav } from '@/components/app/bottom-nav'
 import { LaunchSplash } from '@/components/app/launch-splash'
+import { SideNav } from '@/components/app/side-nav'
 import { Toaster } from '@/components/ui/sonner'
 
 /**
@@ -12,6 +13,12 @@ import { Toaster } from '@/components/ui/sonner'
  * um bom motivo: foi a barra com scroll horizontal que escondia opções no app
  * antigo. A caixa também dispensa ícone, que é o que o pedido desta fase queria:
  * o convite é o texto dentro dela, não uma figura que precisa ser decifrada.
+ *
+ * v1.3 — 28/09/2026: layout de computador. A partir de `lg` (1024 px) entra a barra lateral
+ * (`SideNav`), e a barra inferior e a caixa flutuante do assistente saem. O conteúdo desloca
+ * `lg:pl-64` para o lado da barra, e o `pb-36` — que só existe para não esconder o fim da página
+ * atrás das barras do celular — vira `lg:pb-12`. Tudo com `lg:`: abaixo de 1024 px o shell é o
+ * mesmo de antes, classe por classe.
  */
 /**
  * Teto de duração das funções deste segmento.
@@ -35,9 +42,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       {/* v1.2 — 27/09/2026: abertura do PWA. Fica antes de `children` para chegar no primeiro
           pedaço do HTML, junto com o esqueleto, e não só quando o Início termina de carregar. */}
       <LaunchSplash />
-      <div className="min-h-dvh pb-36">{children}</div>
+      <div className="min-h-dvh pb-36 lg:pb-12 lg:pl-64">{children}</div>
       <AssistantBar />
       <BottomNav />
+      {/* v1.3 — 28/09/2026: depois de `children`, como a barra inferior — o logo de destino da
+          abertura é procurado na ordem do documento, e no celular o do Início vem primeiro. */}
+      <SideNav />
       <Toaster position="top-center" />
     </>
   )

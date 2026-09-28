@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { House, Plus, ReceiptText, TrendingUp, Ellipsis } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { isActive } from './nav-items'
 
 /**
  * Barra de navegação inferior, conforme `docs/DESIGN.md`.
@@ -12,6 +13,9 @@ import { cn } from '@/lib/utils'
  * Cinco destinos, com o `[+]` central elevado. Substitui o scroll horizontal de
  * abas do app antigo (`nav-tabs` com `overflow-x: auto`), que em tela pequena
  * escondia opções sem nenhuma indicação de que havia mais.
+ *
+ * v1.1 — 28/09/2026: `lg:hidden` — no computador (≥ 1024 px) quem navega é a barra lateral
+ * (`side-nav.tsx`). Abaixo disso, nada mudou. `isActive` foi para `nav-items.ts`, sem alteração.
  */
 
 const TABS = [
@@ -20,12 +24,6 @@ const TABS = [
   { href: '/analise', label: 'Análise', Icon: TrendingUp },
   { href: '/mais', label: 'Mais', Icon: Ellipsis },
 ] as const
-
-/** `true` se a rota atual pertence a esta aba. */
-function isActive(pathname: string, href: string): boolean {
-  if (href === '/') return pathname === '/'
-  return pathname === href || pathname.startsWith(`${href}/`)
-}
 
 export function BottomNav() {
   const pathname = usePathname()
@@ -39,7 +37,7 @@ export function BottomNav() {
       aria-label="Navegação principal"
       // `pb-[env(safe-area-inset-bottom)]`: sem isso a barra fica sob o
       // indicador de gestos no iPhone.
-      className="bg-card fixed inset-x-0 bottom-0 z-50 border-t pb-[env(safe-area-inset-bottom)]"
+      className="bg-card fixed inset-x-0 bottom-0 z-50 border-t pb-[env(safe-area-inset-bottom)] lg:hidden"
     >
       <ul className="mx-auto flex max-w-md items-end justify-around px-2">
         {left.map((tab) => (

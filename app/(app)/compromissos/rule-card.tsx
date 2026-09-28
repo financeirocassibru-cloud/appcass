@@ -45,7 +45,9 @@ export function RuleCard({
             : { pathname: '/compromissos/[id]', query: { id: rule.id } }
         }
         className={cn(
-          'flex items-center gap-3 rounded-xl bg-[var(--surface)] p-4',
+          // v1.2 — 28/09/2026: `lg:` — no computador a lista tem duas colunas; o cartão ocupa a
+          // altura da linha e responde ao mouse. No celular, igual.
+          'flex items-center gap-3 rounded-xl bg-[var(--surface)] p-4 lg:h-full lg:transition-colors lg:hover:bg-[color-mix(in_srgb,var(--brand)_6%,var(--surface))]',
           !rule.isActive && 'opacity-60',
         )}
       >
