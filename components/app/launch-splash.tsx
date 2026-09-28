@@ -1,7 +1,11 @@
 import Image from 'next/image'
 
 /**
- * Abertura do PWA — v1.1 — 27/09/2026.
+ * Abertura do PWA — v1.2 — 28/09/2026.
+ *
+ * v1.2 (28/09/2026): o destino do voo é o primeiro logo `[data-cass-logo-target]` VISÍVEL. No
+ * computador o logo do Início fica oculto e o destino é o da barra lateral; no celular a barra
+ * lateral é que está oculta, então o destino continua sendo o do Início, como antes.
  *
  * v1.0 (27/09/2026): ao abrir o app instalado pelo ícone, o logo começa no centro da tela, sobre
  * o mesmo lilás da tela de abertura do sistema (`background_color` do manifest), e voa até o
@@ -101,9 +105,13 @@ const SCRIPT = `(function () {
 
   // O destino só serve quando já está no lugar: durante o streaming, o React o monta primeiro
   // num contêiner escondido, onde a largura medida é zero.
+  // v1.2 (28/09/2026): o primeiro destino visível — um oculto também mede largura zero.
   function ready() {
-    var t = document.querySelector('${TARGET}');
-    return t && t.getBoundingClientRect().width > 0 ? t : null;
+    var all = document.querySelectorAll('${TARGET}');
+    for (var i = 0; i < all.length; i++) {
+      if (all[i].getBoundingClientRect().width > 0) return all[i];
+    }
+    return null;
   }
 
   function start(target) {

@@ -24,6 +24,9 @@ import { ScaleTabs } from './scale-tabs'
 import { ScenarioBar } from './scenario-bar'
 import { ScenarioEntries } from './scenario-entries'
 
+// v2.5 — 28/09/2026: layout de computador (só `lg:`, ≥ 1024 px): a tela vai a `lg:max-w-6xl`,
+// título e cenário dividem a linha, período e escala ficam lado a lado, e o gráfico usa a
+// largura toda — mais dias de uma vez. No celular, nada mudou.
 // v2.4 — 27/09/2026: a edição e o "novo lançamento" da janela recebem os cartões e empréstimos.
 // v2.3 — 27/09/2026: só o nome da tela; o "· Cass" vem do `template` do layout raiz.
 export const metadata = { title: 'Análise' }
@@ -134,10 +137,10 @@ export default async function AnalisePage({
   const params: RawAnalysisParams = { ...raw, escala: SCALE_PARAM[granularity] }
 
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-10 px-6 py-8">
+    <main className="mx-auto flex max-w-md flex-col gap-10 px-6 py-8 lg:max-w-6xl lg:px-10 lg:py-10">
       {/* v2.2 — 2026-09-27: o título e, logo abaixo, o cenário — é ele que muda o que TODO o
           resto da tela significa, então vem antes de qualquer recorte. */}
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[auto_minmax(0,28rem)] lg:items-start lg:justify-between lg:gap-8">
         <h1 className="text-2xl font-bold tracking-tight">Análise</h1>
         <ScenarioBar
           scenarios={scenarios}
@@ -152,7 +155,7 @@ export default async function AnalisePage({
 
       {/* O período e a escala ficam colados ao gráfico que eles recortam. */}
       <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 lg:grid lg:grid-cols-2 lg:items-end lg:gap-4">
           <PeriodPicker
             params={params}
             today={today}

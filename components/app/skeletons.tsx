@@ -56,14 +56,32 @@ export function GraficoSkeleton({ altura = 'h-[220px]' }: { altura?: string }) {
   )
 }
 
+/**
+ * v1.1 — 28/09/2026: largura no computador (`lg:`, ≥ 1024 px), acompanhando a da tela que vai
+ * chegar, para o esqueleto não pular de largura quando o conteúdo entra. No celular continua
+ * `max-w-md` em todas.
+ */
+const LARGURA_LG = {
+  painel: 'lg:max-w-6xl',
+  lista: 'lg:max-w-4xl',
+  formulario: 'lg:max-w-2xl',
+} as const
+
 /** Envelope que anuncia o carregamento uma vez só. */
-export function CarregandoTela({ children }: { children: React.ReactNode }) {
+export function CarregandoTela({
+  children,
+  largura = 'lista',
+}: {
+  children: React.ReactNode
+  /** v1.1 — 28/09/2026: largura no computador. */
+  largura?: keyof typeof LARGURA_LG
+}) {
   return (
     <main
       role="status"
       aria-live="polite"
       aria-label="Carregando"
-      className="mx-auto flex max-w-md flex-col gap-6 px-6 py-8"
+      className={`mx-auto flex max-w-md flex-col gap-6 px-6 py-8 lg:px-10 lg:py-10 ${LARGURA_LG[largura]}`}
     >
       {children}
     </main>

@@ -23,13 +23,14 @@ export const dynamic = 'force-dynamic'
  */
 export const maxDuration = 60
 
+// v1.3 — 28/09/2026: layout de computador — a partir de `lg` (1024 px) a largura vai a `lg:max-w-2xl` (formulário). No celular continua `max-w-md`.
 export default async function AssistentePage() {
   // v1.1 — 2026-09-26: a leitura de `ai_insights_enabled` saiu daqui junto com o resumo,
   // que mudou para a Projeção.
   const jobs = await listRecentJobs()
 
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-6 px-6 py-8">
+    <main className="mx-auto flex max-w-md flex-col gap-6 px-6 py-8 lg:max-w-2xl lg:px-10 lg:py-10">
       <header className="flex flex-col gap-1">
         <h1 className="text-2xl font-bold tracking-tight">Assistente</h1>
         <p className="text-muted-foreground text-sm">

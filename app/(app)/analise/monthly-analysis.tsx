@@ -36,6 +36,9 @@ import { cn } from '@/lib/utils'
  * (`PanelCarousel`), trocados pelas setas: **Comprometimento da renda ⇄ Mês a mês** (que veio
  * do Início e agora segue o seletor 3/6/12) e **Saídas por categoria ⇄ Variação** (o antigo
  * "Fora da curva"). Saídas por categoria abre em pizza, com as barras a um toque.
+ *
+ * v1.2 — 28/09/2026: no computador (`lg:`) os dois carrosséis ficam lado a lado. O `div` que os
+ * junta é `contents` abaixo de `lg`, então no celular eles continuam empilhados como antes.
  */
 export async function MonthlyAnalysis({
   months,
@@ -93,61 +96,63 @@ export async function MonthlyAnalysis({
         </nav>
       </div>
 
-      <PanelCarousel
-        label="Renda e mês a mês"
-        panels={[
-          {
-            key: 'comprometimento',
-            title: 'Comprometimento da renda',
-            caption,
-            content: <CommitmentBars months={commitment} caption={caption} embedded />,
-          },
-          {
-            key: 'mes-a-mes',
-            title: 'Mês a mês',
-            caption: `Entradas e saídas, ${caption}`,
-            content: <MonthlyBars data={monthly} today={today} embedded />,
-          },
-        ]}
-      />
+      <div className="contents lg:grid lg:grid-cols-2 lg:items-start lg:gap-8">
+        <PanelCarousel
+          label="Renda e mês a mês"
+          panels={[
+            {
+              key: 'comprometimento',
+              title: 'Comprometimento da renda',
+              caption,
+              content: <CommitmentBars months={commitment} caption={caption} embedded />,
+            },
+            {
+              key: 'mes-a-mes',
+              title: 'Mês a mês',
+              caption: `Entradas e saídas, ${caption}`,
+              content: <MonthlyBars data={monthly} today={today} embedded />,
+            },
+          ]}
+        />
 
-      <PanelCarousel
-        label="Saídas por categoria e variação"
-        panels={[
-          {
-            key: 'categorias',
-            title: 'Saídas por categoria',
-            caption,
-            content: (
-              <CategorySpending
-                slices={categories.slices}
-                totalCents={categories.totalCents}
-                bars={
-                  <CategoryRanking
-                    slices={categories.slices}
-                    totalCents={categories.totalCents}
-                    caption={caption}
-                    embedded
-                  />
-                }
-              />
-            ),
-          },
-          {
-            key: 'variacao',
-            title: 'Variação',
-            caption,
-            content: (
-              <CategoryDeviationChart
-                rows={deviation}
-                caption={caption}
-                baselineCaption={baselineCaption}
-                embedded
-              />
-            ),
-          },
-        ]}
-      />
+        <PanelCarousel
+          label="Saídas por categoria e variação"
+          panels={[
+            {
+              key: 'categorias',
+              title: 'Saídas por categoria',
+              caption,
+              content: (
+                <CategorySpending
+                  slices={categories.slices}
+                  totalCents={categories.totalCents}
+                  bars={
+                    <CategoryRanking
+                      slices={categories.slices}
+                      totalCents={categories.totalCents}
+                      caption={caption}
+                      embedded
+                    />
+                  }
+                />
+              ),
+            },
+            {
+              key: 'variacao',
+              title: 'Variação',
+              caption,
+              content: (
+                <CategoryDeviationChart
+                  rows={deviation}
+                  caption={caption}
+                  baselineCaption={baselineCaption}
+                  embedded
+                />
+              ),
+            },
+          ]}
+        />
+      </div>
     </div>
   )
 }

@@ -17,9 +17,10 @@ const ITENS = [
   { href: '/cenarios', label: 'Cenários', nota: null },
 ] as const
 
+// v1.5 — 28/09/2026: layout de computador — a partir de `lg` (1024 px) a largura vai a `lg:max-w-2xl` (formulário). No celular continua `max-w-md`.
 export default function MaisPage() {
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-6 px-6 py-8">
+    <main className="mx-auto flex max-w-md flex-col gap-6 px-6 py-8 lg:max-w-2xl lg:px-10 lg:py-10">
       <h1 className="text-2xl font-bold tracking-tight">Mais</h1>
       <ul className="divide-border flex flex-col divide-y">
         {ITENS.map((item) => (

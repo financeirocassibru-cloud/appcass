@@ -53,6 +53,7 @@ function shiftMonth(month: string, delta: number): string {
 
 const VALID_MONTH = /^\d{4}-(0[1-9]|1[0-2])$/
 
+// v1.4 — 28/09/2026: layout de computador — a partir de `lg` (1024 px) a largura vai a `lg:max-w-4xl` (lista). No celular continua `max-w-md`.
 export default async function LancamentosPage({
   searchParams,
 }: {
@@ -111,8 +112,10 @@ export default async function LancamentosPage({
   }
 
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-5 px-6 py-8">
-      <header className="flex flex-col gap-4">
+    <main className="mx-auto flex max-w-md flex-col gap-5 px-6 py-8 lg:max-w-4xl lg:px-10 lg:py-10">
+      {/* v1.4 — 28/09/2026: no computador o cabeçalho vira duas colunas — título e mês em cima,
+          totais e filtros embaixo. A lista continua uma coluna: extrato se lê de cima para baixo. */}
+      <header className="flex flex-col gap-4 lg:grid lg:grid-cols-2 lg:items-center lg:gap-x-8">
         <h1 className="text-2xl font-bold tracking-tight">Histórico</h1>
 
         <nav className="flex items-center justify-between gap-2" aria-label="Mês">

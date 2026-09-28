@@ -26,7 +26,11 @@ import { cn } from '@/lib/utils'
 import { useQuietFor } from './use-quiet-for'
 
 /**
- * A caixa que convida a pedir ajuda. v1.3 — 2026-09-27.
+ * A caixa que convida a pedir ajuda. v1.4 — 28/09/2026.
+ *
+ * v1.4 — 28/09/2026: variante `sidebar`, para a barra lateral do computador; a `bar` ganha
+ * `lg:hidden` (no computador não há barra inferior para ela se apoiar). Abaixo de 1024 px nada
+ * mudou.
  *
  * v1.3 (Fase 13 no assistente): o ajuste da proposta ganhou "Pago com" (saldo, cartão ou
  * empréstimo) e "Será pago em" — vazio é o vencimento da fatura em que a compra cai — no
@@ -41,7 +45,8 @@ import { useQuietFor } from './use-quiet-for'
  *
  *  - `hero` — grande, no Início, logo abaixo do saldo;
  *  - `bar`  — uma linha, ancorada acima da barra inferior, em qualquer tela;
- *  - `page` — grande, na tela do assistente.
+ *  - `page` — grande, na tela do assistente;
+ *  - `sidebar` — uma linha, na barra lateral do computador (v1.4 — 28/09/2026).
  *
  * ## v1.1 — virou conversa, em dois tempos
  *
@@ -93,7 +98,7 @@ const POLL_MS = 900
 /** Quanto silêncio antes de admitir que a espera é longa. */
 const QUIET_MS = 15_000
 
-type Variant = 'hero' | 'bar' | 'page'
+type Variant = 'hero' | 'bar' | 'page' | 'sidebar'
 
 interface Turn {
   role: 'user' | 'assistant'
@@ -134,7 +139,8 @@ export function AssistantComposer({ variant = 'hero' }: { variant?: Variant }) {
 function ComposerTrigger({ variant, onOpen }: { variant: Variant; onOpen: () => void }) {
   if (variant === 'bar') {
     return (
-      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 pb-[calc(env(safe-area-inset-bottom)+4.5rem)]">
+      // v1.4 — 28/09/2026: `lg:hidden` — no computador o convite mora na barra lateral.
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 pb-[calc(env(safe-area-inset-bottom)+4.5rem)] lg:hidden">
         <div className="mx-auto max-w-md px-4">
           <button
             type="button"
@@ -145,6 +151,20 @@ function ComposerTrigger({ variant, onOpen }: { variant: Variant; onOpen: () => 
           </button>
         </div>
       </div>
+    )
+  }
+
+  // v1.4 — 28/09/2026: o convite na barra lateral do computador. Mesmo texto da `bar`, com o
+  // passar do mouse que no celular não existe.
+  if (variant === 'sidebar') {
+    return (
+      <button
+        type="button"
+        onClick={onOpen}
+        className="bg-background text-muted-foreground hover:text-foreground focus-visible:ring-ring flex min-h-10 w-full items-center rounded-xl border px-3 text-left text-sm transition-colors hover:bg-[var(--surface)] focus-visible:ring-2 focus-visible:outline-none"
+      >
+        {CONVITE}
+      </button>
     )
   }
 

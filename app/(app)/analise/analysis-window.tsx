@@ -16,7 +16,10 @@ import {
 import { overrideTargetOf } from '@/lib/finance/projection'
 import type { DayProjection, Occurrence } from '@/lib/finance/types'
 import { BalanceWindow, type WindowEdge } from '@/components/finance/charts/balance-window'
-import { ChartExpander } from '@/components/finance/charts/chart-expander'
+import {
+  ChartExpander,
+  type ChartRenderContext,
+} from '@/components/finance/charts/chart-expander'
 import { PeriodPanel } from '@/components/finance/charts/period-panel'
 import { Button } from '@/components/ui/button'
 import { OccurrenceActions } from './occurrence-actions'
@@ -30,6 +33,9 @@ import { cn } from '@/lib/utils'
  *
  * v1.2 — 2026-09-27: repassa `creditAccounts` ao painel e à lista, para o formulário de
  * lançamento ter o "Pago com" também aqui.
+ *
+ * v1.3 — 28/09/2026: o gráfico vai ao `ChartExpander` como função, para receber a altura da tela
+ * quando ampliado no computador. Fechado, ou no celular, a altura é a padrão de `BalanceWindow`.
  *
  * **O período vive na URL**, e não em `useState`. É o que `horizon-tabs.tsx` já praticava, e aqui
  * é obrigatório por um motivo mais duro: o servidor é quem calcula a janela, então se a extensão
@@ -172,7 +178,8 @@ export function AnalysisWindow({
     />
   ) : undefined
 
-  const chart = (
+  // v1.3 — 28/09/2026: função, e não elemento — `height` só vem definido ampliado no computador.
+  const chart = ({ height }: ChartRenderContext) => (
     <BalanceWindow
       points={points}
       realPoints={realPoints}
@@ -188,6 +195,7 @@ export function AnalysisWindow({
       }}
       onReachEdge={widen}
       canLoadMoreStart={windowFrom > historyStartsOn}
+      height={height}
     />
   )
 

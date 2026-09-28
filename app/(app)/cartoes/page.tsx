@@ -18,6 +18,7 @@ import { LimitMeter } from './limit-meter'
 export const metadata = { title: 'Cartões e empréstimos' }
 export const dynamic = 'force-dynamic'
 
+// v1.1 — 28/09/2026: layout de computador — a partir de `lg` (1024 px) a largura vai a `lg:max-w-4xl` (lista) e os cartões ficam em duas colunas. No celular continua `max-w-md`, uma coluna.
 export default async function CartoesPage() {
   const today = todayISO()
   const ledger = await getCreditLedger(today)
@@ -25,7 +26,7 @@ export default async function CartoesPage() {
   const archived = ledger.accounts.filter((a) => a.archivedAt !== null)
 
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-6 px-6 py-8">
+    <main className="mx-auto flex max-w-md flex-col gap-6 px-6 py-8 lg:max-w-4xl lg:px-10 lg:py-10">
       <div className="flex items-baseline justify-between gap-3">
         <h1 className="text-2xl font-bold tracking-tight">Cartões e empréstimos</h1>
         <Link href="/cartoes/novo" className="shrink-0 text-sm font-medium text-[var(--brand)]">
@@ -49,7 +50,7 @@ export default async function CartoesPage() {
           </Link>
         </div>
       ) : (
-        <ul className="flex flex-col gap-3">
+        <ul className="flex flex-col gap-3 lg:grid lg:grid-cols-2 lg:gap-4">
           {active.map((account) => {
             const bills = billsOf(ledger, account.id)
             const bill = currentBill(bills, today)
@@ -58,7 +59,7 @@ export default async function CartoesPage() {
               <li key={account.id}>
                 <Link
                   href={{ pathname: '/cartoes/[id]', query: { id: account.id } }}
-                  className="flex flex-col gap-3 rounded-xl bg-[var(--surface)] p-4"
+                  className="flex flex-col gap-3 rounded-xl bg-[var(--surface)] p-4 lg:h-full lg:transition-colors lg:hover:bg-[color-mix(in_srgb,var(--brand)_6%,var(--surface))]"
                 >
                   <div className="flex items-center gap-3">
                     <Icon className="text-muted-foreground size-5 shrink-0" aria-hidden />
