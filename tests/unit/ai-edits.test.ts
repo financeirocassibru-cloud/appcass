@@ -317,9 +317,94 @@ describe('isEditable: o que só pode ser removido', () => {
     // A tranca conferida de fora: se alguém acrescentar `id` a uma lista um dia, este
     // teste cai antes de o código chegar em produção.
     for (const campos of Object.values(EDITABLE_FIELDS)) {
-      for (const proibido of ['op', 'id', 'rule_id', 'goal_id', 'scenario_id']) {
+      for (const proibido of ['op', 'id', 'rule_id', 'goal_id', 'scenario_id', 'account_id', 'due_on']) {
         expect(campos).not.toContain(proibido)
       }
     }
+  })
+})
+
+/** v1.1 — 2026-09-27 (Fase 13 no assistente): o "Pago com" na confirmação. */
+describe('applyEdits: cartão e empréstimo', () => {
+  const CARTAO = '66666666-6666-4666-8666-666666666666'
+  const OUTRO_CARTAO = '77777777-7777-4777-8777-777777777777'
+  const contas = new Set([CARTAO, OUTRO_CARTAO])
+
+  const noCartao = (): Operation => ({
+    op: 'create_entry',
+    kind: 'expense',
+    amount_cents: 8750,
+    occurred_on: '2026-09-26',
+    description: 'Mercado',
+    is_settled: true,
+    category_id: CATEGORIA_A,
+    credit_account_id: CARTAO,
+    charge_first_due_on: '2026-10-10',
+  })
+
+  it('troca o cartão e zera o vencimento, que era do ciclo do outro', () => {
+    const { operations } = applyEdits(
+      [noCartao()],
+      [{ index: 0, fields: { credit_account_id: OUTRO_CARTAO } }],
+      [],
+      validas,
+      contas,
+    )
+    const op = operations[0] as Record<string, unknown>
+    expect(op.credit_account_id).toBe(OUTRO_CARTAO)
+    expect(op.charge_first_due_on).toBeNull()
+  })
+
+  it('troca o cartão e mantém o vencimento que a pessoa escolheu junto', () => {
+    const { operations } = applyEdits(
+      [noCartao()],
+      [{ index: 0, fields: { credit_account_id: OUTRO_CARTAO, charge_first_due_on: '2026-11-05' } }],
+      [],
+      validas,
+      contas,
+    )
+    expect((operations[0] as Record<string, unknown>).charge_first_due_on).toBe('2026-11-05')
+  })
+
+  it('passar para o saldo é um ajuste legítimo', () => {
+    const { operations, changed } = applyEdits(
+      [noCartao()],
+      [{ index: 0, fields: { credit_account_id: null } }],
+      [],
+      validas,
+      contas,
+    )
+    expect(changed).toBe(true)
+    expect((operations[0] as Record<string, unknown>).credit_account_id).toBeNull()
+    expect(revalidateOperations(operations).success).toBe(true)
+  })
+
+  it('conta que não é da pessoa é ignorada, e fica a da proposta', () => {
+    const { operations } = applyEdits(
+      [noCartao()],
+      [{ index: 0, fields: { credit_account_id: '88888888-8888-4888-8888-888888888888' } }],
+      [],
+      validas,
+      contas,
+    )
+    expect((operations[0] as Record<string, unknown>).credit_account_id).toBe(CARTAO)
+  })
+
+  it('no pagamento de fatura, não dá para trocar QUAL fatura se paga', () => {
+    const pagar: Operation = {
+      op: 'pay_credit_bill',
+      account_id: CARTAO,
+      due_on: '2026-10-10',
+      amount_cents: 45000,
+      paid_on: '2026-10-09',
+    }
+    const { operations } = applyEdits(
+      [pagar],
+      [{ index: 0, fields: { account_id: OUTRO_CARTAO, due_on: '2026-11-10', amount_cents: 30000 } }],
+      [],
+      validas,
+      contas,
+    )
+    expect(operations[0]).toMatchObject({ account_id: CARTAO, due_on: '2026-10-10', amount_cents: 30000 })
   })
 })

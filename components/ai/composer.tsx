@@ -26,7 +26,11 @@ import { cn } from '@/lib/utils'
 import { useQuietFor } from './use-quiet-for'
 
 /**
- * A caixa que convida a pedir ajuda. v1.2 — 2026-09-26.
+ * A caixa que convida a pedir ajuda. v1.3 — 2026-09-27.
+ *
+ * v1.3 (Fase 13 no assistente): o ajuste da proposta ganhou "Pago com" (saldo, cartão ou
+ * empréstimo) e "Será pago em" — vazio é o vencimento da fatura em que a compra cai — no
+ * lançamento, e valor e data no pagamento de fatura.
  *
  * **Sem ícone de IA.** Nada de estrelinha, robô ou faísca: o convite é a própria
  * caixa, com um exemplo dentro. Um ícone genérico exigiria que a pessoa já
@@ -437,6 +441,7 @@ function AssistantSheet({
               items={itens}
               operations={operacoes}
               categories={setup?.categories ?? []}
+              creditAccounts={setup?.creditAccounts ?? []}
               onDone={() => {
                 fechar()
                 // Sem isto, a tela por trás continuaria mostrando o saldo velho.
@@ -704,6 +709,7 @@ function ProposalReview({
   items,
   operations,
   categories,
+  creditAccounts,
   onDone,
   onReject,
 }: {
@@ -711,6 +717,7 @@ function ProposalReview({
   items: readonly ProposalItem[]
   operations: readonly Operation[]
   categories: AssistantSetup['categories']
+  creditAccounts: AssistantSetup['creditAccounts']
   onDone: () => void
   onReject: () => void
 }) {
@@ -838,7 +845,12 @@ function ProposalReview({
               </div>
 
               {aberto && !removido && operation !== undefined && (
-                <CamposDeAjuste indice={indice} operation={operation} categories={categories} />
+                <CamposDeAjuste
+                  indice={indice}
+                  operation={operation}
+                  categories={categories}
+                  creditAccounts={creditAccounts}
+                />
               )}
             </li>
           )
@@ -918,18 +930,66 @@ function CamposDeAjuste({
   indice,
   operation,
   categories,
+  creditAccounts,
 }: {
   indice: number
   operation: Operation
   categories: AssistantSetup['categories']
+  creditAccounts: AssistantSetup['creditAccounts']
 }) {
   const permitidos = EDITABLE_FIELDS[operation.op] ?? []
   const dados = operation as unknown as Record<string, unknown>
   const nome = (campo: string) => `edit:${indice}:${campo}`
+  // v1.3 — 2026-09-27: a conta da proposta, quando há uma.
+  const contaAtual = typeof dados.credit_account_id === 'string' ? dados.credit_account_id : ''
 
   return (
     <div className="mt-3 flex flex-col gap-3 border-t pt-3">
       {permitidos.map((campo) => {
+        if (campo === 'credit_account_id') {
+          // Sem cartão cadastrado não há o que escolher. E na alteração que não fala de conta
+          // (`undefined` = manter), o campo não vai: mandar "Saldo" tiraria do cartão sem
+          // ninguém ter pedido.
+          if (creditAccounts.length === 0 && contaAtual === '') return null
+          if (operation.op === 'update_entry' && dados.credit_account_id === undefined) return null
+          const conhecida = contaAtual === '' || creditAccounts.some((conta) => conta.id === contaAtual)
+          return (
+            <Campo key={campo} label={dados.kind === 'income' ? 'Veio de' : 'Pago com'}>
+              <select
+                name={nome(campo)}
+                defaultValue={contaAtual}
+                className="border-input bg-card min-h-11 rounded-xl border px-3 text-base"
+              >
+                <option value="">Saldo</option>
+                {creditAccounts.map((conta) => (
+                  <option key={conta.id} value={conta.id}>
+                    {conta.kind === 'card' ? 'Cartão' : 'Empréstimo'} {conta.name}
+                  </option>
+                ))}
+                {/* Conta arquivada: continua como opção, senão o select trocaria a conta
+                    sozinho para "Saldo" só de abrir o ajuste. */}
+                {conhecida ? null : <option value={contaAtual}>A conta desta proposta</option>}
+              </select>
+            </Campo>
+          )
+        }
+
+        if (campo === 'charge_first_due_on') {
+          // Só faz sentido quando a proposta já veio no cartão/empréstimo; trocar para um
+          // cartão aqui usa o vencimento da fatura, calculado na confirmação.
+          if (contaAtual === '') return null
+          return (
+            <Campo key={campo} label="Será pago em (vazio: pela fatura da compra)">
+              <input
+                name={nome(campo)}
+                type="date"
+                defaultValue={typeof dados[campo] === 'string' ? (dados[campo] as string) : ''}
+                className="border-input bg-card min-h-11 rounded-xl border px-3 text-base"
+              />
+            </Campo>
+          )
+        }
+
         if (CAMPOS_NUMERICOS.has(campo) && campo.endsWith('_cents')) {
           return (
             <MoneyInput
@@ -1023,6 +1083,7 @@ function Campo({ label, children }: { label: string; children: React.ReactNode }
 /** Campos que são data de competência — `<input type="date">`, sempre. */
 const DATAS = new Set([
   'occurred_on',
+  'paid_on',
   'starts_on',
   'ends_on',
   'first_due_on',
@@ -1039,6 +1100,8 @@ const ROTULOS_DE_CAMPO: Record<string, string> = {
   first_due_on: 'Primeira parcela',
   target_date: 'Até quando',
   occurs_on: 'Data',
+  // v1.3 — 2026-09-27: o pagamento de fatura.
+  paid_on: 'Pago em',
   description: 'Descrição',
   name: 'Nome',
   note: 'Observação',

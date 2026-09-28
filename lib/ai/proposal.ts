@@ -1,10 +1,19 @@
 import { z } from 'zod'
+import { defaultFirstDue, type CreditAccountKind } from '@/lib/finance/credit'
 import { isISODate } from '@/lib/finance/date'
 import { formatCents } from '@/lib/finance/money'
 
 /**
  * A proposta da IA: validação, texto de confirmação e tradução para FormData.
- * v1.1 — 2026-09-26.
+ * v1.2 — 2026-09-27.
+ *
+ * v1.2 (Fase 13 no assistente): o lançamento, a conta fixa e o parcelamento aprendem o "Pago
+ * com" — `credit_account_id` e, no lançamento, a dívida (`charge_first_due_on`,
+ * `charge_count`, `charge_total_cents`) —, e nasce `pay_credit_bill`, o botão "Pagar" da
+ * fatura. Os nomes do FormData são os de `creditFieldsShape` (lib/validation/credit.ts), os
+ * mesmos que o "Pago com" da tela manda. "Será pago em" omitido é o vencimento do ciclo da
+ * conta (`defaultFirstDue`, a mesma regra do banco), preenchido por `withCreditDefaults` na
+ * hora de mostrar e na hora de executar — nunca pelo modelo fazendo conta de calendário.
  *
  * v1.1: acrescentada `hasFunctionCall`, que responde se a resposta do modelo já traz
  * chamada de ferramenta. Quem precisa dela é `advanceJob`: uma interação que já
@@ -62,6 +71,32 @@ const categoryRef = {
   category_name: z.string().trim().nullish(),
 }
 
+/**
+ * v1.2 — 2026-09-27: de onde veio o dinheiro. **Ausente não é vazio**, como no formulário:
+ * `undefined` não mexe (no `update_entry`, mantém o que está gravado); `null` ou `''` é "do
+ * saldo"; um UUID é o cartão ou empréstimo. Sem `transform` de propósito: ele tornaria a
+ * chave obrigatória no tipo de saída, e a ausência é justamente o caso que importa.
+ */
+const creditAccountRef = z
+  .string()
+  .trim()
+  .nullish()
+  .refine(
+    (value) => value === null || value === undefined || value === '' || uuid.safeParse(value).success,
+    'Cartão ou empréstimo inválido',
+  )
+
+/** v1.2 — 2026-09-27: a dívida de um lançamento pago com cartão/empréstimo. */
+const creditCharge = {
+  credit_account_id: creditAccountRef,
+  /** "Será pago em". Ausente = o vencimento do ciclo da conta. */
+  charge_first_due_on: optionalIsoDate,
+  /** "Em quantas vezes" — só empréstimo; no cartão é sempre 1. */
+  charge_count: z.number().int().min(1).max(360).nullish(),
+  /** "Valor a pagar", com juros. Ausente = o mesmo valor. */
+  charge_total_cents: cents.nullish(),
+}
+
 const kind = z.enum(['expense', 'income'])
 
 // ---------------------------------------------------------------------------
@@ -78,6 +113,7 @@ export const operationSchema = z.discriminatedUnion('op', [
     notes: z.string().trim().nullish(),
     is_settled: z.boolean(),
     ...categoryRef,
+    ...creditCharge,
   }),
   z.object({
     op: z.literal('update_entry'),
@@ -89,6 +125,7 @@ export const operationSchema = z.discriminatedUnion('op', [
     notes: z.string().trim().nullish(),
     is_settled: z.boolean(),
     ...categoryRef,
+    ...creditCharge,
   }),
   z.object({ op: z.literal('delete_entry'), id: uuid }),
   z.object({ op: z.literal('settle_entry'), id: uuid, is_settled: z.boolean() }),
@@ -103,6 +140,8 @@ export const operationSchema = z.discriminatedUnion('op', [
     starts_on: isoDate,
     ends_on: optionalIsoDate,
     ...categoryRef,
+    // v1.2 — 2026-09-27: conta fixa no cartão (assinatura). Só cartão, só saída.
+    credit_account_id: creditAccountRef,
   }),
   z.object({
     op: z.literal('update_recurring'),
@@ -115,6 +154,7 @@ export const operationSchema = z.discriminatedUnion('op', [
     starts_on: isoDate,
     ends_on: optionalIsoDate,
     ...categoryRef,
+    credit_account_id: creditAccountRef,
   }),
   z.object({ op: z.literal('toggle_recurring_active'), id: uuid, is_active: z.boolean() }),
   z.object({ op: z.literal('delete_recurring'), id: uuid }),
@@ -128,8 +168,20 @@ export const operationSchema = z.discriminatedUnion('op', [
     installments_count: z.number().int().min(2, 'Use ao menos 2 parcelas').max(360),
     first_due_on: isoDate,
     ...categoryRef,
+    // v1.2 — 2026-09-27: parcelado no cartão — cada parcela cai na fatura do mês dela.
+    credit_account_id: creditAccountRef,
   }),
   z.object({ op: z.literal('delete_installment_plan'), id: uuid }),
+
+  // v1.2 — 2026-09-27: pagar uma fatura (inteira ou parte), como o botão "Pagar" de /cartoes.
+  // A fatura é identificada pela conta e pelo vencimento, os dois vindos do contexto.
+  z.object({
+    op: z.literal('pay_credit_bill'),
+    account_id: uuid,
+    due_on: isoDate,
+    amount_cents: cents,
+    paid_on: isoDate,
+  }),
 
   z.object({
     op: z.literal('create_goal'),
@@ -306,6 +358,18 @@ function safeJsonParse(value: string): unknown {
 // O texto que a pessoa confirma
 // ---------------------------------------------------------------------------
 
+/**
+ * v1.2 — 2026-09-27: um cartão ou empréstimo, com o ciclo — o bastante para dizer o nome na
+ * confirmação e calcular o vencimento de uma compra sem ir ao banco (`withCreditDefaults`).
+ */
+export interface CreditLabel {
+  name: string
+  kind: CreditAccountKind
+  closingDay: number | null
+  dueDay: number | null
+  dueOn: string | null
+}
+
 /** Nomes conhecidos, para a confirmação falar de "Aluguel" e não de um UUID. */
 export interface LabelIndex {
   categories: Readonly<Record<string, string>>
@@ -314,6 +378,11 @@ export interface LabelIndex {
   installments: Readonly<Record<string, string>>
   goals: Readonly<Record<string, string>>
   scenarios: Readonly<Record<string, string>>
+  /**
+   * v1.2 — 2026-09-27: cartões e empréstimos, inclusive arquivados. Opcional porque os
+   * pedidos gravados em `ai_jobs.input` antes desta versão não o têm.
+   */
+  credit?: Readonly<Record<string, CreditLabel>>
 }
 
 export const EMPTY_LABELS: LabelIndex = {
@@ -323,6 +392,69 @@ export const EMPTY_LABELS: LabelIndex = {
   installments: {},
   goals: {},
   scenarios: {},
+  credit: {},
+}
+
+/**
+ * Completa a dívida de um lançamento pago com cartão/empréstimo. v1.0 — 2026-09-27.
+ *
+ * - "Será pago em" ausente vira o vencimento do ciclo da conta, pela data do gasto — a regra
+ *   de `defaultFirstDue`, a mesma do "Pago com" da tela e de `credit_first_due()` no banco. O
+ *   modelo não faz conta de calendário: é o erro que o invariante 2 existe para não repetir.
+ * - No cartão, "em quantas vezes" é sempre 1: compra parcelada no cartão é parcelamento.
+ *
+ * Conta desconhecida devolve a operação como veio; quem a recusa é `creditProblem`.
+ */
+export function withCreditDefaults(op: Operation, labels: LabelIndex = EMPTY_LABELS): Operation {
+  if (op.op !== 'create_entry' && op.op !== 'update_entry') return op
+  if (!op.credit_account_id) return op
+
+  const account = labels.credit?.[op.credit_account_id]
+  if (!account) return op
+
+  const dueOn =
+    op.charge_first_due_on ??
+    defaultFirstDue(
+      { kind: account.kind, closingDay: account.closingDay, dueDay: account.dueDay, dueOn: account.dueOn },
+      op.occurred_on,
+    )
+
+  return {
+    ...op,
+    charge_first_due_on: dueOn,
+    charge_count: account.kind === 'card' ? 1 : (op.charge_count ?? 1),
+  }
+}
+
+/**
+ * Por que esta operação com cartão/empréstimo não pode ser executada, ou `null` se pode.
+ * v1.0 — 2026-09-27.
+ *
+ * Um id de conta que não está no contexto não vira "do saldo" em silêncio, como a categoria
+ * inventada vira "sem categoria": registrar no saldo uma compra feita no cartão tiraria o
+ * dinheiro da conta errada. Melhor recusar com uma frase.
+ */
+export function creditProblem(op: Operation, labels: LabelIndex = EMPTY_LABELS): string | null {
+  const accountId =
+    op.op === 'pay_credit_bill'
+      ? op.account_id
+      : 'credit_account_id' in op
+        ? op.credit_account_id
+        : null
+  if (!accountId) return null
+
+  const account = labels.credit?.[accountId]
+  if (!account) return 'Cartão ou empréstimo não encontrado.'
+
+  const cardOnly =
+    op.op === 'create_recurring' || op.op === 'update_recurring' || op.op === 'create_installment_plan'
+  if (cardOnly && account.kind !== 'card') {
+    return 'Conta fixa e parcelamento só vão para cartão, não para empréstimo.'
+  }
+  if ((op.op === 'create_entry' || op.op === 'update_entry') && !op.charge_first_due_on) {
+    return `Informe quando ${account.name} será pago.`
+  }
+  return null
 }
 
 /**
@@ -354,6 +486,43 @@ function categoryPart(op: Operation, labels: LabelIndex): string {
   return name ? ` · ${name}` : ''
 }
 
+function creditName(labels: LabelIndex, id: string): string {
+  const account = labels.credit?.[id]
+  if (!account) return 'conta não encontrada'
+  return account.kind === 'card' ? `cartão ${account.name}` : `empréstimo ${account.name}`
+}
+
+/**
+ * v1.2 — 2026-09-27: o "Pago com" na frase de confirmação. Vazio quando o dinheiro é do
+ * saldo e a operação não mexe nisso; "do saldo" quando uma alteração tira do cartão.
+ */
+function creditPart(op: Operation, labels: LabelIndex): string {
+  if (!('credit_account_id' in op) || op.credit_account_id === undefined) return ''
+  if (!op.credit_account_id) return op.op === 'update_entry' ? ' · do saldo' : ''
+
+  const nome = creditName(labels, op.credit_account_id)
+  if (op.op !== 'create_entry' && op.op !== 'update_entry') return ` · no ${nome}`
+
+  const origem = op.kind === 'expense' ? `no ${nome}` : `veio do ${nome}`
+  const vezes = op.charge_count && op.charge_count > 1 ? op.charge_count : 1
+  const quando = op.charge_first_due_on
+    ? vezes > 1
+      ? ` · em ${vezes}x, a primeira em ${formatISODateBR(op.charge_first_due_on)}`
+      : ` · vence em ${formatISODateBR(op.charge_first_due_on)}`
+    : ''
+  const juros =
+    op.charge_total_cents && op.charge_total_cents > op.amount_cents
+      ? ` · ${formatCents(op.charge_total_cents - op.amount_cents)} de juros`
+      : ''
+  return ` · ${origem}${quando}${juros}`
+}
+
+/** v1.2 — 2026-09-27: a compra no cartão/empréstimo é paga pela fatura, não por ela mesma. */
+function settledPart(op: Extract<Operation, { op: 'create_entry' | 'update_entry' }>): string {
+  if (op.kind === 'expense' && op.credit_account_id) return 'paga pela fatura'
+  return op.is_settled ? 'pago' : 'pendente'
+}
+
 /**
  * A frase que aparece no cartão de confirmação.
  *
@@ -361,16 +530,16 @@ function categoryPart(op: Operation, labels: LabelIndex): string {
  * escrita. Por isso mostra valor formatado, data por extenso e o nome do
  * registro alvo — não o id.
  */
-export function describeOperation(op: Operation, labels: LabelIndex = EMPTY_LABELS): string {
+export function describeOperation(input: Operation, labels: LabelIndex = EMPTY_LABELS): string {
+  // v1.2 — 2026-09-27: o vencimento que vai ser gravado aparece na frase, calculado do ciclo.
+  const op = withCreditDefaults(input, labels)
   switch (op.op) {
     case 'create_entry': {
       const tipo = op.kind === 'expense' ? 'Registrar despesa' : 'Registrar receita'
-      const estado = op.is_settled ? 'pago' : 'pendente'
-      return `${tipo}: ${op.description}${categoryPart(op, labels)} · ${formatCents(op.amount_cents)} · ${formatISODateBR(op.occurred_on)} · ${estado}`
+      return `${tipo}: ${op.description}${categoryPart(op, labels)} · ${formatCents(op.amount_cents)} · ${formatISODateBR(op.occurred_on)}${creditPart(op, labels)} · ${settledPart(op)}`
     }
     case 'update_entry': {
-      const estado = op.is_settled ? 'pago' : 'pendente'
-      return `Alterar o lançamento "${label(labels.entries, op.id)}" para: ${op.description}${categoryPart(op, labels)} · ${formatCents(op.amount_cents)} · ${formatISODateBR(op.occurred_on)} · ${estado}`
+      return `Alterar o lançamento "${label(labels.entries, op.id)}" para: ${op.description}${categoryPart(op, labels)} · ${formatCents(op.amount_cents)} · ${formatISODateBR(op.occurred_on)}${creditPart(op, labels)} · ${settledPart(op)}`
     }
     case 'delete_entry':
       return `Apagar o lançamento "${label(labels.entries, op.id)}"`
@@ -392,7 +561,7 @@ export function describeOperation(op: Operation, labels: LabelIndex = EMPTY_LABE
           ? `todo dia ${op.day_of_month}`
           : (FREQUENCY_LABEL[op.frequency] ?? op.frequency)
       const fim = op.ends_on ? ` · até ${formatISODateBR(op.ends_on)}` : ''
-      return `${verbo}: ${op.description}${categoryPart(op, labels)} · ${formatCents(op.amount_cents)} · ${quando} · a partir de ${formatISODateBR(op.starts_on)}${fim}`
+      return `${verbo}: ${op.description}${categoryPart(op, labels)} · ${formatCents(op.amount_cents)} · ${quando} · a partir de ${formatISODateBR(op.starts_on)}${fim}${creditPart(op, labels)}`
     }
     case 'toggle_recurring_active':
       return op.is_active
@@ -405,10 +574,20 @@ export function describeOperation(op: Operation, labels: LabelIndex = EMPTY_LABE
 
     case 'create_installment_plan': {
       const parcela = Math.round(op.total_amount_cents / op.installments_count)
-      return `Criar parcelamento: ${op.description}${categoryPart(op, labels)} · ${formatCents(op.total_amount_cents)} em ${op.installments_count}x de aproximadamente ${formatCents(parcela)} · primeira em ${formatISODateBR(op.first_due_on)}`
+      return `Criar parcelamento: ${op.description}${categoryPart(op, labels)} · ${formatCents(op.total_amount_cents)} em ${op.installments_count}x de aproximadamente ${formatCents(parcela)} · primeira em ${formatISODateBR(op.first_due_on)}${creditPart(op, labels)}`
     }
     case 'delete_installment_plan':
       return `Apagar o parcelamento "${label(labels.installments, op.id)}" (as parcelas já pagas continuam no extrato)`
+
+    case 'pay_credit_bill': {
+      const account = labels.credit?.[op.account_id]
+      const alvo = !account
+        ? 'de uma fatura não encontrada'
+        : account.kind === 'card'
+          ? `da fatura do cartão ${account.name}`
+          : `do empréstimo ${account.name}`
+      return `Pagar ${formatCents(op.amount_cents)} ${alvo} que vence em ${formatISODateBR(op.due_on)} · pago em ${formatISODateBR(op.paid_on)}`
+    }
 
     case 'create_goal':
     case 'update_goal': {
@@ -487,6 +666,7 @@ export const ACTION_FOR_OPERATION: Readonly<Record<OperationKind, string>> = {
   materialize_recurring: 'materializeRecurring',
   create_installment_plan: 'createInstallmentPlan',
   delete_installment_plan: 'deleteInstallmentPlan',
+  pay_credit_bill: 'payCreditBill',
   create_goal: 'createGoal',
   update_goal: 'updateGoal',
   archive_goal: 'archiveGoal',
@@ -552,6 +732,17 @@ export function operationToFormData(op: Operation, resolvedCategoryId?: string |
       putCategory()
       // Aqui `isSettled` é o schema leniente: 'true'/'false' servem.
       put('isSettled', op.is_settled)
+      // v1.2 — 2026-09-27: o "Pago com". Ausente, o campo nem vai — e a action não mexe em de
+      // onde veio o dinheiro; `''` é "do saldo" e zera a dívida.
+      if (op.credit_account_id !== undefined) {
+        fd.set('creditAccountId', op.credit_account_id || '')
+        fd.set('chargeFirstDueOn', op.credit_account_id ? (op.charge_first_due_on ?? '') : '')
+        fd.set('chargeCount', String(op.credit_account_id ? (op.charge_count ?? 1) : 1))
+        fd.set(
+          'chargeTotalCents',
+          op.credit_account_id && op.charge_total_cents ? String(op.charge_total_cents) : '',
+        )
+      }
       break
 
     case 'delete_entry':
@@ -582,6 +773,8 @@ export function operationToFormData(op: Operation, resolvedCategoryId?: string |
       fd.set('dayOfMonth', op.frequency === 'monthly' && op.day_of_month ? String(op.day_of_month) : '')
       put('startsOn', op.starts_on)
       fd.set('endsOn', op.ends_on ?? '')
+      // v1.2 — 2026-09-27: conta fixa no cartão. Ausente não mexe; `''` tira do cartão.
+      if (op.credit_account_id !== undefined) fd.set('creditAccountId', op.credit_account_id || '')
       break
 
     case 'toggle_recurring_active':
@@ -600,6 +793,15 @@ export function operationToFormData(op: Operation, resolvedCategoryId?: string |
       put('installmentsCount', op.installments_count)
       put('firstDueOn', op.first_due_on)
       putCategory()
+      // v1.2 — 2026-09-27: parcelado no cartão.
+      if (op.credit_account_id) put('creditAccountId', op.credit_account_id)
+      break
+
+    case 'pay_credit_bill':
+      put('accountId', op.account_id)
+      put('dueOn', op.due_on)
+      put('amountCents', op.amount_cents)
+      put('paidOn', op.paid_on)
       break
 
     case 'create_goal':

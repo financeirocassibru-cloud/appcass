@@ -463,7 +463,7 @@ Decisões:
 
 ## Fase 13 — Cartões e empréstimos como forma de pagamento
 
-v1.0 — 2026-09-27. `entries.occurred_on` era ao mesmo tempo a data do gasto, a do vencimento e
+v1.1 — 2026-09-27 (v1.0 — 2026-09-27). `entries.occurred_on` era ao mesmo tempo a data do gasto, a do vencimento e
 a do caixa. Um gasto no cartão só tinha duas saídas ruins: lançar cada compra com a data futura
 da fatura (perdendo a data real) ou lançar só "Cartão" genérico (perdendo a categoria). Agora o
 lançamento pode vir de um **cartão** ou de um **empréstimo**, e passa a ter duas leituras:
@@ -512,6 +512,14 @@ Decisões:
   fatura é paga.
 - **Cadastro na hora.** "+ Cartão" e "+ Empréstimo" no "Pago com" abrem o cadastro numa folha e
   já selecionam a conta. Limite é opcional; passar dele avisa e não bloqueia.
-- **Fora desta fase:** ferramentas do assistente para cartão (o `create_entry` da IA segue
-  funcionando sem os campos novos), cenário sobre fatura, e informar o valor que o banco cobrou
-  antes de pagar.
+- **O assistente e as telas de edição acompanharam** (v1.1 — 2026-09-27). O "Pago com" chegou
+  à edição de "Ver todos" e da Análise (lista, painel do gráfico e o "novo lançamento" dele), que
+  abriam o formulário sem os cartões. Na IA: o retrato lista cartões, empréstimos e as faturas a
+  pagar; `create_entry`/`update_entry` aceitam `credit_account_id` e a dívida
+  (`charge_first_due_on`, `charge_count`, `charge_total_cents`); conta fixa e parcelamento
+  aceitam o cartão; e `pay_credit_bill` paga a fatura pela mesma action do botão "Pagar". O
+  vencimento omitido é o do ciclo da conta (`withCreditDefaults`), nunca conta de calendário do
+  modelo; conta fora do contexto recusa a operação em vez de lançar no saldo. A triagem ganhou
+  `paid_with` e a intenção `fatura`, e a conferência deixa ajustar "Pago com" e "Será pago em".
+- **Fora desta fase:** cadastrar cartão e parcelar o restante da fatura pelo assistente,
+  cenário sobre fatura, e informar o valor que o banco cobrou antes de pagar.

@@ -4,7 +4,12 @@ import { formatCents } from '@/lib/finance/money'
 import { formatISODateBR } from './proposal'
 
 /**
- * A triagem: o primeiro tempo da conversa. v1.0 — 2026-09-26.
+ * A triagem: o primeiro tempo da conversa. v1.1 — 2026-09-27.
+ *
+ * v1.1 (Fase 13 no assistente): o rascunho sabe de onde veio o dinheiro (`paid_with`, em texto
+ * livre — "cartão Nubank", "empréstimo") e reconhece "paguei a fatura" (`fatura`). Sem isso a
+ * triagem lia "gastei 30 no Uber no cartão" como uma saída comum, a pessoa confirmava, e o
+ * segundo tempo recebia um rascunho aprovado que já não falava do cartão.
  *
  * Módulo **puro** (invariante 9): sem I/O, sem Supabase, sem relógio implícito — a
  * data de referência entra por parâmetro.
@@ -46,6 +51,8 @@ export const draftIntents = [
   'parcelamento',
   'meta',
   'aporte',
+  // v1.1 — 2026-09-27: pagar a fatura do cartão ou a parcela de um empréstimo.
+  'fatura',
   'ajuste_saldo',
   'excluir',
   'outro',
@@ -100,6 +107,12 @@ export const draftItemSchema = z.object({
   category_hint: draftText(40),
   installments: z.number().int().min(2).max(360).nullish().transform((v) => v ?? null),
   is_settled: z.boolean().nullish().transform((v) => v ?? null),
+  /**
+   * v1.1 — 2026-09-27: de onde veio o dinheiro, como a pessoa falou ("cartão Nubank",
+   * "crédito", "empréstimo do banco"). Texto livre pelo mesmo motivo de `category_hint`: a
+   * triagem não conhece os ids dos cartões. Nulo é "do saldo" ou "não disse".
+   */
+  paid_with: draftText(40),
   /** O que faltou, em português, para a IA saber o que perguntar. */
   missing: z
     .array(z.string().trim().min(1).max(60))
@@ -147,6 +160,7 @@ export const TRIAGE_RESPONSE_SCHEMA = {
           category_hint: { type: 'string' },
           installments: { type: 'integer' },
           is_settled: { type: 'boolean' },
+          paid_with: { type: 'string' },
           missing: { type: 'array', items: { type: 'string' } },
         },
         required: ['intent'],
@@ -203,6 +217,8 @@ export function draftSummary(items: readonly DraftItem[]): string {
     if (preenchido(item.description)) pedacos.push(`em ${item.description}`)
     if (preenchido(item.occurred_on)) pedacos.push(`no dia ${formatISODateBR(item.occurred_on)}`)
     if (preenchido(item.installments)) pedacos.push(`em ${item.installments}x`)
+    // v1.1 — 2026-09-27
+    if (preenchido(item.paid_with)) pedacos.push(`no ${item.paid_with}`)
 
     return pedacos.join(' ')
   })
@@ -230,6 +246,8 @@ export function draftPromptBlock(items: readonly DraftItem[]): string {
       ]
 
       if (preenchido(item.installments)) campos.push(`parcelas: ${item.installments}`)
+      // v1.1 — 2026-09-27: o cartão/empréstimo, para o segundo tempo achar o id no contexto.
+      if (preenchido(item.paid_with)) campos.push(`pago com: ${item.paid_with}`)
       if (preenchido(item.is_settled)) {
         campos.push(`já aconteceu: ${item.is_settled ? 'sim' : 'não'}`)
       }
@@ -247,6 +265,7 @@ const ROTULOS: Record<DraftIntent, string> = {
   parcelamento: 'uma compra parcelada',
   meta: 'uma meta',
   aporte: 'um valor guardado numa meta',
+  fatura: 'o pagamento de uma fatura',
   ajuste_saldo: 'um ajuste de saldo',
   excluir: 'apagar um registro',
   outro: 'algo sobre dinheiro',
@@ -273,8 +292,10 @@ SE FOR ASSUNTO DO APP, PREENCHA O RASCUNHO:
 - Um item por coisa dita. "Recebi 2 mil ontem e gastei 200 no mercado hoje" são DOIS itens.
 - amount_cents SEMPRE em centavos inteiros. "R$ 87,50" é 8750. "2.400" é 240000. "dois mil" é 200000. "200 reais" é 20000. Nunca use decimal.
 - occurred_on SEMPRE em YYYY-MM-DD. Use a data de hoje que vem no início da mensagem como referência para "hoje", "ontem", "anteontem", "semana passada". Nunca calcule a data de hoje por conta própria.
-- intent: entrada (recebeu), saida (gastou), conta_fixa (se repete todo mês/semana/ano), parcelamento (dividido em 2 ou mais vezes), meta (objetivo de poupança), aporte (guardou para um objetivo), ajuste_saldo (informar quanto tem), excluir (apagar um registro), outro.
+- intent: entrada (recebeu), saida (gastou), conta_fixa (se repete todo mês/semana/ano), parcelamento (dividido em 2 ou mais vezes), meta (objetivo de poupança), aporte (guardou para um objetivo), fatura (pagou a fatura do cartão ou a parcela de um empréstimo), ajuste_saldo (informar quanto tem), excluir (apagar um registro), outro.
 - is_settled: true se já aconteceu, false se é a pagar ou a receber.
+- paid_with: se a pessoa disse que foi no cartão, no crédito ou com empréstimo, escreva como ela falou ("cartão Nubank", "crédito", "empréstimo"). Débito, Pix e dinheiro: deixe nulo. Na intent fatura, o cartão da fatura. "Peguei um empréstimo de 5 mil" é intent entrada com paid_with "empréstimo".
+- Compra parcelada no cartão ("3x no cartão") é intent parcelamento com paid_with preenchido.
 - category_hint: o nome da categoria em texto livre, como a pessoa falaria ("Mercado", "Aluguel"). Não invente código nem identificador.
 - O que você NÃO souber, deixe nulo e escreva em "missing" o nome do que faltou. Nunca chute valor nem data.
 

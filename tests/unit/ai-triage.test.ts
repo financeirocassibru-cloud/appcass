@@ -164,6 +164,24 @@ describe('draftPromptBlock: o rascunho para o segundo tempo', () => {
   })
 })
 
+/** v1.1 — 2026-09-27 (Fase 13 no assistente). */
+describe('o rascunho sabe de onde veio o dinheiro', () => {
+  it('lê o cartão e o leva ao segundo tempo', () => {
+    const rascunho = normalizado({ paid_with: 'cartão Nubank' })
+    expect(rascunho.paid_with).toBe('cartão Nubank')
+    expect(draftPromptBlock([rascunho])).toContain('pago com: cartão Nubank')
+    expect(draftSummary([rascunho])).toContain('no cartão Nubank')
+  })
+
+  it('reconhece o pagamento de fatura', () => {
+    expect(normalizado({ intent: 'fatura' }).intent).toBe('fatura')
+  })
+
+  it('sem cartão, o bloco não inventa um', () => {
+    expect(draftPromptBlock([normalizado()])).not.toContain('pago com')
+  })
+})
+
 describe('a instrução da triagem', () => {
   it('manda decidir a pertinência antes de qualquer coisa', () => {
     expect(TRIAGE_SYSTEM_INSTRUCTION).toContain('pertinent = false')

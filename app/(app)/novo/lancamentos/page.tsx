@@ -3,6 +3,8 @@ import { ChevronLeft } from 'lucide-react'
 import { isAiConfigured } from '@/lib/ai/env'
 import { listActiveCategories } from '@/lib/db/queries/categories'
 import { listCreatedFeed, listImportBatches } from '@/lib/db/queries/created-feed'
+import { getCreditLedger } from '@/lib/db/queries/credit'
+import { toCreditOptions } from '@/lib/finance/credit'
 import { createdDay, feedCursor } from '@/lib/feed'
 import { todayISO } from '@/lib/finance/date'
 import { formatDayLabel, groupByDay } from '@/lib/finance/grouping'
@@ -10,7 +12,10 @@ import { FeedList } from './feed-list'
 
 /**
  * "Todos os lançamentos" (o "Ver todos" do [+]): tudo o que foi cadastrado, na ordem em que
- * foi gravado. v1.2 — 2026-09-27.
+ * foi gravado. v1.3 — 2026-09-27.
+ *
+ * v1.3: lê os cartões e empréstimos para a edição ter o "Pago com" — antes ela abria sem ele,
+ * diferente do [+] e do Histórico.
  *
  * v1.2: a seleção também categoriza, por palavra-chave e por IA (`RecategorizeSheet`).
  *
@@ -40,11 +45,14 @@ export default async function VerLancamentosPage({
   const { antes } = await searchParams
   const today = todayISO()
 
-  const [{ items, hasMore }, expenseCategories, incomeCategories] = await Promise.all([
+  const [{ items, hasMore }, expenseCategories, incomeCategories, ledger] = await Promise.all([
     listCreatedFeed({ limit: PAGE_SIZE, before: antes }),
     listActiveCategories('expense'),
     listActiveCategories('income'),
+    getCreditLedger(today),
   ])
+  // v1.3 — 2026-09-27: inclusive arquivados, para a compra num cartão arquivado abrir com ele.
+  const creditAccounts = toCreditOptions(ledger.accounts, ledger.bills, true)
 
   const groups = groupByDay(items, (item) => createdDay(item.createdAt)).map((group) => ({
     date: group.date,
@@ -85,6 +93,7 @@ export default async function VerLancamentosPage({
           incomeCategories={incomeCategories}
           today={today}
           aiAvailable={isAiConfigured()}
+          creditAccounts={creditAccounts}
         />
       )}
 

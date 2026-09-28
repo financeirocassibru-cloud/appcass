@@ -7,13 +7,17 @@ import { toast } from 'sonner'
 import { deleteEntries } from '@/lib/actions/entries'
 import type { Category } from '@/lib/db/queries/categories'
 import type { FeedItem, ImportBatch } from '@/lib/db/queries/created-feed'
+import type { CreditOption } from '@/lib/finance/credit'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { FeedRow } from './feed-row'
 import { RecategorizeSheet } from './recategorize-sheet'
 
 /**
- * A lista de "Ver todos", com modo seleção. v1.1 — 2026-09-27.
+ * A lista de "Ver todos", com modo seleção. v1.2 — 2026-09-27.
+ *
+ * v1.2: repassa os cartões e empréstimos (`creditAccounts`) até a edição de cada linha, para o
+ * "Pago com" aparecer aqui como aparece no [+] e no Histórico.
  *
  * v1.1: a seleção também **categoriza** — "Categorizar" abre `RecategorizeSheet`, que aplica a
  * palavra-chave e a IA aos lançamentos marcados (e às importações inteiras), com prévia.
@@ -42,6 +46,7 @@ export function FeedList({
   incomeCategories,
   today,
   aiAvailable,
+  creditAccounts,
 }: {
   groups: FeedGroup[]
   batches: ImportBatch[]
@@ -50,6 +55,8 @@ export function FeedList({
   today: string
   /** A IA está configurada? Sem ela, "Categorizar" oferece só a palavra-chave. */
   aiAvailable: boolean
+  /** v1.2 — 2026-09-27: cartões e empréstimos (inclusive arquivados) para o "Pago com". */
+  creditAccounts: CreditOption[]
 }) {
   const router = useRouter()
   const [selecting, setSelecting] = useState(false)
@@ -279,6 +286,7 @@ export function FeedList({
         expenseCategories={expenseCategories}
         incomeCategories={incomeCategories}
         today={today}
+        creditAccounts={creditAccounts}
       />
     </div>
   )
@@ -296,6 +304,7 @@ function BatchRows({
   expenseCategories,
   incomeCategories,
   today,
+  creditAccounts,
 }: {
   groups: FeedGroup[]
   batchById: Map<string, ImportBatch>
@@ -307,6 +316,7 @@ function BatchRows({
   expenseCategories: Category[]
   incomeCategories: Category[]
   today: string
+  creditAccounts: CreditOption[]
 }) {
   // Uma importação só ganha o atalho uma vez na página, na primeira linha dela.
   const shown = new Set<string>()
@@ -354,6 +364,7 @@ function BatchRows({
                     expenseCategories={expenseCategories}
                     incomeCategories={incomeCategories}
                     today={today}
+                    creditAccounts={creditAccounts}
                     selecting={selecting}
                     selection={
                       selecting && item.type === 'entry'

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import type { Category } from '@/lib/db/queries/categories'
 import type { EntryWithCategory } from '@/lib/db/queries/entries'
+import type { CreditOption } from '@/lib/finance/credit'
 import { bucketize } from '@/lib/finance/buckets'
 import { formatDayLabel } from '@/lib/finance/grouping'
 import { formatCents } from '@/lib/finance/money'
@@ -22,6 +23,8 @@ import {
 /**
  * A janela da Análise em lista, no formato do Histórico.
  *
+ * v1.1 — 2026-09-27: a edição recebe `creditAccounts` e ganha o "Pago com".
+ *
  * v1.0 — 2026-09-27. O gráfico responde "como vai ser"; esta lista responde "o que exatamente",
  * e é ela o caminho acessível aos mesmos números — o gráfico é `aria-hidden` justamente porque
  * esta lista existe.
@@ -36,6 +39,7 @@ export function WindowList({
   entriesById,
   expenseCategories,
   incomeCategories,
+  creditAccounts,
   renderActions,
 }: {
   days: DayProjection[]
@@ -43,6 +47,7 @@ export function WindowList({
   entriesById: Record<string, EntryWithCategory>
   expenseCategories: Category[]
   incomeCategories: Category[]
+  creditAccounts: CreditOption[]
   renderActions?: (occurrence: Occurrence) => React.ReactNode
 }) {
   const router = useRouter()
@@ -120,6 +125,7 @@ export function WindowList({
               expenseCategories={expenseCategories}
               incomeCategories={incomeCategories}
               today={today}
+              creditAccounts={creditAccounts}
               onDone={(result) => {
                 toast.success(
                   result === 'deleted' ? 'Lançamento excluído.' : 'Lançamento atualizado.',
