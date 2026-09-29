@@ -12,6 +12,8 @@ import { keywordsField } from '@/lib/validation/keywords'
  * para o erro ser legível, não para substituir as do banco.
  *
  * v1.1 — 2026-09-27: `keywords`, para a linha do extrato liquidar a ocorrência (migration 0019).
+ *
+ * v1.2 — 28/09/2026 (Fase 14): `occurrenceAmountSchema`, o valor de uma ocorrência só.
  */
 
 const amountCentsSchema = z.coerce
@@ -109,4 +111,9 @@ export const toggleRecurringSchema = z.object({
 export const materializeSchema = z.object({
   ruleId: z.string().uuid('Conta fixa inválida'),
   occursOn: isoDateSchema,
+})
+
+/** v1.2 — 28/09/2026 (Fase 14): o valor de UMA ocorrência ("Só este mês", na planilha). */
+export const occurrenceAmountSchema = materializeSchema.extend({
+  amountCents: amountCentsSchema,
 })

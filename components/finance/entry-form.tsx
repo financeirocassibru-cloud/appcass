@@ -27,6 +27,9 @@ const initialState: EntryActionState = {}
 /**
  * Lançamento: criar e editar, o mesmo formulário.
  *
+ * v1.4 — 28/09/2026 (Fase 14): `defaults` — tipo, categoria e "Pago com" de partida, para criar
+ * a partir de uma célula da planilha.
+ *
  * v1.3 — 2026-09-27 (Fase 13): "Pago com" cartão/empréstimo, quando a tela passa
  * `creditAccounts`. Sem a prop o campo nem vai no formulário, e a action não mexe em de onde
  * veio o dinheiro — é o que protege quem edita pela Análise ou pelo assistente. Na saída no
@@ -67,6 +70,7 @@ export function EntryForm({
   onDone,
   suggestions,
   creditAccounts,
+  defaults,
 }: {
   mode: 'create' | 'edit'
   /** Obrigatório em `edit`. */
@@ -80,15 +84,21 @@ export function EntryForm({
   suggestions?: Record<EntryKind, string[]>
   /** v1.3 — 2026-09-27: cartões e empréstimos (inclusive arquivados) para o "Pago com". */
   creditAccounts?: CreditOption[]
+  /**
+   * v1.4 — 28/09/2026 (Fase 14): o ponto de partida de um lançamento novo — a planilha já sabe o
+   * tipo (a seção), a categoria (a linha) e, na planilha do cartão, o "Pago com"; num mês futuro,
+   * nasce pendente. A data vem de `today`. Ignorado na edição.
+   */
+  defaults?: { kind?: EntryKind; categoryId?: string | null; creditAccountId?: string; isSettled?: boolean }
 }) {
-  const [kind, setKind] = useState<EntryKind>(entry?.kind ?? 'expense')
+  const [kind, setKind] = useState<EntryKind>(entry?.kind ?? defaults?.kind ?? 'expense')
   const [showKeywords, setShowKeywords] = useState((entry?.keywords.length ?? 0) > 0)
-  const [categoryId, setCategoryId] = useState<string>(entry?.category?.id ?? '')
+  const [categoryId, setCategoryId] = useState<string>(entry?.category?.id ?? defaults?.categoryId ?? '')
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   // v1.3 — 2026-09-27: o "Pago com" precisa do valor e da data enquanto a pessoa digita.
   const [amountCents, setAmountCents] = useState(entry?.amountCents ?? 0)
   const [date, setDate] = useState(entry?.occurredOn ?? today)
-  const [creditAccountId, setCreditAccountId] = useState(entry?.creditAccountId ?? '')
+  const [creditAccountId, setCreditAccountId] = useState(entry?.creditAccountId ?? defaults?.creditAccountId ?? '')
 
   const [state, formAction, pending] = useActionState(
     async (previous: EntryActionState, formData: FormData) => {
@@ -242,7 +252,7 @@ export function EntryForm({
             <input
               type="checkbox"
               name="isSettled"
-              defaultChecked={entry ? entry.isSettled : true}
+              defaultChecked={entry ? entry.isSettled : (defaults?.isSettled ?? true)}
               className="accent-primary size-5"
             />
             <span className="text-sm">{kind === 'expense' ? 'Já paguei' : 'Já recebi'}</span>

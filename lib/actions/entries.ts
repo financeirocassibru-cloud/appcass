@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { isAiConfigured } from '@/lib/ai/env'
 import { currentUserId } from '@/lib/db/current-user'
 import { listActiveCategories } from '@/lib/db/queries/categories'
+import { getEntry, type EntryWithCategory } from '@/lib/db/queries/entries'
 import type { EntryKind } from '@/lib/db/types'
 import type { RecategorizeTarget } from '@/lib/import/recategorize'
 import type { CategoryOption } from '@/lib/import/suggest'
@@ -22,7 +23,10 @@ import {
 } from '@/lib/validation/entries'
 
 /*
- * Escrita de lançamentos. v1.5 — 2026-09-27.
+ * Escrita de lançamentos. v1.6 — 28/09/2026.
+ *
+ * v1.6 (Fase 14, 28/09/2026): `getEntryForEdit`, a leitura sob demanda da planilha; `/planilha`
+ * entrou na revalidação.
  *
  * v1.5 (Fase 13): "pago com" cartão/empréstimo. A SAÍDA no cartão nasce e fica aberta — quem a
  * conclui é o pagamento da fatura (constraint `entries_credit_expense_open`, migration 0021) —
@@ -50,6 +54,8 @@ export interface EntryActionState {
  */
 function revalidateEntryViews(): void {
   revalidatePath('/historico')
+  // 28/09/2026 (Fase 14): a planilha lê os mesmos lançamentos.
+  revalidatePath('/planilha', 'layout')
   revalidatePath('/analise')
   revalidatePath('/')
   // v1.2 — 2026-09-27: "Ver todos" também mostra lançamentos, e agora exclui em lote.
@@ -457,4 +463,17 @@ export async function applyCategories(input: unknown): Promise<ApplyCategoriesSt
     updated,
     success: updated === 1 ? '1 lançamento categorizado.' : `${updated} lançamentos categorizados.`,
   }
+}
+
+/**
+ * v1.6 — 28/09/2026 (Fase 14): o lançamento inteiro, para a planilha abrir a edição.
+ *
+ * Não é escrita — é uma leitura sob demanda, porque a planilha mostra centenas de células e
+ * carregar cada lançamento completo junto com a página pesaria sem motivo. Passa pela RLS como
+ * qualquer query: o id de outra pessoa volta `null`.
+ */
+export async function getEntryForEdit(input: unknown): Promise<EntryWithCategory | null> {
+  const parsed = entryIdSchema.safeParse(input)
+  if (!parsed.success) return null
+  return getEntry(parsed.data.id)
 }

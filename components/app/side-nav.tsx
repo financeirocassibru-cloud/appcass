@@ -15,6 +15,7 @@ import {
   ReceiptText,
   Settings,
   Split,
+  Table,
   Tags,
   Target,
   TrendingUp,
@@ -25,7 +26,11 @@ import { cn } from '@/lib/utils'
 import { activeHref } from './nav-items'
 
 /**
- * Barra lateral — a navegação do computador. v1.0 — 28/09/2026.
+ * Barra lateral — a navegação do computador. v1.1 — 28/09/2026.
+ *
+ * v1.1 — 28/09/2026 (Fase 14): "Ver como planilha", logo abaixo de "Todos os lançamentos". A
+ * planilha é só do computador, e por isso o link mora só aqui — a barra inferior e o Mais do
+ * celular não ganham nada.
  *
  * Só existe a partir de `lg` (1024 px): abaixo disso ela é `hidden` e quem navega é a barra
  * inferior, que continua exatamente como era. No computador a barra inferior some.
@@ -49,6 +54,8 @@ const GROUPS: { title: string | null; items: Item[] }[] = [
       { href: '/historico', label: 'Histórico', Icon: ReceiptText },
       { href: '/analise', label: 'Análise', Icon: TrendingUp },
       { href: '/novo/lancamentos', label: 'Todos os lançamentos', Icon: ListOrdered },
+      // v1.1 — 28/09/2026 (Fase 14): a planilha só existe no computador, e por isso só aqui.
+      { href: '/planilha', label: 'Ver como planilha', Icon: Table },
     ],
   },
   {

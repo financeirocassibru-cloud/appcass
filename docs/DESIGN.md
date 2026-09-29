@@ -28,7 +28,7 @@ A agenda de "próximos eventos" sai da aba Planejamento e vira um bloco fixo na 
 calculado sempre — não pode depender da existência de um cenário ativo (bug do app antigo:
 `getUpcomingEvents()` retornava lista vazia sem cenário ativo).
 
-### Computador (v2.3 — 28/09/2026)
+### Computador (v2.4 — 28/09/2026; v2.3 — 28/09/2026)
 
 O celular continua sendo o alvo principal, e o layout dele não muda. A partir de **1024 px**
 (o `lg:` do Tailwind) o app ganha um layout próprio de computador:
@@ -46,6 +46,14 @@ O celular continua sendo o alvo principal, e o layout dele não muda. A partir d
 - **Folhas de baixo viram modal centralizado** (`components/ui/sheet.tsx`).
 - **Gráfico ampliado:** no computador não gira (a rotação por CSS é só para retrato) e usa a
   altura da tela.
+- **Planilha (v2.4 — 28/09/2026, Fase 14):** "Ver como planilha", abaixo de "Todos os
+  lançamentos", só na barra lateral. Tabela de verdade (`<table>`), com o cabeçalho, a primeira
+  coluna e o rodapé ("Quanto sobrou", "Saldo no fim do mês") presos, e a rolagem lateral só
+  dentro dela. Seções Receitas e Despesas em verde e vermelho — é dinheiro entrando e saindo —,
+  grupos por tipo (fixas, parcelamentos, metas, cartões e empréstimos, avulsos). Previsão em
+  itálico; pendente com o círculo do Histórico; o valor do cenário na cor da marca, com o real
+  riscado embaixo. Dois cliques no nome editam o item; dois cliques (ou Enter/F2) na célula
+  digitam o valor ali mesmo, Enter salva, Esc desiste.
 
 ## Telas
 

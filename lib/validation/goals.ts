@@ -13,6 +13,8 @@ import { keywordsField } from '@/lib/validation/keywords'
  * Por isso o formulário manda a magnitude e o sentido em separado, como a tela
  * de âncora do saldo faz.
  *
+ * v1.2 — 28/09/2026 (Fase 14): `goalMonthPlanSchema`, o mês fixado pela planilha.
+ *
  * v1.1 — 2026-09-27: `keywords` na meta, e `goalContributionSchema` — o aporte registrado
  * pelo [+], que vira saída amarrada ao aporte (migration 0019).
  */
@@ -49,6 +51,20 @@ export const createGoalSchema = z.object({
 
 export const updateGoalSchema = createGoalSchema.extend({
   id: z.string().uuid('Meta inválida'),
+})
+
+/**
+ * v1.2 — 28/09/2026 (Fase 14): o aporte previsto de UM mês ("Só este mês", na planilha). Zero
+ * vale — "este mês não guardo nada" — e o que falta vai para os outros meses.
+ */
+export const goalMonthPlanSchema = z.object({
+  goalId: z.string().uuid('Meta inválida'),
+  month: z.string().trim().refine(isISODate, 'Mês inválido'),
+  amountCents: z.coerce
+    .number()
+    .int('Valor inválido')
+    .min(0, 'Valor inválido')
+    .max(9_999_999_999, 'Valor acima do limite'),
 })
 
 export const goalIdSchema = z.object({

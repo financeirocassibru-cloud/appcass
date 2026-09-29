@@ -17,7 +17,9 @@ import { cn } from '@/lib/utils'
 const initialState: GoalActionState = {}
 
 /**
- * Formulário de meta. v1.1 — 2026-09-27.
+ * Formulário de meta. v1.2 — 28/09/2026.
+ *
+ * v1.2 — 28/09/2026 (Fase 14): `onDone`, para a planilha editar numa janela sem sair dela.
  *
  * v1.1: criar a meta passou para o [+] (modo Meta); este formulário ficou para editar, e
  * ganhou as palavras-chave que, no extrato, registram um aporte nela (migration 0019).
@@ -30,11 +32,14 @@ export function GoalForm({
   today,
   goal,
   suggestions = [],
+  onDone,
 }: {
   today: string
   goal?: GoalProgress
   /** Descrições de saídas já importadas, para sugerir palavra-chave. */
   suggestions?: string[]
+  /** v1.2 — 28/09/2026: chamado depois de salvar, no lugar de ir para a lista (planilha). */
+  onDone?: () => void
 }) {
   const router = useRouter()
   const isEditing = goal !== undefined
@@ -45,7 +50,8 @@ export function GoalForm({
       const result = isEditing ? await updateGoal(prev, formData) : await createGoal(prev, formData)
       if (result.success) {
         toast.success(result.success)
-        router.push('/metas')
+        if (onDone) onDone()
+        else router.push('/metas')
       }
       return result
     },

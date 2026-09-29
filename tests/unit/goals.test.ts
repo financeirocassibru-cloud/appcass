@@ -164,3 +164,59 @@ describe('expandGoal — limites', () => {
     expect(aportes.map((a) => a.key)).toEqual(['goal:meta-1:2026-03', 'goal:meta-1:2026-04'])
   })
 })
+
+// v1.1 — 28/09/2026 (Fase 14): o mês fixado pela planilha ("Só este mês").
+describe('expandGoal — mês com valor fixado', () => {
+  it('o mês fixado recebe o valor dele e os outros rateiam o resto, somando o faltante', () => {
+    const aportes = expandGoal(
+      goal({ planOverrides: [{ month: '2026-04-01', amountCents: 50_000 }] }),
+      '2026-03-01',
+      '2026-08-31',
+    )
+    const valores = aportes.map((a) => a.amountCents)
+    expect(valores[1]).toBe(50_000)
+    expect(valores.filter((_, i) => i !== 1)).toEqual([110_000, 110_000, 110_000, 110_000, 110_000])
+    expect(sumCents(valores)).toBe(600_000)
+  })
+
+  it('a soma fecha para qualquer mês e valor fixado', () => {
+    for (const month of ['2026-03-01', '2026-05-01', '2026-08-01']) {
+      for (const amount of [0, 1, 33_333, 250_000, 600_000]) {
+        const aportes = expandGoal(
+          goal({ planOverrides: [{ month, amountCents: amount }] }),
+          '2026-03-01',
+          '2026-08-31',
+        )
+        expect(sumCents(aportes.map((a) => a.amountCents))).toBe(600_000)
+      }
+    }
+  })
+
+  it('fixado acima do faltante não projeta além da meta', () => {
+    const aportes = expandGoal(
+      goal({ planOverrides: [{ month: '2026-03-01', amountCents: 900_000 }] }),
+      '2026-03-01',
+      '2026-08-31',
+    )
+    expect(sumCents(aportes.map((a) => a.amountCents))).toBe(600_000)
+  })
+
+  it('com aporte mensal definido, só o mês fixado muda', () => {
+    const aportes = expandGoal(
+      goal({ monthlyContributionCents: 100_000, planOverrides: [{ month: '2026-04-01', amountCents: 20_000 }] }),
+      '2026-03-01',
+      '2026-05-31',
+    )
+    expect(aportes.map((a) => a.amountCents)).toEqual([100_000, 20_000, 100_000])
+  })
+
+  it('a janela olhando só o fim do prazo continua vendo a parte daquele mês', () => {
+    const aportes = expandGoal(
+      goal({ planOverrides: [{ month: '2026-07-01', amountCents: 0 }] }),
+      '2026-03-01',
+      '2026-08-31',
+    )
+    expect(aportes.find((a) => a.date === '2026-07-31')).toBeUndefined()
+    expect(sumCents(aportes.map((a) => a.amountCents))).toBe(600_000)
+  })
+})

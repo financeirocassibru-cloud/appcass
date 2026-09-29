@@ -104,6 +104,10 @@ export function expandGoal(goal: Goal, from: ISODate, to: ISODate): Occurrence[]
 /**
  * Quanto cai em cada mês da janela.
  *
+ * v1.1 — 28/09/2026 (Fase 14): `goal.planOverrides` — o valor que a pessoa fixou para um mês na
+ * planilha ("Só este mês"). O mês fixado recebe esse valor, e o que falta é rateado entre os
+ * outros, para a soma continuar fechando com o faltante.
+ *
  * Com aporte mensal definido, é ele — **limitado ao que falta**: continuar
  * aportando depois de atingir a meta projetaria dinheiro saindo da conta sem
  * destino.
@@ -114,11 +118,14 @@ export function expandGoal(goal: Goal, from: ISODate, to: ISODate): Occurrence[]
  * aporte de dezembro, não a meta inteira espremida num mês.
  */
 function plannedAmounts(goal: Goal, months: readonly ISODate[], remaining: number): number[] {
+  // v1.1 — 28/09/2026: o mês com valor fixado pela planilha ("só este mês") recebe esse valor.
+  const fixedByMonth = planOverrideMap(goal)
+
   if (goal.monthlyContributionCents !== null) {
     const fixed = goal.monthlyContributionCents
     let left = remaining
-    return months.map(() => {
-      const amount = Math.min(fixed, left)
+    return months.map((month) => {
+      const amount = Math.min(fixedByMonth.get(month) ?? fixed, left)
       left -= amount
       return amount > 0 ? amount : 0
     })
@@ -126,7 +133,15 @@ function plannedAmounts(goal: Goal, months: readonly ISODate[], remaining: numbe
 
   // Sem prazo não há como derivar o mensal, e chutar um valor seria pior que
   // não mostrar: a projeção ficaria errada sem a pessoa saber por quê.
-  if (goal.targetDate === null) return months.map(() => 0)
+  // v1.1 — 28/09/2026: menos no mês que a pessoa fixou — ali o valor é dela.
+  if (goal.targetDate === null) {
+    let left = remaining
+    return months.map((month) => {
+      const amount = Math.min(fixedByMonth.get(month) ?? 0, left)
+      left -= amount
+      return amount > 0 ? amount : 0
+    })
+  }
 
   const first = months[0]
   if (first === undefined) return []
@@ -134,7 +149,42 @@ function plannedAmounts(goal: Goal, months: readonly ISODate[], remaining: numbe
   const horizonMonths = monthsBetween(first, goal.targetDate) + 1
   if (horizonMonths <= 0) return months.map((_, index) => (index === 0 ? remaining : 0))
 
-  return splitCents(remaining, horizonMonths)
+  if (fixedByMonth.size === 0) return splitCents(remaining, horizonMonths)
+
+  // v1.1 — 28/09/2026: com meses fixados, o horizonte inteiro é montado — os fixados com o valor
+  // deles (limitado ao que falta) e o resto rateado entre os demais meses. A soma continua sendo
+  // exatamente o que falta, a menos que os fixados sozinhos passem disso.
+  const horizon: ISODate[] = []
+  for (let cursor = first; horizon.length < horizonMonths; cursor = addOneMonth(cursor)) {
+    horizon.push(cursor)
+  }
+  let left = remaining
+  const fixedAmounts = horizon.map((month) => {
+    const value = fixedByMonth.get(month)
+    if (value === undefined) return null
+    const amount = Math.min(value, left)
+    left -= amount
+    return amount
+  })
+  const freeCount = fixedAmounts.filter((amount) => amount === null).length
+  const shares = freeCount > 0 ? splitCents(left, freeCount) : []
+  let shareIndex = 0
+  return horizon.map((_, index) => {
+    const fixedAmount = fixedAmounts[index]
+    if (fixedAmount !== null && fixedAmount !== undefined) return fixedAmount
+    const share = shares[shareIndex] ?? 0
+    shareIndex += 1
+    return share
+  })
+}
+
+/** v1.1 — 28/09/2026: os meses fixados, pelo 1º dia do mês. */
+function planOverrideMap(goal: Goal): Map<ISODate, number> {
+  const map = new Map<ISODate, number>()
+  for (const override of goal.planOverrides ?? []) {
+    map.set(startOfMonth(override.month), override.amountCents)
+  }
+  return map
 }
 
 function addOneMonth(date: ISODate): ISODate {

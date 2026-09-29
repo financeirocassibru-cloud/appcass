@@ -1,6 +1,7 @@
 'use client'
 
 import { useActionState, useState } from 'react'
+import type { Route } from 'next'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { createEntry, type EntryActionState } from '@/lib/actions/entries'
@@ -39,6 +40,9 @@ import { cn } from '@/lib/utils'
  * E todo modo ganhou "Conectar ao extrato" — as palavras-chave com que a importação reconhece
  * este item e o marca como pago (migration 0019), sugeridas a partir do que já foi importado.
  * Fica recolhido para o avulso continuar em dois toques.
+ *
+ * v1.4 — 28/09/2026 (Fase 14). `onSaved`: aberto numa janela da planilha, salvar devolve a quem
+ * abriu em vez de navegar para a lista.
  *
  * v1.3 — 2026-09-27 (Fase 13). "Pago com": Avulso (Saída e Entrada), Conta fixa e Parcelado
  * podem vir de um cartão ou de um empréstimo (`CreditSourceField`). A data continua sendo a do
@@ -107,6 +111,7 @@ export function LaunchForm({
   suggestions = { expense: [], income: [] },
   creditAccounts = [],
   onKindChange,
+  onSaved,
 }: {
   expenseCategories: Category[]
   incomeCategories: Category[]
@@ -121,6 +126,11 @@ export function LaunchForm({
   creditAccounts?: CreditOption[]
   /** Para a tela mostrar os atalhos do tipo escolhido. */
   onKindChange?: (kind: EntryKind) => void
+  /**
+   * v1.4 — 28/09/2026 (Fase 14): chamado depois de salvar **no lugar** de navegar — a planilha
+   * abre este formulário numa janela e quer continuar onde estava.
+   */
+  onSaved?: () => void
 }) {
   const router = useRouter()
 
@@ -163,13 +173,16 @@ export function LaunchForm({
   const creditAllowed = mode === 'single' || (kind === 'expense' && (mode === 'recurring' || mode === 'installment'))
   const fundedExpense = creditAllowed && creditAccountId !== '' && kind === 'expense'
 
+  // v1.4 — 28/09/2026: navega para a lista do que foi criado, ou devolve a quem abriu a janela.
+  const go = (path: Route) => (onSaved ? onSaved() : router.push(path))
+
   const [state, formAction, pending] = useActionState(
     async (previous: ActionState, formData: FormData): Promise<ActionState> => {
       if (mode === 'single') {
         const result = await createEntry(previous, formData)
         if (result.success) {
           toast.success('Lançamento salvo.')
-          router.push('/historico')
+          go('/historico')
         }
         return result
       }
@@ -178,14 +191,14 @@ export function LaunchForm({
           const result = await createGoal(previous, formData)
           if (result.success) {
             toast.success(result.success)
-            router.push('/metas')
+            go('/metas')
           }
           return { error: result.error }
         }
         const result = await recordGoalContribution(previous, formData)
         if (result.success) {
           toast.success(result.success)
-          router.push(`/metas/${goalChoice}`)
+          go(`/metas/${goalChoice}` as Route)
         }
         return { error: result.error }
       }
@@ -193,14 +206,14 @@ export function LaunchForm({
         const result = await createRecurring(previous, formData)
         if (result.success) {
           toast.success(kind === 'income' ? 'Renda fixa criada.' : result.success)
-          router.push(kind === 'income' ? '/rendas' : '/compromissos')
+          go(kind === 'income' ? '/rendas' : '/compromissos')
         }
         return { error: result.error }
       }
       const result = await createInstallmentPlan(previous, formData)
       if (result.success) {
         toast.success(result.success)
-        router.push('/parcelas')
+        go('/parcelas')
       }
       return { error: result.error }
     },

@@ -54,6 +54,8 @@ export interface ScenarioActionState {
 
 function revalidateScenarioViews(): void {
   revalidatePath('/analise')
+  // 28/09/2026 (Fase 14): cenários também se criam e se veem na planilha.
+  revalidatePath('/planilha', 'layout')
   revalidatePath('/cenarios')
 }
 

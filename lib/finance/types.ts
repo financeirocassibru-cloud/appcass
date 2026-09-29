@@ -60,6 +60,17 @@ export interface Goal {
   monthlyContributionCents: number | null
   savedCents: number
   archivedAt: string | null
+  /**
+   * v1.1 — 28/09/2026 (Fase 14, migration 0023): o aporte previsto que a pessoa fixou para um mês
+   * ("Só este mês" na planilha). `month` é o 1º dia do mês. Ausente = nenhum.
+   */
+  planOverrides?: readonly GoalPlanOverride[]
+}
+
+/** v1.1 — 28/09/2026: um mês de meta com valor fixado (`goal_plan_overrides`). */
+export interface GoalPlanOverride {
+  month: ISODate
+  amountCents: number
 }
 
 /** Desvio de um cenário sobre um dado real. Nunca uma cópia dele. */

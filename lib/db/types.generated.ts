@@ -299,6 +299,51 @@ export type Database = {
           },
         ];
       };
+      goal_plan_overrides: {
+        Row: {
+          amount_cents: number;
+          created_at: string;
+          goal_id: string;
+          id: string;
+          month: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          amount_cents: number;
+          created_at?: string;
+          goal_id: string;
+          id?: string;
+          month: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          amount_cents?: number;
+          created_at?: string;
+          goal_id?: string;
+          id?: string;
+          month?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "goal_plan_overrides_goal_fkey";
+            columns: ["goal_id", "user_id"];
+            isOneToOne: false;
+            referencedRelation: "goals";
+            referencedColumns: ["id", "user_id"];
+          },
+          {
+            foreignKeyName: "goal_plan_overrides_goal_fkey";
+            columns: ["goal_id", "user_id"];
+            isOneToOne: false;
+            referencedRelation: "v_goal_progress";
+            referencedColumns: ["goal_id", "user_id"];
+          },
+        ];
+      };
       goals: {
         Row: {
           archived_at: string | null;
@@ -902,6 +947,10 @@ export type Database = {
         };
         Returns: string;
       };
+      set_goal_month_plan: {
+        Args: { p_amount_cents: number; p_goal_id: string; p_month: string };
+        Returns: string;
+      };
       set_installment_plan_credit: {
         Args: { p_credit_account_id: string; p_plan_id: string };
         Returns: number;
@@ -918,6 +967,16 @@ export type Database = {
           p_target_type: Database["public"]["Enums"]["override_target"];
         };
         Returns: string;
+      };
+      update_installment_plan: {
+        Args: {
+          p_amounts: number[];
+          p_category_id?: string;
+          p_description: string;
+          p_plan_id: string;
+          p_total_amount_cents: number;
+        };
+        Returns: number;
       };
     };
     Enums: {

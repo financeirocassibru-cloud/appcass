@@ -25,6 +25,8 @@ function revalidateCategoryViews(): void {
   revalidatePath('/ajustes/categorias')
   revalidatePath('/historico')
   revalidatePath('/novo')
+  // 28/09/2026 (Fase 14): o nome da categoria é o nome da linha na planilha.
+  revalidatePath('/planilha', 'layout')
 }
 
 export async function createCategory(

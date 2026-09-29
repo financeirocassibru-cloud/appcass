@@ -9,6 +9,7 @@ import {
   setPaidCountSchema,
   setPlanCreditSchema,
   updateInstallmentKeywordsSchema,
+  updateInstallmentPlanSchema,
 } from '@/lib/validation/installments'
 
 /**
@@ -43,6 +44,10 @@ import {
  * `p_credit_account_id` (migration 0021): as parcelas pendentes nascem financiadas, cada uma na
  * fatura em que a data dela cai (o banco calcula, por `credit_first_due`). `setPlanCredit` põe
  * ou tira do cartão um parcelamento que já existe.
+ *
+ * v1.5 — 28/09/2026 (Fase 14): `updateInstallmentPlan` — o parcelamento inteiro de uma vez
+ * (descrição, categoria e total), por `update_installment_plan` (migration 0023). É o que a
+ * planilha chama depois de avisar que mudar uma parcela muda todas.
  */
 
 export interface InstallmentActionState {
@@ -52,6 +57,9 @@ export interface InstallmentActionState {
 
 function revalidateInstallmentViews(): void {
   revalidatePath('/parcelas')
+  // v1.5 — 28/09/2026 (Fase 14): a planilha e a Análise mostram as parcelas.
+  revalidatePath('/planilha', 'layout')
+  revalidatePath('/analise')
   revalidatePath('/')
   revalidatePath('/historico')
   revalidatePath('/novo')
@@ -288,4 +296,59 @@ export async function setPlanCredit(
       ? `No cartão: ${changed} ${changed === 1 ? 'parcela pendente' : 'parcelas pendentes'} nas faturas.`
       : 'Fora do cartão: as parcelas pendentes voltam a ser pagas uma a uma.',
   }
+}
+
+/**
+ * v1.5 — 28/09/2026 (Fase 14): muda o parcelamento inteiro.
+ *
+ * O total é re-rateado por `splitCents` (via `planInstallments`, o mesmo rateio da criação) entre
+ * TODAS as parcelas, inclusive as já pagas — é a compra que está sendo corrigida. A função do
+ * banco confere contagem e soma de novo e grava plano e parcelas numa transação.
+ */
+export async function updateInstallmentPlan(
+  _prev: InstallmentActionState,
+  formData: FormData,
+): Promise<InstallmentActionState> {
+  const parsed = updateInstallmentPlanSchema.safeParse({
+    id: formData.get('id'),
+    description: formData.get('description'),
+    totalAmountCents: formData.get('totalAmountCents'),
+    categoryId: formData.get('categoryId'),
+  })
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos' }
+  }
+
+  const supabase = await createClient()
+  const { data: plan, error: planError } = await supabase
+    .from('installment_plans')
+    .select('id, installments_count, first_due_on')
+    .eq('id', parsed.data.id)
+    .maybeSingle()
+  if (planError) return { error: `Não foi possível salvar: ${planError.message}` }
+  if (!plan) return { error: 'Parcelamento não encontrado.' }
+
+  const parcels = planInstallments({
+    id: plan.id,
+    description: parsed.data.description,
+    categoryId: parsed.data.categoryId,
+    totalAmountCents: parsed.data.totalAmountCents,
+    installmentsCount: plan.installments_count,
+    firstDueOn: plan.first_due_on,
+  })
+
+  const { data, error } = await supabase.rpc('update_installment_plan', {
+    p_plan_id: plan.id,
+    p_description: parsed.data.description,
+    p_total_amount_cents: parsed.data.totalAmountCents,
+    p_amounts: parcels.map((parcel) => parcel.amountCents),
+    ...(parsed.data.categoryId === null ? {} : { p_category_id: parsed.data.categoryId }),
+  })
+
+  if (error) return { error: `Não foi possível salvar: ${error.message}` }
+  if (!data) return { error: 'Nenhuma parcela foi alterada.' }
+
+  revalidateInstallmentViews()
+  revalidatePath(`/parcelas/${plan.id}`)
+  return { success: `Parcelamento atualizado: as ${plan.installments_count} parcelas mudaram juntas.` }
 }
