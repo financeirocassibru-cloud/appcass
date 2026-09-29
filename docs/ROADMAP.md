@@ -523,3 +523,46 @@ Decisões:
   `paid_with` e a intenção `fatura`, e a conferência deixa ajustar "Pago com" e "Será pago em".
 - **Fora desta fase:** cadastrar cartão e parcelar o restante da fatura pelo assistente,
   cenário sobre fatura, e informar o valor que o banco cobrou antes de pagar.
+
+## Fase 14 — "Ver como planilha" (só computador)
+
+v1.0 — 28/09/2026. No computador, abaixo de "Todos os lançamentos" na barra lateral, **Ver como
+planilha** (`/planilha`) mostra receitas e despesas como uma planilha de gastos mensal: um mês
+por coluna, total por seção, "Quanto sobrou" e o saldo no fim do mês. O padrão é **Próximos 12
+meses**, com o mesmo menu de período da Análise — e "Últimos 12 meses" e "Próximos 12 meses"
+entraram também na Análise.
+
+**Pronto quando:** dois cliques numa célula vazia de categoria criam o lançamento e ele aparece no
+Histórico; dois cliques numa conta fixa perguntam "Só este mês / Todos os meses" e cada resposta
+muda só o que diz; dois cliques numa parcela avisam que mudar uma muda todas, e a soma continua
+batendo com o total; "Só este mês" numa meta redistribui o que falta pelos outros meses; a linha
+do cartão abre a planilha dele, onde as compras se editam; e com um cenário escolhido a célula
+grava no cenário, sem tocar em `entries`.
+
+Decisões:
+
+- **Uma leitura nova, nenhum dado novo de lançamento.** A planilha é derivada inteira a cada
+  leitura por `buildSheet` (`lib/finance/sheet.ts`, puro e testado), das mesmas fontes da Análise.
+  Toda edição chama as Server Actions que as telas já usam (`components/finance/sheet/sheet-writes.ts`).
+- **Cada coisa no mês dela.** O lançamento real fica na coluna do próprio mês, pago ou pendente; a
+  previsão só é expandida de hoje em diante e sai quando vira lançamento. A conta de agosto
+  vencida continua em agosto — empurrá-la para hoje, como a curva faz, a somaria em duas colunas.
+- **Leitura de caixa, e o cartão é uma linha.** A compra no cartão/empréstimo não entra na
+  categoria (invariante 18); a conta é uma linha só, com o pagamento de fatura feito e o restante
+  devido no mês do vencimento. O dinheiro que veio de empréstimo entra em Receitas, na linha da
+  conta. As compras moram na planilha do cartão (`/planilha/cartao/[id]`), com a fatura por coluna.
+- **A pergunta certa antes de gravar.** Conta fixa, renda fixa e meta perguntam "Só este mês ou
+  todos". Só este mês na conta fixa materializa a ocorrência pendente com o valor novo
+  (`setRecurringOccurrenceAmount`, idempotente pelo mesmo índice — invariante 8); na meta, grava o
+  mês fixado em `goal_plan_overrides` (migration 0023) e `expandGoal` rateia o resto, com a soma
+  ainda igual ao que falta. A parcela não tem "só esta": `update_installment_plan` muda o plano e
+  todas as parcelas numa transação, com a soma conferida no banco.
+- **Cenário só do futuro.** Com um cenário escolhido, a célula de hoje em diante grava override
+  (`setOverride`) ou item hipotético (`createScenarioEntry`), pela mesma `applyScenario` e o mesmo
+  `overrideTargetOf` da Análise; o passado não edita. A célula mostra o valor do cenário com o real
+  riscado embaixo.
+- **Só no computador.** O link existe só na barra lateral; no celular, `/planilha` mostra um
+  aviso e aponta para o Histórico e a Análise.
+- **Digitar na célula substitui.** O campo da célula é o mesmo `MoneyInput` (variante `cell`), e o
+  primeiro dígito começa do zero — somado ao que estava lá, "9" sobre R$ 1.000,00 daria
+  R$ 10.000,09.

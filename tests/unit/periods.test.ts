@@ -32,6 +32,12 @@ describe('analysisPeriodRange', () => {
     expect(analysisPeriodRange('next_6m', today)).toEqual({ from: today, to: '2027-02-28' })
   })
 
+  // v1.1 — 28/09/2026: os 12 meses da planilha (Fase 14).
+  it('12 meses contam o mês atual, de calendário', () => {
+    expect(analysisPeriodRange('last_12m', today)).toEqual({ from: '2025-10-01', to: today })
+    expect(analysisPeriodRange('next_12m', today)).toEqual({ from: today, to: '2027-08-31' })
+  })
+
   it('atravessa a virada do ano e o 31', () => {
     expect(analysisPeriodRange('last_month', '2026-01-31')).toEqual({
       from: '2025-12-01',

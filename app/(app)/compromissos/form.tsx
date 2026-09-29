@@ -33,6 +33,8 @@ const FREQUENCIES: { value: RecurrenceFrequency; label: string }[] = [
  * v1.2 — 2026-09-27: palavras-chave do extrato (migration 0019) — a linha importada que
  * contém uma delas marca a ocorrência do mês como paga/recebida, com o valor do extrato.
  *
+ * v1.4 — 28/09/2026 (Fase 14): `onDone`, para a planilha editar numa janela sem sair dela.
+ *
  * v1.3 — 2026-09-27 (Fase 13): "Pago no cartão", só na conta fixa. A ocorrência deixa de sair
  * do saldo e entra na fatura do cartão; vira lançamento quando a fatura é paga.
  *
@@ -45,6 +47,7 @@ export function RecurringForm({
   rule,
   suggestions = [],
   cards = [],
+  onDone,
 }: {
   /** As categorias do tipo da regra. */
   categories: Category[]
@@ -53,6 +56,8 @@ export function RecurringForm({
   suggestions?: string[]
   /** v1.3 — 2026-09-27: cartões ativos, para "Pago no cartão". */
   cards?: { id: string; name: string }[]
+  /** v1.4 — 28/09/2026: chamado depois de salvar, no lugar de ir para a lista (planilha). */
+  onDone?: () => void
 }) {
   const router = useRouter()
   const kind = rule.kind
@@ -65,7 +70,8 @@ export function RecurringForm({
       const result = await updateRecurring(prev, formData)
       if (result.success) {
         toast.success(kind === 'income' ? 'Renda fixa atualizada.' : result.success)
-        router.push(kind === 'income' ? '/rendas' : '/compromissos')
+        if (onDone) onDone()
+        else router.push(kind === 'income' ? '/rendas' : '/compromissos')
       }
       return result
     },

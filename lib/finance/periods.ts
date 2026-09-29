@@ -1,7 +1,10 @@
 import { addDays, addMonths, endOfMonth, parseISODate, startOfMonth, toISODate, type ISODate } from './date'
 
 /**
- * Os atalhos de período da Análise. v1.0 — 2026-09-27.
+ * Os atalhos de período da Análise. v1.1 — 28/09/2026 (v1.0 — 2026-09-27).
+ *
+ * v1.1 — 28/09/2026: "Últimos 12 meses" e "Próximos 12 meses" (Fase 14), que a planilha usa como
+ * padrão e a Análise também oferece. O banco aceita os dois pela migration 0023.
  *
  * Eram quatro botões ("30 dias atrás", "Agora", "6 meses à frente", "1 ano") numa fileira que
  * rolava para o lado. Viraram as opções de um menu, cujo padrão é "Período específico" (as
@@ -31,6 +34,9 @@ export const ANALYSIS_PERIODS = [
   'next_3m',
   'last_6m',
   'next_6m',
+  // v1.1 — 28/09/2026: os 12 meses, pedidos junto com a planilha (Fase 14) — valem aqui e lá.
+  'last_12m',
+  'next_12m',
   'this_year',
 ] as const
 
@@ -50,6 +56,8 @@ export const ANALYSIS_PERIOD_LABELS: Record<AnalysisPeriod, string> = {
   next_3m: 'Próximos 3 meses',
   last_6m: 'Últimos 6 meses',
   next_6m: 'Próximos 6 meses',
+  last_12m: 'Últimos 12 meses',
+  next_12m: 'Próximos 12 meses',
   this_year: 'Este ano',
 }
 
@@ -89,6 +97,11 @@ export function analysisPeriodRange(period: AnalysisPeriod, today: ISODate): Per
       return { from: addMonths(startOfMonth(today), -5), to: today }
     case 'next_6m':
       return { from: today, to: endOfMonth(addMonths(startOfMonth(today), 5)) }
+    // v1.1 — 28/09/2026: a mesma família dos 3 e 6 meses — o mês atual conta.
+    case 'last_12m':
+      return { from: addMonths(startOfMonth(today), -11), to: today }
+    case 'next_12m':
+      return { from: today, to: endOfMonth(addMonths(startOfMonth(today), 11)) }
     case 'this_year': {
       const { year } = parseISODate(today)
       return { from: toISODate({ year, month: 1, day: 1 }), to: toISODate({ year, month: 12, day: 31 }) }

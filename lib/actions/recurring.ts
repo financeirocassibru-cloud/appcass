@@ -2,11 +2,13 @@
 
 import { revalidatePath } from 'next/cache'
 import { currentUserId } from '@/lib/db/current-user'
+import { recurrenceOccurrenceKey } from '@/lib/finance/recurrence'
 import { createClient } from '@/lib/supabase/server'
 import { keywordsPatch } from '@/lib/validation/keywords'
 import {
   createRecurringSchema,
   materializeSchema,
+  occurrenceAmountSchema,
   recurringIdSchema,
   toggleRecurringSchema,
   updateRecurringSchema,
@@ -31,6 +33,9 @@ import {
  * v1.3 — 2026-09-27 (Fase 13): conta fixa no cartão (`credit_account_id`, migration 0021). A
  * ocorrência deixa de sair do saldo: entra na fatura, e vira lançamento quando a fatura é paga.
  * Só saída — renda não "vem" de cartão.
+ *
+ * v1.4 — 28/09/2026 (Fase 14): `setRecurringOccurrenceAmount` — o valor de uma ocorrência só
+ * ("Só este mês", na planilha), sem mexer na regra.
  */
 
 /** v1.3 — 2026-09-27: ausente não mexe; renda nunca fica num cartão. */
@@ -50,6 +55,9 @@ export interface RecurringActionState {
  */
 function revalidateRecurringViews(): void {
   revalidatePath('/compromissos')
+  // v1.4 — 28/09/2026 (Fase 14): a planilha e a Análise mostram as ocorrências.
+  revalidatePath('/planilha', 'layout')
+  revalidatePath('/analise')
   revalidatePath('/rendas')
   revalidatePath('/novo')
   revalidatePath('/novo/lancamentos')
@@ -249,4 +257,77 @@ export async function materializeRecurring(
   revalidateRecurringViews()
   // `data === null` significa "já estava materializada" — o resultado é o mesmo.
   return { success: data === null ? 'Essa ocorrência já estava paga.' : 'Marcado como pago.' }
+}
+
+/**
+ * v1.4 — 28/09/2026 (Fase 14): o valor de UMA ocorrência — "Só este mês", na planilha.
+ *
+ * A regra não muda. A ocorrência daquele mês vira lançamento (pendente, por
+ * `materialize_recurring_occurrence` — a mesma idempotência de "marcar como pago", invariante 8),
+ * e o valor muda só nela. Se a ocorrência já existia, paga ou não, é ela que muda. A projeção
+ * descarta a prevista daquele mês porque agora existe a real (`dedupeAgainstEntries`).
+ *
+ * A chave é a de `recurrenceOccurrenceKey`, a mesma do banco: mês para mensal, dia para o resto.
+ */
+export async function setRecurringOccurrenceAmount(
+  _prev: RecurringActionState,
+  formData: FormData,
+): Promise<RecurringActionState> {
+  const parsed = occurrenceAmountSchema.safeParse({
+    ruleId: formData.get('ruleId'),
+    occursOn: formData.get('occursOn'),
+    amountCents: formData.get('amountCents'),
+  })
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos' }
+  }
+
+  const supabase = await createClient()
+  const { data: rule, error: ruleError } = await supabase
+    .from('recurring_rules')
+    .select(
+      'id, kind, description, amount_cents, category_id, frequency, day_of_month, starts_on, ends_on, is_active',
+    )
+    .eq('id', parsed.data.ruleId)
+    .maybeSingle()
+  if (ruleError) return { error: `Não foi possível salvar: ${ruleError.message}` }
+  if (!rule) return { error: 'Conta fixa não encontrada.' }
+
+  const { error: materializeError } = await supabase.rpc('materialize_recurring_occurrence', {
+    p_rule_id: parsed.data.ruleId,
+    p_occurs_on: parsed.data.occursOn,
+    p_settled: false,
+  })
+  if (materializeError) return { error: `Não foi possível salvar: ${materializeError.message}` }
+
+  const key = recurrenceOccurrenceKey(
+    {
+      id: rule.id,
+      kind: rule.kind,
+      description: rule.description,
+      amountCents: Number(rule.amount_cents),
+      categoryId: rule.category_id,
+      frequency: rule.frequency,
+      dayOfMonth: rule.day_of_month,
+      startsOn: rule.starts_on,
+      endsOn: rule.ends_on,
+      isActive: rule.is_active,
+    },
+    parsed.data.occursOn,
+  )
+
+  // `.eq()` + `.select()` conferido (invariantes 3 e 17).
+  const { data, error } = await supabase
+    .from('entries')
+    .update({ amount_cents: parsed.data.amountCents })
+    .eq('source', 'recurring')
+    .eq('source_id', parsed.data.ruleId)
+    .eq('occurrence_key', key)
+    .select('id')
+
+  if (error) return { error: `Não foi possível salvar: ${error.message}` }
+  if (!data || data.length === 0) return { error: 'Ocorrência não encontrada.' }
+
+  revalidateRecurringViews()
+  return { success: 'Valor deste mês atualizado. Os outros meses continuam com o valor da regra.' }
 }

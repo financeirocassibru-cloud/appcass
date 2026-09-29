@@ -10,6 +10,7 @@ import {
   createGoalSchema,
   goalContributionSchema,
   goalIdSchema,
+  goalMonthPlanSchema,
   updateGoalSchema,
 } from '@/lib/validation/goals'
 import { keywordsPatch } from '@/lib/validation/keywords'
@@ -26,6 +27,10 @@ import { keywordsPatch } from '@/lib/validation/keywords'
  * o aporte feito por lá é uma **saída** — `recordGoalContribution` grava, numa transação, o
  * lançamento (`source = 'goal'`) e o aporte amarrado a ele por `entry_id`. Excluir o aporte
  * dessa forma exclui a saída, e o cascade leva o aporte junto.
+ *
+ * v1.2 — 28/09/2026 (Fase 14): `setGoalMonthPlan` — o aporte previsto de
+ * UM mês, fixado pela planilha ("Só este mês", migration 0023). O resto continua derivado: o que
+ * falta é rateado pelos outros meses (`expandGoal`).
  */
 
 export interface GoalActionState {
@@ -35,6 +40,8 @@ export interface GoalActionState {
 
 function revalidateGoalViews(): void {
   revalidatePath('/metas')
+  // v1.2 — 28/09/2026 (Fase 14): a planilha mostra os aportes previstos e os reais.
+  revalidatePath('/planilha', 'layout')
   revalidatePath('/analise')
   // v1.1 — 2026-09-27: o aporte como saída aparece no saldo, no Histórico e no [+].
   revalidatePath('/')
@@ -287,4 +294,37 @@ export async function deleteContribution(
 
   revalidateGoalViews()
   return { success: found.data.entry_id ? 'Aporte e a saída dele excluídos.' : 'Aporte excluído.' }
+}
+
+/**
+ * v1.2 — 28/09/2026 (Fase 14): fixa o aporte previsto de um mês. Função do banco
+ * (`set_goal_month_plan`, migration 0023): o privilégio de coluna só deixa mudar o valor, e o
+ * `upsert()` do supabase-js mandaria todas as colunas. A meta de outra pessoa não é encontrada —
+ * a função é `security invoker` e lê `goals` pela RLS.
+ */
+export async function setGoalMonthPlan(
+  _prev: GoalActionState,
+  formData: FormData,
+): Promise<GoalActionState> {
+  const parsed = goalMonthPlanSchema.safeParse({
+    goalId: formData.get('goalId'),
+    month: formData.get('month'),
+    amountCents: formData.get('amountCents'),
+  })
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Dados inválidos' }
+  }
+
+  const supabase = await createClient()
+  const { data, error } = await supabase.rpc('set_goal_month_plan', {
+    p_goal_id: parsed.data.goalId,
+    p_month: parsed.data.month,
+    p_amount_cents: parsed.data.amountCents,
+  })
+
+  if (error) return { error: `Não foi possível salvar: ${error.message}` }
+  if (!data) return { error: 'Meta não encontrada.' }
+
+  revalidateGoalViews()
+  return { success: 'Aporte do mês ajustado. O que falta foi redistribuído pelos outros meses.' }
 }

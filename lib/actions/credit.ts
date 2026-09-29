@@ -38,6 +38,8 @@ export interface CreditActionState {
 
 function revalidateCreditViews(): void {
   revalidatePath('/cartoes', 'layout')
+  // 28/09/2026 (Fase 14): a fatura é uma linha da planilha, e o cartão tem a própria.
+  revalidatePath('/planilha', 'layout')
   revalidatePath('/')
   revalidatePath('/historico')
   revalidatePath('/analise')

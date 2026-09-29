@@ -280,6 +280,27 @@ alter table entries
   o principal de `credit_bill`/`credit_carry` e sem o dinheiro que veio de cartão/empréstimo;
   `interest_cents` soma como saída. `v_interest_by_month` alimenta "Juros e encargos".
 
+## Planilha (migration 0023) — v1.5 — 28/09/2026
+
+```sql
+-- O aporte previsto de UM mês de uma meta, fixado na planilha ("Só este mês"). Derivado continua
+-- derivado: expandGoal usa o valor nos meses fixados e rateia o que falta pelos outros.
+create table goal_plan_overrides (
+  id uuid primary key default gen_random_uuid(),
+  goal_id uuid not null,        -- FK composta (goal_id, user_id) → goals: nunca a meta alheia
+  user_id uuid not null references auth.users(id) on delete cascade,
+  month date not null,          -- 1º dia do mês
+  amount_cents bigint not null check (amount_cents >= 0),
+  unique (goal_id, month)
+);
+-- grant update (amount_cents) só: meta, mês e dono não mudam (invariante 15).
+```
+
+- `set_goal_month_plan(meta, mês, valor)` — grava ou atualiza o mês fixado (`security invoker`).
+- `update_installment_plan(plano, descrição, total, valores[], categoria?)` — o parcelamento inteiro:
+  plano e todas as parcelas numa transação, com contagem e soma conferidas de novo.
+- `profiles.analysis_period` aceita `last_12m` e `next_12m`.
+
 ## Views (dashboard)
 
 Criar com `security_invoker = on` para que a RLS das tabelas-base seja respeitada por quem

@@ -1,5 +1,5 @@
 import type { ISODate } from '@/lib/finance/date'
-import type { Goal } from '@/lib/finance/types'
+import type { Goal, GoalPlanOverride } from '@/lib/finance/types'
 import { createClient } from '@/lib/supabase/server'
 
 /**
@@ -15,6 +15,8 @@ import { createClient } from '@/lib/supabase/server'
  *
  * v1.1 — 2026-09-27: a meta traz `keywords` (migration 0019) — as palavras que, no extrato,
  * registram um aporte nela.
+ *
+ * v1.2 — 28/09/2026 (Fase 14): `listGoalPlanOverrides` — os meses com aporte fixado na planilha.
  */
 
 export interface GoalProgress extends Goal {
@@ -169,9 +171,15 @@ export async function listContributions(goalId: string): Promise<Contribution[]>
   }))
 }
 
-/** Metas ativas na forma que o motor de projeção consome. */
+/**
+ * Metas ativas na forma que o motor de projeção consome.
+ *
+ * v1.2 — 28/09/2026 (Fase 14): com os meses fixados pela planilha (`goal_plan_overrides`,
+ * migration 0023). A Análise e o Início passam a respeitá-los também — o aporte previsto é um só,
+ * onde quer que apareça.
+ */
 export async function listGoalsForProjection(): Promise<Goal[]> {
-  const goals = await listGoals(false)
+  const [goals, overrides] = await Promise.all([listGoals(false), listGoalPlanOverrides()])
 
   // `expandGoal` já descarta meta arquivada e meta cumprida; o filtro de
   // arquivadas acima só evita trazê-las do banco à toa.
@@ -183,5 +191,25 @@ export async function listGoalsForProjection(): Promise<Goal[]> {
     monthlyContributionCents: goal.monthlyContributionCents,
     savedCents: goal.savedCents,
     archivedAt: goal.archivedAt,
+    planOverrides: overrides.get(goal.id) ?? [],
   }))
+}
+
+/** v1.2 — 28/09/2026: os meses fixados, por meta. */
+export async function listGoalPlanOverrides(): Promise<Map<string, GoalPlanOverride[]>> {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('goal_plan_overrides')
+    .select('goal_id, month, amount_cents')
+    .order('month')
+
+  if (error) throw new Error(`Falha ao ler os meses fixados das metas: ${error.message}`)
+
+  const byGoal = new Map<string, GoalPlanOverride[]>()
+  for (const row of data ?? []) {
+    const list = byGoal.get(row.goal_id) ?? []
+    list.push({ month: row.month, amountCents: Number(row.amount_cents) })
+    byGoal.set(row.goal_id, list)
+  }
+  return byGoal
 }

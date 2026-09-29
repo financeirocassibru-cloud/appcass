@@ -172,6 +172,7 @@ app/
   (app)/cartoes/              # cartões e empréstimos: faturas, limite, pagar, parcelar (v1.2 — 2026-09-27)
   (app)/metas/
   (app)/analise/              # janela passado+futuro, escala dia/semana/mês, cenários, análises mensais
+  (app)/planilha/             # só computador: mês a mês, editável; cartao/[id] = a do cartão (v1.3 — 28/09/2026)
   (app)/ajustes/{perfil,categorias,convites}/
   manifest.ts
 components/
@@ -559,6 +560,30 @@ npm run dev
     Histórico quando a fatura é paga.
 48. "+ Cartão" no [+] cadastra sem perder o que já foi digitado; um gasto acima do limite avisa e
     salva.
+
+**Planilha (Fase 14, v1.3 — 28/09/2026):**
+
+49. No computador, "Ver como planilha" aparece logo abaixo de "Todos os lançamentos"; no celular o
+    link não existe, e abrir `/planilha` pelo endereço mostra o aviso em vez da grade.
+50. Dois cliques na célula vazia de Mercado em novembro, R$ 50 e Enter: nasce um lançamento
+    pendente em novembro, na categoria Mercado, visível no Histórico.
+51. Aluguel de R$ 1.800, dezembro → R$ 1.900 → "Só este mês": só dezembro muda, e a ocorrência
+    aparece no Histórico como pendente. De novo com "Todos os meses": a regra passa a R$ 1.900 e
+    os meses já pagos não mudam.
+52. Parcela de R$ 1.000 de um sofá em 3× → R$ 1.500: o aviso "mudar uma muda todas" mostra 3×
+    R$ 1.500 = R$ 4.500, e confirmar muda as três; a soma bate com o total.
+53. Meta de R$ 6.000 até março, "Só este mês" = R$ 0 em novembro: novembro zera e os outros meses
+    sobem para a soma continuar R$ 6.000; na Análise, a mesma coisa.
+54. A conta de agosto vencida e não paga aparece em agosto, com o marcador de pendente, e não é
+    somada de novo em setembro.
+55. O Uber de R$ 30 no cartão não aparece em Transporte na planilha principal; a linha "Fatura
+    Nubank" mostra a fatura no mês do vencimento, e dois cliques nela abrem a planilha do cartão,
+    onde o Uber está na coluna da fatura e se edita.
+56. Com um cenário escolhido, mudar uma célula de outubro grava só no cenário: `entries` não muda,
+    a célula mostra o valor novo com o real riscado, e uma célula de agosto (passado) não edita.
+57. "Últimos 12 meses" e "Próximos 12 meses" aparecem no menu de período da Análise e da planilha.
+58. Agrupado por categoria, os avulsos somam por categoria; "Um por linha" mostra cada
+    lançamento, e as três ordens (alfabética, data do gasto, data de lançamento) reordenam.
 
 **Produção:** deploy na Vercel com preview por PR; `Site URL`/`Redirect URLs` do Supabase
 apontando para produção e para os previews; `supabase db push` no projeto remoto; conferir

@@ -20,6 +20,8 @@ import { keywordsField } from '@/lib/validation/keywords'
  * v1.3 — 2026-09-27: `keywords` no plano (as parcelas não copiam — invariante 6), e
  * `updateInstallmentKeywordsSchema` para editá-las depois (migration 0019).
  *
+ * v1.5 — 28/09/2026 (Fase 14): `updateInstallmentPlanSchema`, o parcelamento editado inteiro.
+ *
  * v1.4 — 2026-09-27 (Fase 13): `creditAccountId` — parcelamento no cartão (migration 0021) — e
  * `setPlanCreditSchema`, para pôr ou tirar do cartão um parcelamento já cadastrado.
  */
@@ -113,4 +115,23 @@ export const setPlanCreditSchema = z.object({
     .trim()
     .transform((value) => (value === '' ? null : value))
     .refine((value) => value === null || z.string().uuid().safeParse(value).success, 'Cartão inválido'),
+})
+
+/**
+ * v1.5 — 28/09/2026 (Fase 14): o parcelamento inteiro — descrição, categoria e total — de uma vez
+ * (`update_installment_plan`, migration 0023). O total é re-rateado por `splitCents` entre todas
+ * as parcelas; mudar uma parcela sozinha desfaria a soma.
+ */
+export const updateInstallmentPlanSchema = z.object({
+  id: z.string().uuid('Parcelamento inválido'),
+  description: z.string().trim().min(1, 'Informe a descrição').max(100, 'Descrição longa demais'),
+  totalAmountCents: z.coerce
+    .number()
+    .int('Valor inválido')
+    .positive('Informe um valor maior que zero')
+    .max(9_999_999_999, 'Valor acima do limite'),
+  categoryId: z
+    .union([z.string(), z.null(), z.undefined()])
+    .transform((value) => (value === null || value === undefined || value.trim() === '' ? null : value.trim()))
+    .refine((value) => value === null || z.string().uuid().safeParse(value).success, 'Categoria inválida'),
 })

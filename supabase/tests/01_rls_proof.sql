@@ -6,6 +6,8 @@
 -- v1.5 — 2026-09-27: conexão do extrato ao que foi cadastrado e aporte como saída (migration 0019) no fim.
 -- v1.6 — 2026-09-27: cartões e empréstimos (migrations 0020/0021) no fim.
 -- v1.7 — 2026-09-27: `is_admin()` como invoker (migration 0022) no fim.
+-- v1.8 — 28/09/2026: planilha (migration 0023) no fim — períodos de 12 meses, mês fixado da
+--   meta e o parcelamento editado inteiro.
 -- Roda como um papel sem BYPASSRLS, alternando o "usuário logado" via GUC,
 -- que é o que a função auth.uid() do shim lê.
 
@@ -1951,5 +1953,164 @@ begin
 end $$;
 
 reset role;
+
+
+-- ============================================================================================
+-- v1.8 — 28/09/2026: planilha (migration 0023)
+-- ============================================================================================
+
+set role authenticated;
+set request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
+
+-- Os 12 meses são aceitos como período salvo.
+do $$
+declare periodo text;
+begin
+  update public.profiles set analysis_period = 'next_12m'
+   where id = '11111111-1111-1111-1111-111111111111';
+  select analysis_period into periodo from public.profiles;
+  if periodo <> 'next_12m' then raise exception 'next_12m deveria ser aceito (%)', periodo; end if;
+  update public.profiles set analysis_period = 'last_12m'
+   where id = '11111111-1111-1111-1111-111111111111';
+end $$;
+
+-- Mês fixado da meta: grava, atualiza sem duplicar, e só o valor muda.
+do $$
+declare
+  meta uuid;
+  v1 uuid;
+  v2 uuid;
+  n int;
+  valor bigint;
+begin
+  insert into public.goals (user_id, name, target_amount_cents, target_date)
+  values ('11111111-1111-1111-1111-111111111111', 'Planilha da Ana', 600000, '2027-03-31')
+  returning id into meta;
+
+  v1 := public.set_goal_month_plan(meta, '2026-11-17', 20000);
+  v2 := public.set_goal_month_plan(meta, '2026-11-01', 0);
+  if v1 <> v2 then raise exception 'set_goal_month_plan deveria atualizar, não duplicar'; end if;
+
+  select count(*), max(amount_cents) into n, valor from public.goal_plan_overrides where goal_id = meta;
+  if n <> 1 or valor <> 0 then raise exception 'mês fixado errado: % linha(s), valor %', n, valor; end if;
+
+  if (select month from public.goal_plan_overrides where id = v1) <> '2026-11-01' then
+    raise exception 'o mês fixado deveria ser o 1º dia do mês';
+  end if;
+
+  begin
+    update public.goal_plan_overrides set month = '2026-12-01' where id = v1;
+    raise exception 'ESCALADA: o mês do override não deveria ser editável (grant de coluna)';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+
+set request.jwt.claim.sub = '22222222-2222-2222-2222-222222222222';
+
+do $$
+declare
+  meta_ana uuid;
+  n int;
+begin
+  select count(*) into n from public.goal_plan_overrides;
+  if n <> 0 then raise exception 'VAZAMENTO: Bruno viu % mês(es) fixado(s) da Ana', n; end if;
+
+  -- Bruno não enxerga a meta da Ana — a função não a encontra.
+  begin
+    perform public.set_goal_month_plan('00000000-0000-0000-0000-000000000000', '2026-11-01', 1);
+    raise exception 'set_goal_month_plan deveria recusar meta inexistente';
+  exception when no_data_found then null;
+  end;
+end $$;
+
+reset role;
+
+-- Direto na tabela, com o id da meta alheia e o próprio user_id, a FK composta recusa.
+do $$
+declare meta_ana uuid;
+begin
+  select id into meta_ana from public.goals where name = 'Planilha da Ana';
+  set local role authenticated;
+  perform set_config('request.jwt.claim.sub', '22222222-2222-2222-2222-222222222222', true);
+  begin
+    insert into public.goal_plan_overrides (goal_id, user_id, month, amount_cents)
+    values (meta_ana, '22222222-2222-2222-2222-222222222222', '2026-12-01', 1);
+    raise exception 'ESCALADA: Bruno fixou um mês na meta da Ana';
+  exception when foreign_key_violation then null;
+  end;
+end $$;
+
+reset role;
+
+-- O parcelamento editado inteiro: plano e parcelas juntos, soma conferida.
+set role authenticated;
+set request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
+
+do $$
+declare
+  plano uuid;
+  n int;
+  soma bigint;
+  d text;
+begin
+  plano := public.create_installment_plan(
+    'Cadeira', 30000::bigint, 3::smallint, '2026-10-10'::date,
+    '[{"number":"1","amount_cents":10000,"due_on":"2026-10-10","description":"Cadeira (1/3)"},
+      {"number":"2","amount_cents":10000,"due_on":"2026-11-10","description":"Cadeira (2/3)"},
+      {"number":"3","amount_cents":10000,"due_on":"2026-12-10","description":"Cadeira (3/3)"}]'::jsonb
+  );
+
+  -- A soma que não bate não chega a ser gravada.
+  begin
+    perform public.update_installment_plan(plano, 'Cadeira', 45000, array[15000, 15000, 14999]::bigint[]);
+    raise exception 'update_installment_plan aceitou soma errada';
+  exception when check_violation then null;
+  end;
+  begin
+    perform public.update_installment_plan(plano, 'Cadeira', 30000, array[15000, 15000]::bigint[]);
+    raise exception 'update_installment_plan aceitou número de parcelas errado';
+  exception when check_violation then null;
+  end;
+
+  n := public.update_installment_plan(plano, 'Cadeira gamer', 45001, array[15001, 15000, 15000]::bigint[]);
+  if n <> 3 then raise exception 'update_installment_plan deveria mudar 3 parcelas (%)', n; end if;
+
+  select sum(amount_cents), count(*) into soma, n from public.entries
+   where source = 'installment' and source_id = plano;
+  if soma <> 45001 or n <> 3 then raise exception 'parcelas: soma % em % linhas', soma, n; end if;
+
+  select description into d from public.entries
+   where source = 'installment' and source_id = plano and installment_number = 2;
+  if d <> 'Cadeira gamer (2/3)' then raise exception 'descrição da parcela: %', d; end if;
+
+  if (select total_amount_cents from public.installment_plans where id = plano) <> 45001 then
+    raise exception 'o total do plano não acompanhou';
+  end if;
+end $$;
+
+set request.jwt.claim.sub = '22222222-2222-2222-2222-222222222222';
+
+do $$
+declare plano_ana uuid;
+begin
+  begin
+    perform public.update_installment_plan(
+      '00000000-0000-0000-0000-000000000000', 'X', 1, array[1]::bigint[]);
+    raise exception 'update_installment_plan deveria recusar plano inexistente';
+  exception when no_data_found then null;
+  end;
+end $$;
+
+reset role;
+
+do $$
+begin
+  if has_function_privilege('anon', 'public.update_installment_plan(uuid, text, bigint, bigint[], uuid)', 'execute') then
+    raise exception 'anon não deveria executar update_installment_plan';
+  end if;
+  if has_function_privilege('anon', 'public.set_goal_month_plan(uuid, date, bigint)', 'execute') then
+    raise exception 'anon não deveria executar set_goal_month_plan';
+  end if;
+end $$;
 
 select 'TODAS AS ASSERÇÕES DE RLS E CONSTRAINTS PASSARAM' as resultado;

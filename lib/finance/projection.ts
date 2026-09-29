@@ -249,7 +249,9 @@ export function projectWindow(options: ProjectWindowOptions): DayProjection[] {
   return accumulate([...history, ...future], from, to, openingBalanceCents)
 }
 
-function entryToOccurrence(entry: Entry): Occurrence {
+// v1.3 — 28/09/2026 (Fase 14): exportada para a planilha montar a chave da ocorrência igual à da
+// projeção — é por ela que o override do cenário casa.
+export function entryToOccurrence(entry: Entry): Occurrence {
   const key =
     entry.source === 'manual' || !entry.sourceId || !entry.occurrenceKey
       ? `entry:${entry.id}`
@@ -336,7 +338,9 @@ function findOverride(
  * impede o vazamento que o `syncPlanToGlobal` do app antigo causava, onde
  * editar um valor dentro do planejamento sobrescrevia o lançamento real.
  */
-function applyScenario(
+// v1.3 — 28/09/2026 (Fase 14): exportada para a planilha (`lib/finance/sheet.ts`) aplicar o
+// cenário pela mesma regra da Análise, em vez de uma segunda cópia que divergiria.
+export function applyScenario(
   occurrences: readonly Occurrence[],
   scenario: Scenario,
   from: ISODate,
