@@ -22,6 +22,9 @@ import type { EntryKind } from './types'
  * valor informado; somá-lo de novo contaria a mesma coisa duas vezes.
  *
  * Função pura: a data de hoje entra por parâmetro (invariante 9).
+ *
+ * v1.1 — 02/10/2026: `balanceAdjustment`, a diferença entre o saldo calculado e o que a
+ * pessoa diz ter — o ajuste de saldo passou a virar um lançamento no histórico.
  */
 
 /** O mínimo que um lançamento precisa ter para entrar no saldo. */
@@ -77,4 +80,27 @@ export function computeBalance(input: BalanceInput): BalanceBreakdown {
     settledExpenseCents,
     countedEntries,
   }
+}
+
+/**
+ * O lançamento que leva o saldo calculado ao saldo real. v1.1 — 02/10/2026.
+ *
+ * Saldo real menor que o calculado: saiu dinheiro sem registro, é uma **saída**. Maior:
+ * entrou, é uma **entrada**. O valor é sempre positivo (é o que `entries.amount_cents`
+ * aceita) e o sinal fica no tipo. Diferença zero não gera lançamento: `null`.
+ */
+export interface BalanceAdjustment {
+  kind: EntryKind
+  amountCents: number
+}
+
+export function balanceAdjustment(
+  currentCents: number,
+  targetCents: number,
+): BalanceAdjustment | null {
+  const delta = targetCents - currentCents
+  if (delta === 0) return null
+  return delta > 0
+    ? { kind: 'income', amountCents: delta }
+    : { kind: 'expense', amountCents: -delta }
 }

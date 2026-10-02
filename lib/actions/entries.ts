@@ -1,6 +1,5 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
 import { isAiConfigured } from '@/lib/ai/env'
 import { currentUserId } from '@/lib/db/current-user'
 import { listActiveCategories } from '@/lib/db/queries/categories'
@@ -8,6 +7,7 @@ import { getEntry, type EntryWithCategory } from '@/lib/db/queries/entries'
 import type { EntryKind } from '@/lib/db/types'
 import type { RecategorizeTarget } from '@/lib/import/recategorize'
 import type { CategoryOption } from '@/lib/import/suggest'
+import { revalidateEntryViews } from '@/lib/revalidate'
 import { createClient } from '@/lib/supabase/server'
 import { creditPatch, readCreditFields } from '@/lib/validation/credit'
 import { keywordsPatch } from '@/lib/validation/keywords'
@@ -23,7 +23,9 @@ import {
 } from '@/lib/validation/entries'
 
 /*
- * Escrita de lançamentos. v1.6 — 28/09/2026.
+ * Escrita de lançamentos. v1.7 — 02/10/2026.
+ *
+ * v1.7 (02/10/2026): a lista de telas a revalidar foi para `lib/revalidate.ts`.
  *
  * v1.6 (Fase 14, 28/09/2026): `getEntryForEdit`, a leitura sob demanda da planilha; `/planilha`
  * entrou na revalidação.
@@ -44,25 +46,8 @@ export interface EntryActionState {
   success?: string
 }
 
-/**
- * Rotas que exibem lançamentos e precisam ser revalidadas depois de escrever.
- *
- * v1.1 — 2026-09-26: `/analise` entrou na lista. Ela sempre exibiu lançamentos, e até aqui só
- * não ficava velha por ser `force-dynamic` — o que é sorte, não garantia. Agora que dá para
- * criar e editar lançamento de dentro dela (pela tela cheia do gráfico), a revalidação é o que
- * faz a curva mudar depois de salvar.
- */
-function revalidateEntryViews(): void {
-  revalidatePath('/historico')
-  // 28/09/2026 (Fase 14): a planilha lê os mesmos lançamentos.
-  revalidatePath('/planilha', 'layout')
-  revalidatePath('/analise')
-  revalidatePath('/')
-  // v1.2 — 2026-09-27: "Ver todos" também mostra lançamentos, e agora exclui em lote.
-  revalidatePath('/novo/lancamentos')
-  // v1.5 — 2026-09-27: a compra no cartão muda a fatura e o limite.
-  revalidatePath('/cartoes', 'layout')
-}
+// v1.7 — 02/10/2026: `revalidateEntryViews` mudou para `lib/revalidate.ts`, para o ajuste de
+// saldo (que também cria e apaga lançamentos) revalidar as mesmas telas.
 
 /** v1.5 — 2026-09-27: a saída no cartão/empréstimo nunca é liquidada pelo próprio lançamento. */
 function settledFor(kind: EntryKind, funded: boolean, isSettled: boolean): boolean {

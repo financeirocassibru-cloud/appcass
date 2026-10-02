@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { computeBalance, type BalanceEntry } from '@/lib/finance/balance'
+import { balanceAdjustment, computeBalance, type BalanceEntry } from '@/lib/finance/balance'
 
 /**
  * O saldo é o número que a pessoa abre o app para ver. Cada teste aqui descreve
@@ -150,5 +150,25 @@ describe('computeBalance', () => {
     })
     expect(saldo.openingBalanceCents).toBe(4_200)
     expect(saldo.openingBalanceOn).toBe('2026-03-02')
+  })
+})
+
+// v1.1 — 02/10/2026: o ajuste de saldo vira lançamento; o tipo e o valor saem daqui.
+describe('balanceAdjustment', () => {
+  it('saldo real menor vira saída da diferença', () => {
+    expect(balanceAdjustment(100_000, 88_000)).toEqual({ kind: 'expense', amountCents: 12_000 })
+  })
+
+  it('saldo real maior vira entrada da diferença', () => {
+    expect(balanceAdjustment(100_000, 105_000)).toEqual({ kind: 'income', amountCents: 5_000 })
+  })
+
+  it('sem diferença, sem lançamento', () => {
+    expect(balanceAdjustment(100_000, 100_000)).toBeNull()
+  })
+
+  it('atravessa o zero nos dois sentidos', () => {
+    expect(balanceAdjustment(5_000, -3_000)).toEqual({ kind: 'expense', amountCents: 8_000 })
+    expect(balanceAdjustment(-3_000, 5_000)).toEqual({ kind: 'income', amountCents: 8_000 })
   })
 })
